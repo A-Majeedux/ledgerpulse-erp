@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Vendor Bill{% endblock %}
+{% block active_nav %}vendors{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <div>
+    <h2 style="margin:0;">Bill from {{ bill[1] }}</h2>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">{{ bill[2].strftime('%d %b %Y') }}{% if bill[3] %} · Due {{ bill[3].strftime('%d %b %Y') }}{% endif %}</p>
+  </div>
+  <div>
+    {% if bill[4] == 'Posted' %}
+      <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
+    {% else %}
+      <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
+      <form method="POST" action="{{ url_for('vendors.post_vendor_bill', vendor_bill_id=bill[0]) }}" style="display:inline;">
+        <button type="submit" class="lp-btn primary">Post</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+<div class="lp-card">
+  <table class="lp-table">
+    <thead><tr><th>Label</th><th>Account</th><th class="amount">Qty</th><th class="amount">Rate</th><th class="amount">Total</th></tr></thead>
+    <tbody>
+      {% for line in lines %}
+      <tr>
+        <td>{{ line[0] or '—' }}</td>
+        <td>{{ line[1] }} — {{ line[2] }}</td>
+        <td class="amount">{{ "%.2f"|format(line[3]) }}</td>
+        <td class="amount">{{ "%.2f"|format(line[4]) }}</td>
+        <td class="amount">{{ "%.2f"|format(line[5]) }}</td>
+      </tr>
+      {% endfor %}
+      <tr style="font-weight:700;"><td colspan="4">Total</td><td class="amount">{{ "%.2f"|format(total) }}</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

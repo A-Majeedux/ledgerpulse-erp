@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Products{% endblock %}
+{% block active_nav %}products{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <div>
+    <h2 style="margin:0;">Products</h2>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0; font-size: 14px;">Product master catalog with unit of measure and default revenue account.</p>
+  </div>
+  <a href="{{ url_for('sales.new_product') }}" class="lp-btn primary">+ New Product</a>
+</div>
+<div class="lp-card">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Product Name</th>
+        <th>Unit</th>
+        <th>Default Revenue Account</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in products %}
+      <tr>
+        <td style="font-weight:600;">{{ p[1] }}</td>
+        <td>{{ p[2] }}</td>
+        <td>{{ p[3] }} — {{ p[4] if p[4] else 'Default Sales Revenue' }}</td>
+        <td>
+          {% if p[5] %}<span class="lp-pill posted">Active</span>{% else %}<span class="lp-pill draft">Inactive</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not products %}
+      <tr>
+        <td colspan="4" style="text-align: center; color: var(--lp-text-muted); padding: 24px;">No products added yet. Click "+ New Product" to create one.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

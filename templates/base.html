@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}LedgerPulse{% endblock %} — LedgerPulse</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='tokens.css') }}">
+</head>
+<body>
+  {% block active_nav %}{% endblock %}
+  <div class="lp-shell">
+    <nav class="lp-sidebar">
+      <div class="lp-sidebar-brand"><span class="lp-dot"></span> LedgerPulse</div>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'dashboard' }}" href="{{ url_for('dashboard.home') }}">Dashboard</a>
+      
+      <div class="lp-nav-section-title">Sales</div>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'invoices' }}" href="{{ url_for('sales.sales_invoices_list') }}">Sales Invoices</a>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'products' }}" href="{{ url_for('sales.products_list') }}">Products</a>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'customers' }}" href="{{ url_for('customers.customers_list') }}">Customers</a>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'customer_receipts' }}" href="{{ url_for('customers.customer_receipts_list') }}">Customer Receipts</a>
+      
+      <div class="lp-nav-section-title">Purchases</div>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'vendors' }}" href="{{ url_for('vendors.vendors_list') }}">Vendors</a>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'vendor_bills' }}" href="{{ url_for('vendors.vendor_bills_list') }}">Vendor Bills</a>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'vendor_payments' }}" href="{{ url_for('vendors.vendor_payments_list') }}">Vendor Payments</a>
+      
+      <div class="lp-nav-section-title">Accounting</div>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'chart' }}" href="{{ url_for('accounting.chart_of_accounts_list') }}">Chart of Accounts</a>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'journals' }}" href="{{ url_for('accounting.journal_entries_list') }}">Journal Entries</a>
+      <a class="lp-nav-item" href="#">Banking <span class="lp-soon">soon</span></a>
+      <a class="lp-nav-item" href="#">Reports <span class="lp-soon">soon</span></a>
+      
+      <div class="lp-nav-section-title">Setup</div>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'organizations' }}" href="{{ url_for('organizations.manage_organizations') }}">Organizations</a>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'taxrates' }}" href="{{ url_for('wht.tax_rates_list') }}">WHT Rates</a>
+      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'salestax' }}" href="{{ url_for('sales.sales_tax_rates_list') }}">Sales Tax Rates</a>
+    </nav>
+    <div class="lp-main">
+      <div class="lp-topbar">
+        <form class="lp-org-switcher" method="POST" onsubmit="this.action = '/organizations/switch/' + this.org_id.value; return true;">
+          <select name="org_id" onchange="this.form.requestSubmit()">
+            {% for org in organizations %}
+              <option value="{{ org[0] }}" {{ 'selected' if org[0] == active_organization_id }}>{{ org[1] }}</option>
+            {% endfor %}
+          </select>
+        </form>
+      </div>
+      <div class="lp-content">
+        {% block content %}{% endblock %}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

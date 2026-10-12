@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}New Journal Entry{% endblock %}
+{% block active_nav %}journals{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 900px;">
+  <h2 style="margin-top:0;">New Journal Entry</h2>
+
+  {% if error %}
+    <div style="background: var(--lp-coral-bg); color: var(--lp-coral-text); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+      {{ error }}
+    </div>
+  {% endif %}
+
+  <form method="POST" id="je-form">
+    <div style="display:flex; gap:16px; margin-bottom: 20px;">
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Reference</label>
+        <input type="text" name="reference" value="{{ form.reference if form else '' }}" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Accounting Date</label>
+        <input type="date" name="accounting_date" value="{{ form.accounting_date if form else today }}" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Journal</label>
+        <input type="text" name="journal_name" value="{{ form.journal_name if form else 'Miscellaneous Operations' }}" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+    </div>
+
+    <table class="lp-table" id="lines-table">
+      <thead>
+        <tr>
+          <th style="width:20%;">Account</th>
+          <th style="width:15%;">Partner</th>
+          <th style="width:25%;">Label</th>
+          <th style="width:13%;">Debit</th>
+          <th style="width:13%;">Credit</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body">
+        <!-- rows added by JS, two blank rows to start -->
+      </tbody>
+    </table>
+
+    <button type="button" onclick="addLine()" class="lp-btn" style="margin-top:12px;">+ Add line</button>
+
+    <div style="display:flex; justify-content:flex-end; gap:24px; margin-top:16px; padding-top:12px; border-top:1px solid var(--lp-border);">
+      <div><strong>Debit total:</strong> <span id="total-debit">0.00</span></div>
+      <div><strong>Credit total:</strong> <span id="total-credit">0.00</span></div>
+      <div id="balance-indicator" style="font-weight:700;"></div>
+    </div>
+
+    <button type="submit" class="lp-btn primary" style="margin-top: 16px;">Save Draft</button>
+  </form>
+</div>
+
+<script>
+const ACCOUNTS = [
+  {% for acc in accounts %}{ id: {{ acc[0] }}, label: "{{ acc[1] }} - {{ acc[2] }}" },{% endfor %}
+];
+
+function accountOptions() {
+  return '<option value="">Select account…</option>' +
+    ACCOUNTS.map(a => `<option value="${a.id}">${a.label}</option>`).join('');
+}
+
+function addLine() {
+  const tbody = document.getElementById('lines-body');
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td><select name="account_id[]" onchange="recalculate()">${accountOptions()}</select></td>
+    <td><input type="text" name="partner_name[]"></td>
+    <td><input type="text" name="label[]"></td>
+    <td><input type="number" step="0.01" name="debit[]" value="0" oninput="recalculate()"></td>
+    <td><input type="number" step="0.01" name="credit[]" value="0" oninput="recalculate()"></td>
+    <td><button type="button" onclick="this.closest('tr').remove(); recalculate();" class="lp-btn">×</button></td>
+  `;
+  tbody.appendChild(row);
+}
+
+function recalculate() {
+  let totalDebit = 0, totalCredit = 0;
+  document.querySelectorAll('input[name="debit[]"]').forEach(el => totalDebit += parseFloat(el.value || 0));
+  document.querySelectorAll('input[name="credit[]"]').forEach(el => totalCredit += parseFloat(el.value || 0));
+  document.getElementById('total-debit').textContent = totalDebit.toFixed(2);
+  document.getElementById('total-credit').textContent = totalCredit.toFixed(2);
+  const indicator = document.getElementById('balance-indicator');
+  if (Math.abs(totalDebit - totalCredit) < 0.005 && totalDebit > 0) {
+    indicator.textContent = '✓ Balanced';
+    indicator.style.color = 'var(--lp-green-text)';
+  } else {
+    indicator.textContent = 'Not balanced';
+    indicator.style.color = 'var(--lp-coral-text)';
+  }
+}
+
+// Start with two blank lines so the form isn't empty on load.
+addLine();
+addLine();
+</script>
+{% endblock %}

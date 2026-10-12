@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}New Customer{% endblock %}
+{% block active_nav %}customers{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 480px;">
+  <h2 style="margin-top:0;">New Customer</h2>
+  <form method="POST">
+    <label style="font-size: 13px; font-weight: 600;">Customer name</label>
+    <input type="text" name="name" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Nature of supply</label>
+    <select name="nature_of_supply" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      {% for opt in nature_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
+    </select>
+    <p style="font-size: 12px; color: var(--lp-text-muted); margin-top: -10px;">Decides which WHT Receivable ledger applies if this customer withholds tax on their payment - not a tax rate.</p>
+
+    <label style="font-size: 13px; font-weight: 600;">NTN</label>
+    <input type="text" name="ntn" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">STRN</label>
+    <input type="text" name="strn" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">CNIC</label>
+    <input type="text" name="cnic" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Address</label>
+    <textarea name="address" rows="2" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit;"></textarea>
+
+    <label style="font-size: 13px; font-weight: 600;">Credit limit</label>
+    <input type="number" step="0.01" name="credit_limit" value="0" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <button type="submit" class="lp-btn primary">Create Customer</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="panel">
+    <h2>Platform Admin User Management</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Active</th>
+                <th>Platform Admin</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u[0] }}</td>
+                <td>{{ u[1] }}</td>
+                <td>{{ u[2] }}</td>
+                <td>{{ u[3] }}</td>
+                <td>{{ u[4] }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('auth.admin_grant_admin', user_id=u[0]) }}" style="display:inline;">
+                        {{ csrf_field() }}
+                        <button type="submit" class="btn-sm">Grant Admin</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('auth.admin_revoke_admin', user_id=u[0]) }}" style="display:inline;">
+                        {{ csrf_field() }}
+                        <button type="submit" class="btn-sm">Revoke Admin</button>
+                    </form>
+                    <form method="POST" action="{{ url_for('auth.admin_deactivate_user', user_id=u[0]) }}" style="display:inline;">
+                        {{ csrf_field() }}
+                        <button type="submit" class="btn-sm">Deactivate</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

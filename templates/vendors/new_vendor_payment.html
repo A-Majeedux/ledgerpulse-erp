@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}New Vendor Payment{% endblock %}
+{% block active_nav %}vendors{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 560px;">
+  <h2 style="margin-top:0;">New Vendor Payment</h2>
+
+  {% if error %}
+    <div style="background: var(--lp-coral-bg); color: var(--lp-coral-text); padding: 12px; border-radius: 8px; margin-bottom: 16px;">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST">
+    <label style="font-size: 13px; font-weight: 600;">Vendor</label>
+    <select name="vendor_id" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      <option value="">Select vendor…</option>
+      {% for v in vendors %}<option value="{{ v[0] }}">{{ v[1] }} ({{ v[2] }})</option>{% endfor %}
+    </select>
+
+    <label style="font-size: 13px; font-weight: 600;">Amount (gross, before any WHT)</label>
+    <input type="number" step="0.01" name="amount" id="amount" required oninput="recalcWht()" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Date</label>
+    <input type="date" name="payment_date" value="{{ today }}" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Memo</label>
+    <input type="text" name="memo" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; display:flex; align-items:center; gap:8px; margin-bottom:8px;">
+      <input type="checkbox" name="has_wht" id="has_wht" onchange="toggleWht()"> Withhold tax (WHT) on this payment
+    </label>
+    <div id="wht-panel" style="display:none; background: var(--lp-canvas); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600;">WHT rate — pick the rate applicable to this transaction per current FBR rules</label>
+      <select name="wht_rate" id="wht_rate" onchange="recalcWht()" style="width:100%; padding:8px; margin: 6px 0 12px; border:1px solid var(--lp-border); border-radius:6px;">
+        <option value="">Select rate…</option>
+        {% for rate in tax_rates %}<option value="{{ rate[2] }}">{{ rate[1] }}</option>{% endfor %}
+      </select>
+      <p style="font-size: 12px; color: var(--lp-text-muted); margin: -6px 0 12px;">Don't see the right rate? <a href="{{ url_for('wht.new_tax_rate') }}" target="_blank">Add a new one</a> (opens in a new tab, then refresh this page).</p>
+      <p style="font-size: 13px; margin: 0;">WHT amount: <strong id="wht-amount-display">0.00</strong> · Net paid: <strong id="net-amount-display">0.00</strong></p>
+    </div>
+
+    <label style="font-size: 13px; font-weight: 600;">Paid from account</label>
+    <select name="paid_from_account_id" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      <option value="">Select account…</option>
+      {% for a in accounts %}<option value="{{ a[0] }}">{{ a[1] }} - {{ a[2] }}</option>{% endfor %}
+    </select>
+
+    <label style="font-size: 13px; font-weight: 600;">Payment method</label>
+    <select name="payment_method" id="payment_method" onchange="toggleCheque()" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      <option value="Manual">Manual (IBFT / Cash)</option>
+      <option value="Cheque">Cheque</option>
+    </select>
+
+    <div id="cheque-panel" style="display:none;">
+      <label style="font-size: 13px; font-weight: 600;">Cheque number</label>
+      <input type="text" name="cheque_number" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      <label style="font-size: 13px; font-weight: 600;">Cheque date</label>
+      <input type="date" name="cheque_date" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
+
+    <button type="submit" class="lp-btn primary">Record Payment</button>
+  </form>
+</div>
+
+<script>
+function toggleWht() {
+  document.getElementById('wht-panel').style.display =
+    document.getElementById('has_wht').checked ? 'block' : 'none';
+  recalcWht();
+}
+function toggleCheque() {
+  document.getElementById('cheque-panel').style.display =
+    document.getElementById('payment_method').value === 'Cheque' ? 'block' : 'none';
+}
+function recalcWht() {
+  const amount = parseFloat(document.getElementById('amount').value || 0);
+  const rate = parseFloat(document.getElementById('wht_rate').value || 0);
+  const whtAmount = document.getElementById('has_wht').checked ? (amount * rate / 100) : 0;
+  document.getElementById('wht-amount-display').textContent = whtAmount.toFixed(2);
+  document.getElementById('net-amount-display').textContent = (amount - whtAmount).toFixed(2);
+}
+</script>
+{% endblock %}

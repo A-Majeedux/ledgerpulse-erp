@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Customer Receipts{% endblock %}
+{% block active_nav %}customers{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <h2 style="margin:0;">Customer Receipts</h2>
+  <a href="{{ url_for('customers.new_customer_receipt') }}" class="lp-btn primary">+ New Receipt</a>
+</div>
+<div class="lp-card">
+  <table class="lp-table">
+    <thead><tr><th>Customer</th><th>Date</th><th class="amount">Amount</th><th>WHT</th></tr></thead>
+    <tbody>
+      {% for r in receipts %}
+      <tr onclick="window.location='{{ url_for('customers.customer_receipt_detail', customer_receipt_id=r[0]) }}'" style="cursor:pointer;">
+        <td>{{ r[1] }}</td>
+        <td>{{ r[3].strftime('%d %b %Y') }}</td>
+        <td class="amount">{{ "%.2f"|format(r[2]) }}</td>
+        <td>{% if r[4] %}<span class="lp-pill posted">Yes</span>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

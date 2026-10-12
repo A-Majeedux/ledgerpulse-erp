@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Customer Receipt{% endblock %}
+{% block active_nav %}customers{% endblock %}
+{% block content %}
+<h2 style="margin:0 0 16px;">Receipt from {{ receipt[1] }}</h2>
+<div class="lp-card">
+  <table class="lp-table">
+    <tr><td style="width:220px; color:var(--lp-text-muted);">Amount (gross)</td><td class="amount">{{ "%.2f"|format(receipt[2]) }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Date</td><td>{{ receipt[3].strftime('%d %b %Y') }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Memo</td><td>{{ receipt[4] or '—' }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Deposited to</td><td>{{ receipt[5] }}</td></tr>
+    {% if receipt[6] %}
+    <tr><td style="color:var(--lp-text-muted);">WHT rate</td><td>{{ receipt[7] }}%</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">WHT amount (recoverable)</td><td class="amount">{{ "%.2f"|format(receipt[8]) }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Net received</td><td class="amount">{{ "%.2f"|format(receipt[2] - receipt[8]) }}</td></tr>
+    {% endif %}
+  </table>
+</div>
+<p style="margin-top:16px;"><a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=receipt[9]) }}" class="lp-btn">View journal entry</a></p>
+{% endblock %}

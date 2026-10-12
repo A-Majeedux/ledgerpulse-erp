@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% block title %}New Sales Invoice{% endblock %}
+{% block active_nav %}invoices{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 1100px;">
+  <h2 style="margin-top:0;">New Sales Invoice</h2>
+  {% if error %}
+    <div style="background: var(--lp-coral-bg); color: var(--lp-coral-text); padding: 12px; border-radius: 8px; margin-bottom: 16px;">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST" id="invoice-form">
+    <div style="display:flex; gap:16px; margin-bottom: 20px;">
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Customer</label>
+        <select name="customer_id" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+          <option value="">Select customer </option>
+          {% for c in customers %}
+            <option value="{{ c[0] }}">{{ c[1] }} ({{ c[2] }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Invoice Date</label>
+        <input type="date" name="invoice_date" value="{{ today }}" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Due Date</label>
+        <input type="date" name="due_date" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Payment Terms</label>
+        <input type="text" name="payment_terms" placeholder="e.g. 30 days" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+    </div>
+
+    <!-- Hidden templates for options used by JavaScript -->
+    <select id="source-product-options" style="display:none;">
+      <option value="">Select product </option>
+      {% for p in products %}
+        <option value="{{ p[0] }}" data-unit="{{ p[2] }}" data-account-id="{{ p[3] or '' }}">{{ p[1] }}</option>
+      {% endfor %}
+    </select>
+
+    <select id="source-account-options" style="display:none;">
+      {% for a in accounts %}
+        <option value="{{ a[0] }}">{{ a[1] }} - {{ a[2] }}</option>
+      {% endfor %}
+    </select>
+
+    <select id="source-tax-options" style="display:none;">
+      <option value="" data-rate="0">None (0%)</option>
+      {% for r in tax_rates %}
+        <option value="{{ r[0] }}" data-rate="{{ r[2] }}">{{ r[1] }} ({{ r[2] }}%)</option>
+      {% endfor %}
+    </select>
+
+    <select id="source-uom-options" style="display:none;">
+      {% for u in uom_choices %}
+        <option value="{{ u }}">{{ u }}</option>
+      {% endfor %}
+    </select>
+
+    <table class="lp-table" id="lines-table">
+      <thead>
+        <tr>
+          <th style="width:20%;">Product</th>
+          <th style="width:14%;">Label / Desc</th>
+          <th style="width:12%;">Account</th>
+          <th style="width:8%;">UoM</th>
+          <th style="width:8%;" class="amount">Qty</th>
+          <th style="width:10%;" class="amount">Rate</th>
+          <th style="width:8%;" class="amount">Disc %</th>
+          <th style="width:12%;">Tax</th>
+          <th style="width:10%;" class="amount">Total</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body"></tbody>
+    </table>
+
+    <button type="button" onclick="addLine()" class="lp-btn" style="margin-top:12px;">+ Add line</button>
+
+    <div style="display:flex; justify-content:flex-end; margin-top:16px; padding-top:12px; border-top:1px solid var(--lp-border); gap: 32px;">
+      <div>Subtotal (Gross): <strong id="summary-gross">0.00</strong></div>
+      <div>Discount: <strong id="summary-discount" style="color:var(--lp-coral-text);">0.00</strong></div>
+      <div>Sales Tax: <strong id="summary-tax" style="color:var(--lp-blue-text);">0.00</strong></div>
+      <div style="font-size: 16px;">Grand Total: <strong id="summary-total" style="color:var(--lp-teal);">0.00</strong></div>
+    </div>
+
+    <button type="submit" class="lp-btn primary" style="margin-top: 20px;">Save Draft Invoice</button>
+  </form>
+</div>
+
+<script>
+function onProductChange(selectEl) {
+  const row = selectEl.closest('tr');
+  const opt = selectEl.selectedOptions[0];
+  if (opt && opt.value) {
+    const unit = opt.getAttribute('data-unit');
+    const defaultAccId = opt.getAttribute('data-account-id');
+    
+    if (unit) {
+      row.querySelector('[name="unit[]"]').value = unit;
+    }
+    if (defaultAccId) {
+      row.querySelector('[name="account_id[]"]').value = defaultAccId;
+    }
+  }
+  recalcRow(row);
+}
+
+function recalcRow(row) {
+  const qty = parseFloat(row.querySelector('[name="quantity[]"]').value) || 0;
+  const rate = parseFloat(row.querySelector('[name="rate[]"]').value) || 0;
+  const discPct = parseFloat(row.querySelector('[name="discount_percent[]"]').value) || 0;
+  
+  const gross = qty * rate;
+  const discAmt = gross * (discPct / 100);
+  const net = gross - discAmt;
+
+  const taxSelect = row.querySelector('[name="sales_tax_rate_id[]"]');
+  const taxOpt = taxSelect.selectedOptions[0];
+  const taxRate = parseFloat(taxOpt ? taxOpt.getAttribute('data-rate') : 0) || 0;
+  const taxAmt = net * (taxRate / 100);
+  const total = net + taxAmt;
+
+  row.querySelector('.row-total-display').textContent = total.toFixed(2);
+  recalcGrandTotals();
+}
+
+function recalcGrandTotals() {
+  let grossSum = 0;
+  let discSum = 0;
+  let taxSum = 0;
+  let grandTotal = 0;
+
+  document.querySelectorAll('#lines-body tr').forEach(function(row) {
+    const qty = parseFloat(row.querySelector('[name="quantity[]"]').value) || 0;
+    const rate = parseFloat(row.querySelector('[name="rate[]"]').value) || 0;
+    const discPct = parseFloat(row.querySelector('[name="discount_percent[]"]').value) || 0;
+
+    const gross = qty * rate;
+    const discAmt = gross * (discPct / 100);
+    const net = gross - discAmt;
+
+    const taxSelect = row.querySelector('[name="sales_tax_rate_id[]"]');
+    const taxOpt = taxSelect.selectedOptions[0];
+    const taxRate = parseFloat(taxOpt ? taxOpt.getAttribute('data-rate') : 0) || 0;
+    const taxAmt = net * (taxRate / 100);
+
+    grossSum += gross;
+    discSum += discAmt;
+    taxSum += taxAmt;
+    grandTotal += (net + taxAmt);
+  });
+
+  document.getElementById('summary-gross').textContent = grossSum.toFixed(2);
+  document.getElementById('summary-discount').textContent = discSum.toFixed(2);
+  document.getElementById('summary-tax').textContent = taxSum.toFixed(2);
+  document.getElementById('summary-total').textContent = grandTotal.toFixed(2);
+}
+
+function addLine() {
+  const prodOptions = document.getElementById('source-product-options').innerHTML;
+  const accOptions = document.getElementById('source-account-options').innerHTML;
+  const taxOptions = document.getElementById('source-tax-options').innerHTML;
+  const uomOptions = document.getElementById('source-uom-options').innerHTML;
+
+  const tbody = document.getElementById('lines-body');
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td><select name="product_id[]" required onchange="onProductChange(this)" style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;">${prodOptions}</select></td>
+    <td><input type="text" name="label[]" style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;"></td>
+    <td><select name="account_id[]" required style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;">${accOptions}</select></td>
+    <td><select name="unit[]" style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;">${uomOptions}</select></td>
+    <td><input type="number" step="0.01" name="quantity[]" value="1" oninput="recalcRow(this.closest('tr'))" style="width:100%; padding:6px; text-align:right; border:1px solid var(--lp-border); border-radius:4px;"></td>
+    <td><input type="number" step="0.01" name="rate[]" value="0" oninput="recalcRow(this.closest('tr'))" style="width:100%; padding:6px; text-align:right; border:1px solid var(--lp-border); border-radius:4px;"></td>
+    <td><input type="number" step="0.01" name="discount_percent[]" value="0" oninput="recalcRow(this.closest('tr'))" style="width:100%; padding:6px; text-align:right; border:1px solid var(--lp-border); border-radius:4px;"></td>
+    <td><select name="sales_tax_rate_id[]" onchange="recalcRow(this.closest('tr'))" style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;">${taxOptions}</select></td>
+    <td class="amount row-total-display" style="font-weight:600;">0.00</td>
+    <td><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotals();" class="lp-btn" style="padding:4px 8px;">✕</button></td>
+  `;
+  tbody.appendChild(row);
+}
+
+// Initialize with one line
+addLine();
+</script>
+{% endblock %}

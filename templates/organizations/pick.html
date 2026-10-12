@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Choose an Organization{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 480px; margin: 60px auto;">
+  <h2 style="margin-top:0;">Which organization?</h2>
+  <p style="color: var(--lp-text-muted); font-size: 14px;">Pick a set of books to work in.</p>
+  {% for org in organizations %}
+    <form method="POST" action="{{ url_for('organizations.switch_organization', organization_id=org[0]) }}" style="margin-bottom: 8px;">
+      <button type="submit" class="lp-btn" style="width: 100%; text-align: left;">{{ org[1] }} <span style="color: var(--lp-text-muted);">({{ org[2] }})</span></button>
+    </form>
+  {% endfor %}
+  <a href="{{ url_for('organizations.new_organization') }}" class="lp-btn primary" style="display:block; text-align:center; margin-top: 16px;">+ New Organization</a>
+</div>
+{% endblock %}

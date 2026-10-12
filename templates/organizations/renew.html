@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Subscription & Renewal{% endblock %}
+{% block active_nav %}settings{% endblock %}
+{% block content %}
+<div class="lp-card">
+  <h2>Organization Subscription & Billing</h2>
+  <div style="margin-bottom: 24px; padding: 16px; background: var(--bg-surface); border: 1px solid var(--border); border-radius: 6px;">
+    <p><strong>Current Plan:</strong> {{ sub.plan_name }}</p>
+    <p><strong>Status:</strong> <span style="font-weight: 600; color: {% if sub.status == 'ACTIVE' %}var(--success){% elif sub.status == 'SUSPENDED' %}var(--danger){% else %}var(--warning){% endif %};">{{ sub.status }}</span></p>
+    <p><strong>Expiry Date:</strong> {{ sub.expiry_date or 'N/A' }}</p>
+  </div>
+
+  <h3>Submit Renewal Payment</h3>
+  <form method="POST" action="{{ url_for('organizations.renew_subscription') }}">
+    {{ csrf_field() }}
+    <div class="lp-form-group">
+      <label>Select Plan</label>
+      <select name="plan_id" class="lp-input" required>
+        {% for plan in plans %}
+          <option value="{{ plan[0] }}">{{ plan[1] }} ({{ plan[3] }}: ${{ plan[2] }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="lp-form-group">
+      <label>Payment Amount</label>
+      <input type="number" step="0.01" name="amount" class="lp-input" required placeholder="0.00">
+    </div>
+    <div class="lp-form-group">
+      <label>Payment Method</label>
+      <input type="text" name="payment_method" class="lp-input" value="Bank Transfer" required>
+    </div>
+    <div class="lp-form-group">
+      <label>Reference Number / Transaction ID</label>
+      <input type="text" name="reference_number" class="lp-input" required placeholder="TXN-123456">
+    </div>
+    <div class="lp-form-group">
+      <label>Notes / Proof Details</label>
+      <textarea name="notes" class="lp-input" placeholder="Bank name, transfer date, etc."></textarea>
+    </div>
+    <button type="submit" class="lp-btn lp-btn-primary">Submit Payment for Verification</button>
+  </form>
+
+  <h3 style="margin-top: 32px;">Payment History</h3>
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Date</th>
+        <th>Amount</th>
+        <th>Method</th>
+        <th>Reference</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pay in payments %}
+      <tr>
+        <td>{{ pay[0] }}</td>
+        <td>{{ pay[2] }}</td>
+        <td>{{ pay[1] }}</td>
+        <td>{{ pay[4] }}</td>
+        <td>{{ pay[5] }}</td>
+        <td><span style="font-weight: 600; color: {% if pay[3] == 'VERIFIED' %}var(--success){% elif pay[3] == 'REJECTED' %}var(--danger){% else %}var(--warning){% endif %};">{{ pay[3] }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No payment submissions found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

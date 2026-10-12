@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}New Account{% endblock %}
+{% block active_nav %}chart{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 480px;">
+  <h2 style="margin-top:0;">New Account</h2>
+  <form method="POST">
+    <label style="font-size: 13px; font-weight: 600;">Code</label>
+    <input type="text" name="code" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Name</label>
+    <input type="text" name="name" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Type</label>
+    <select name="account_type" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      {% for t in account_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+    </select>
+
+    <label style="font-size: 13px; display:flex; align-items:center; gap:8px; margin-bottom:16px;">
+      <input type="checkbox" name="allow_reconciliation"> Allow reconciliation (for Receivable/Payable control accounts)
+    </label>
+
+    <button type="submit" class="lp-btn primary">Create Account</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}New Organization{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 640px;">
+  <h2 style="margin-top:0;">New Organization</h2>
+  <form method="POST" enctype="multipart/form-data">
+
+    <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--lp-text-muted); margin: 20px 0 8px;">Identity</p>
+
+    <label style="font-size: 13px; font-weight: 600;">Organization name</label>
+    <input type="text" name="name" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Nature of business</label>
+    <select name="nature_of_business" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      <option value="Trading">Trading</option>
+      <option value="Manufacturing">Manufacturing</option>
+      <option value="Distribution">Distribution</option>
+      <option value="Services">Services</option>
+      <option value="Other">Other</option>
+    </select>
+
+    <label style="font-size: 13px; font-weight: 600;">Logo</label>
+    <input type="file" name="logo" accept="image/*" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--lp-text-muted); margin: 20px 0 8px;">Registration</p>
+
+    <label style="font-size: 13px; font-weight: 600;">NTN</label>
+    <input type="text" name="ntn" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">STRN / GST Number</label>
+    <input type="text" name="strn" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--lp-text-muted); margin: 20px 0 8px;">Addresses</p>
+
+    <label style="font-size: 13px; font-weight: 600;">Head Office address</label>
+    <textarea name="head_office_address" rows="2" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit;"></textarea>
+
+    <label style="font-size: 13px; font-weight: 600;">Warehouse address</label>
+    <textarea name="warehouse_address" rows="2" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit;"></textarea>
+
+    <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--lp-text-muted); margin: 20px 0 8px;">Financial Settings</p>
+
+    <label style="font-size: 13px; font-weight: 600;">Currency</label>
+    <input type="text" name="currency" value="PKR" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Fiscal year starts in</label>
+    <select name="fiscal_year_start_month" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      {% for i in range(1, 13) %}
+        <option value="{{ i }}" {{ 'selected' if i == 7 }}>{{ month_names[i-1] }}</option>
+      {% endfor %}
+    </select>
+    <p style="font-size: 12px; color: var(--lp-text-muted); margin-top: -10px;">Defaults to July, standard for Pakistan - change it if this business runs a different fiscal year.</p>
+
+    <button type="submit" class="lp-btn primary" style="margin-top: 8px;">Create Organization</button>
+  </form>
+</div>
+{% endblock %}

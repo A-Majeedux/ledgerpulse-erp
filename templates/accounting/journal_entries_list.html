@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Journal Entries{% endblock %}
+{% block active_nav %}journals{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <h2 style="margin:0;">Journal Entries</h2>
+  <a href="{{ url_for('accounting.new_journal_entry') }}" class="lp-btn primary">+ New Journal Entry</a>
+</div>
+<div class="lp-card">
+  <table class="lp-table">
+    <thead>
+      <tr><th>Date</th><th>Reference</th><th>Journal</th><th class="amount">Total</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for entry in entries %}
+      <tr onclick="window.location='{{ url_for('accounting.journal_entry_detail', journal_header_id=entry[0]) }}'" style="cursor:pointer;">
+        <td>{{ entry[2].strftime('%d %b %Y') }}</td>
+        <td>{{ entry[1] or '(no reference)' }}</td>
+        <td>{{ entry[3] }}</td>
+        <td class="amount">{{ "%.2f"|format(entry[5]) }}</td>
+        <td>
+          {% if entry[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
+          {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

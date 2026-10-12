@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Sales Tax Rates{% endblock %}
+{% block active_nav %}salestax{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <div>
+    <h2 style="margin:0;">Sales Tax Rates</h2>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0; font-size: 14px;">Maintain the Sales Tax rates applicable to invoices. These post to Output Tax Payable (Account 2200).</p>
+  </div>
+  <a href="{{ url_for('sales.new_sales_tax_rate') }}" class="lp-btn primary">+ New Tax Rate</a>
+</div>
+<div class="lp-card">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Label</th>
+        <th class="amount">Rate (%)</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rates %}
+      <tr>
+        <td>{{ r[1] }}</td>
+        <td class="amount">{{ "%.2f"|format(r[2]) }}%</td>
+        <td>
+          {% if r[3] %}<span class="lp-pill posted">Active</span>{% else %}<span class="lp-pill draft">Retired</span>{% endif %}
+        </td>
+        <td>
+          <form method="POST" action="{{ url_for('sales.toggle_sales_tax_rate', tax_rate_id=r[0]) }}">
+            <button type="submit" class="lp-btn">{{ 'Retire' if r[3] else 'Reactivate' }}</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

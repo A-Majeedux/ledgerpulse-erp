@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Vendor Payment{% endblock %}
+{% block active_nav %}vendors{% endblock %}
+{% block content %}
+<h2 style="margin:0 0 16px;">Payment to {{ payment[1] }}</h2>
+<div class="lp-card">
+  <table class="lp-table">
+    <tr><td style="width:220px; color:var(--lp-text-muted);">Amount (gross)</td><td class="amount">{{ "%.2f"|format(payment[2]) }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Date</td><td>{{ payment[3].strftime('%d %b %Y') }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Memo</td><td>{{ payment[4] or '—' }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Paid from</td><td>{{ payment[5] }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Method</td><td>{{ payment[6] }}</td></tr>
+    {% if payment[6] == 'Cheque' %}
+    <tr><td style="color:var(--lp-text-muted);">Cheque number</td><td>{{ payment[7] }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Cheque date</td><td>{{ payment[8].strftime('%d %b %Y') if payment[8] else '—' }}</td></tr>
+    {% endif %}
+    {% if payment[9] %}
+    <tr><td style="color:var(--lp-text-muted);">WHT rate</td><td>{{ payment[10] }}%</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">WHT amount</td><td class="amount">{{ "%.2f"|format(payment[11]) }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Net paid</td><td class="amount">{{ "%.2f"|format(payment[2] - payment[11]) }}</td></tr>
+    {% endif %}
+  </table>
+</div>
+<p style="margin-top:16px;"><a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=payment[12]) }}" class="lp-btn">View journal entry</a></p>
+{% endblock %}

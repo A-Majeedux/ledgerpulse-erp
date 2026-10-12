@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Vendor Payments{% endblock %}
+{% block active_nav %}vendors{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <h2 style="margin:0;">Vendor Payments</h2>
+  <a href="{{ url_for('vendors.new_vendor_payment') }}" class="lp-btn primary">+ New Payment</a>
+</div>
+<div class="lp-card">
+  <table class="lp-table">
+    <thead><tr><th>Vendor</th><th>Date</th><th class="amount">Amount</th><th>Method</th><th>WHT</th></tr></thead>
+    <tbody>
+      {% for p in payments %}
+      <tr onclick="window.location='{{ url_for('vendors.vendor_payment_detail', vendor_payment_id=p[0]) }}'" style="cursor:pointer;">
+        <td>{{ p[1] }}</td>
+        <td>{{ p[3].strftime('%d %b %Y') }}</td>
+        <td class="amount">{{ "%.2f"|format(p[2]) }}</td>
+        <td>{{ p[4] }}</td>
+        <td>{% if p[5] %}<span class="lp-pill posted">Yes</span>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

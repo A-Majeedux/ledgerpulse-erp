@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}New Vendor Bill{% endblock %}
+{% block active_nav %}vendors{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 900px;">
+  <h2 style="margin-top:0;">New Vendor Bill</h2>
+
+  {% if error %}
+    <div style="background: var(--lp-coral-bg); color: var(--lp-coral-text); padding: 12px; border-radius: 8px; margin-bottom: 16px;">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST" id="bill-form">
+    <div style="display:flex; gap:16px; margin-bottom: 20px;">
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Vendor</label>
+        <select name="vendor_id" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+          <option value="">Select vendor…</option>
+          {% for v in vendors %}<option value="{{ v[0] }}">{{ v[1] }} ({{ v[2] }})</option>{% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Bill Date</label>
+        <input type="date" name="bill_date" value="{{ today }}" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Due Date</label>
+        <input type="date" name="due_date" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Payment Terms</label>
+        <input type="text" name="payment_terms" placeholder="e.g. 30 days" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+    </div>
+
+    <table class="lp-table" id="lines-table">
+      <thead><tr><th style="width:30%;">Label</th><th style="width:30%;">Account</th><th style="width:12%;">Qty</th><th style="width:12%;">Rate</th><th style="width:14%;">Total</th><th></th></tr></thead>
+      <tbody id="lines-body"></tbody>
+    </table>
+    <button type="button" onclick="addLine()" class="lp-btn" style="margin-top:12px;">+ Add line</button>
+
+    <div style="display:flex; justify-content:flex-end; margin-top:16px; padding-top:12px; border-top:1px solid var(--lp-border);">
+      <div><strong>Bill total:</strong> <span id="grand-total">0.00</span></div>
+    </div>
+
+    <button type="submit" class="lp-btn primary" style="margin-top: 16px;">Save Draft</button>
+  </form>
+</div>
+
+<script>
+const ACCOUNTS = [{% for a in accounts %}{ id: {{ a[0] }}, label: "{{ a[1] }} - {{ a[2] }}" },{% endfor %}];
+
+function accountOptions() {
+  return '<option value="">Select account…</option>' + ACCOUNTS.map(a => `<option value="${a.id}">${a.label}</option>`).join('');
+}
+
+function recalcRow(row) {
+  const qty = parseFloat(row.querySelector('[name="quantity[]"]').value || 0);
+  const rate = parseFloat(row.querySelector('[name="rate[]"]').value || 0);
+  row.querySelector('[name="total[]"]').value = (qty * rate).toFixed(2);
+  recalcGrandTotal();
+}
+
+function recalcGrandTotal() {
+  let sum = 0;
+  document.querySelectorAll('[name="total[]"]').forEach(el => sum += parseFloat(el.value || 0));
+  document.getElementById('grand-total').textContent = sum.toFixed(2);
+}
+
+function addLine() {
+  const tbody = document.getElementById('lines-body');
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td><input type="text" name="label[]"></td>
+    <td><select name="account_id[]">${accountOptions()}</select></td>
+    <td><input type="number" step="0.01" name="quantity[]" value="1" oninput="recalcRow(this.closest('tr'))"></td>
+    <td><input type="number" step="0.01" name="rate[]" value="0" oninput="recalcRow(this.closest('tr'))"></td>
+    <td><input type="number" step="0.01" name="total[]" value="0" oninput="recalcGrandTotal()"></td>
+    <td><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotal();" class="lp-btn">×</button></td>
+  `;
+  tbody.appendChild(row);
+}
+
+addLine();
+</script>
+{% endblock %}

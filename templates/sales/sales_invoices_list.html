@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Sales Invoices{% endblock %}
+{% block active_nav %}invoices{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <h2 style="margin:0;">Sales Invoices</h2>
+  <a href="{{ url_for('sales.new_sales_invoice') }}" class="lp-btn primary">+ New Invoice</a>
+</div>
+<div class="lp-card">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Customer</th>
+        <th>Invoice Date</th>
+        <th>Due Date</th>
+        <th class="amount">Grand Total</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in invoices %}
+      <tr onclick="window.location='{{ url_for('sales.sales_invoice_detail', sales_invoice_id=inv[0]) }}'" style="cursor:pointer;">
+        <td style="font-weight:600;">{{ inv[1] }}</td>
+        <td>{{ inv[2].strftime('%d %b %Y') }}</td>
+        <td>{{ inv[3].strftime('%d %b %Y') if inv[3] else '—' }}</td>
+        <td class="amount">{{ "%.2f"|format(inv[5]) }}</td>
+        <td>
+          {% if inv[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
+          {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not invoices %}
+      <tr>
+        <td colspan="5" style="text-align: center; color: var(--lp-text-muted); padding: 24px;">No invoices created yet. Click "+ New Invoice" to start.</td>
+      </tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

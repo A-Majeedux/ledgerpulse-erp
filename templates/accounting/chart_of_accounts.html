@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Chart of Accounts{% endblock %}
+{% block active_nav %}chart{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <h2 style="margin:0;">Chart of Accounts</h2>
+  <a href="{{ url_for('accounting.new_account') }}" class="lp-btn primary">+ New Account</a>
+</div>
+<div class="lp-card">
+  <table class="lp-table">
+    <thead>
+      <tr><th>Code</th><th>Name</th><th>Type</th><th>Reconciliation</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for acc in accounts %}
+      <tr>
+        <td>{{ acc[1] }}</td>
+        <td>{{ acc[2] }}</td>
+        <td>{{ acc[3] }}</td>
+        <td>{% if acc[4] %}<span class="lp-pill posted">Allowed</span>{% else %}—{% endif %}</td>
+        <td>{% if acc[5] %}<span class="lp-pill posted">Active</span>{% else %}<span class="lp-pill draft">Inactive</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

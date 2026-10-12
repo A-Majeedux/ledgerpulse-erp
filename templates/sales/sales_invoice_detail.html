@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Sales Invoice{% endblock %}
+{% block active_nav %}invoices{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <div>
+    <h2 style="margin:0;">Invoice to {{ invoice[1] }}</h2>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">
+      {{ invoice[2].strftime('%d %b %Y') }}
+      {% if invoice[3] %} · Due {{ invoice[3].strftime('%d %b %Y') }}{% endif %}
+      {% if invoice[6] %} · Terms: {{ invoice[6] }}{% endif %}
+    </p>
+  </div>
+  <div>
+    {% if invoice[4] == 'Posted' %}
+      <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
+    {% else %}
+      <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
+      <form method="POST" action="{{ url_for('sales.post_sales_invoice', sales_invoice_id=invoice[0]) }}" style="display:inline;">
+        <button type="submit" class="lp-btn primary">Post Invoice</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="lp-card">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th>Description</th>
+        <th>Account</th>
+        <th>Unit</th>
+        <th class="amount">Qty</th>
+        <th class="amount">Rate</th>
+        <th class="amount">Disc %</th>
+        <th>Tax</th>
+        <th class="amount">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+      <tr>
+        <td style="font-weight:600;">{{ line[0] }}</td>
+        <td>{{ line[1] or '—' }}</td>
+        <td>{{ line[2] }} — {{ line[3] }}</td>
+        <td>{{ line[4] }}</td>
+        <td class="amount">{{ "%.2f"|format(line[5]) }}</td>
+        <td class="amount">{{ "%.2f"|format(line[6]) }}</td>
+        <td class="amount">{{ "%.2f"|format(line[7]) }}%</td>
+        <td>{{ line[9] or '0%' }}</td>
+        <td class="amount">{{ "%.2f"|format(line[11]) }}</td>
+      </tr>
+      {% endfor %}
+      <tr style="border-top: 2px solid var(--lp-border);">
+        <td colspan="8" style="text-align:right; color:var(--lp-text-muted);">Gross Total:</td>
+        <td class="amount">{{ "%.2f"|format(total_gross) }}</td>
+      </tr>
+      <tr>
+        <td colspan="8" style="text-align:right; color:var(--lp-text-muted);">Total Discount:</td>
+        <td class="amount" style="color:var(--lp-coral-text);">-{{ "%.2f"|format(total_discount) }}</td>
+      </tr>
+      <tr>
+        <td colspan="8" style="text-align:right; color:var(--lp-text-muted);">Sales Tax:</td>
+        <td class="amount" style="color:var(--lp-blue-text);">{{ "%.2f"|format(total_tax) }}</td>
+      </tr>
+      <tr style="font-size:16px; font-weight:700;">
+        <td colspan="8" style="text-align:right;">Grand Total:</td>
+        <td class="amount" style="color:var(--lp-teal);">{{ "%.2f"|format(grand_total) }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% if invoice[5] %}
+<p style="margin-top:16px;">
+  <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=invoice[5]) }}" class="lp-btn">View Journal Entry</a>
+</p>
+{% endif %}
+{% endblock %}

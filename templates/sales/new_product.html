@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}New Product{% endblock %}
+{% block active_nav %}products{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 500px;">
+  <h2 style="margin-top:0;">New Product</h2>
+  <form method="POST">
+    <label style="font-size: 13px; font-weight: 600;">Product Name</label>
+    <input type="text" name="name" required placeholder="e.g. Caustic Soda Flakes" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Unit of Measure</label>
+    <select name="unit" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      {% for uom in uom_choices %}
+        <option value="{{ uom }}">{{ uom }}</option>
+      {% endfor %}
+    </select>
+
+    <label style="font-size: 13px; font-weight: 600;">Default Revenue Account</label>
+    <select name="default_account_id" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      <option value="">Default (4000 - Sales Revenue)</option>
+      {% for acc in accounts %}
+        <option value="{{ acc[0] }}">{{ acc[1] }} — {{ acc[2] }}</option>
+      {% endfor %}
+    </select>
+    <p style="font-size: 12px; color: var(--lp-text-muted); margin-top: -10px; margin-bottom: 20px;">The income account automatically credited when this product is sold on an invoice.</p>
+
+    <button type="submit" class="lp-btn primary">Save Product</button>
+    <a href="{{ url_for('sales.products_list') }}" class="lp-btn" style="margin-left: 8px;">Cancel</a>
+  </form>
+</div>
+{% endblock %}
