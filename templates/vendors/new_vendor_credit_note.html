@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}New Vendor Credit Note{% endblock %}
+{% block active_nav %}vendors{% endblock %}
+{% block content %}
+<div style="margin-bottom: 16px;">
+  <h2 style="margin:0;">New Vendor Credit Note</h2>
+  <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Create a credit note / refund from a vendor</p>
+</div>
+
+{% if error %}
+<div class="lp-card" style="background: #fdf2f2; color: #9b1c1c; border: 1px solid #f8b4b4; margin-bottom: 16px;">
+  <strong>Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<form method="POST" class="lp-card">
+  {{ csrf_field() }}
+  <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 16px;">
+    <div>
+      <label style="display:block; font-weight:600; margin-bottom:6px;">Vendor *</label>
+      <select name="vendor_id" required style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px;">
+        <option value="">Select Vendor...</option>
+        {% for v in vendors %}
+        <option value="{{ v[0] }}" {% if orig_bill_data and orig_bill_data[2] == v[0] %}selected{% endif %}>{{ v[1] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label style="display:block; font-weight:600; margin-bottom:6px;">Credit Note Number *</label>
+      <input type="text" name="credit_note_number" value="{{ auto_number }}" required style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px;">
+    </div>
+    <div>
+      <label style="display:block; font-weight:600; margin-bottom:6px;">Credit Date *</label>
+      <input type="date" name="credit_date" value="{{ today }}" required style="width:100%; padding:8px; border:1px solid #d1d5db; border-radius:4px;">
+    </div>
+  </div>
+
+  {% if orig_bill_data %}
+  <div style="margin-bottom: 16px; background: #f0fdf4; padding: 12px; border-radius: 4px; border: 1px solid #bbf7d0;">
+    Linked to Bill <strong>{{ orig_bill_data[1] }}</strong> (ID: {{ orig_bill_data[0] }})
+    <input type="hidden" name="original_bill_id" value="{{ orig_bill_data[0] }}">
+  </div>
+  {% endif %}
+
+  <h3 style="margin-top: 24px; margin-bottom: 12px;">Credit Note Lines</h3>
+  <table class="lp-table" id="cn-lines-table">
+    <thead>
+      <tr>
+        <th>Label / Description</th>
+        <th>Account</th>
+        <th style="width:100px;">Qty</th>
+        <th style="width:120px;">Rate</th>
+        <th style="width:120px;" class="amount">Total</th>
+        <th style="width:50px;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><input type="text" name="label[]" placeholder="Refund description" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;"></td>
+        <td>
+          <select name="account_id[]" required style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+            <option value="">Select Account...</option>
+            {% for acc in accounts %}
+            <option value="{{ acc[0] }}">{{ acc[1] }} — {{ acc[2] }}</option>
+            {% endfor %}
+          </select>
+        </td>
+        <td><input type="number" step="0.01" name="quantity[]" value="1" class="qty-input" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;"></td>
+        <td><input type="number" step="0.01" name="rate[]" value="0" class="rate-input" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px;"></td>
+        <td class="amount"><input type="number" step="0.01" name="total[]" value="0.00" class="total-input" style="width:100%; padding:6px; border:1px solid #d1d5db; border-radius:4px; text-align:right;"></td>
+        <td><button type="button" onclick="this.closest('tr').remove()" class="lp-btn" style="background:#ef4444; color:white; padding:4px 8px;">×</button></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div style="margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+    <button type="button" onclick="addCnLine()" class="lp-btn">+ Add Line</button>
+    <button type="submit" class="lp-btn primary">Save Credit Note</button>
+  </div>
+</form>
+
+<script>
+function addCnLine() {
+  const tbody = document.querySelector('#cn-lines-table tbody');
+  const row = tbody.rows[0].cloneNode(true);
+  row.querySelectorAll('input').forEach(i => i.value = i.classList.contains('qty-input') ? '1' : (i.classList.contains('rate-input') || i.classList.contains('total-input') ? '0' : ''));
+  tbody.appendChild(row);
+}
+</script>
+{% endblock %}

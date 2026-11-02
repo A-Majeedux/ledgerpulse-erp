@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Batch Payment Detail{% endblock %}
+{% block active_nav %}vendors{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <div>
+    <h2 style="margin:0;">Batch Payment {{ batch[1] }}</h2>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Date: {{ batch[2].strftime('%d %b %Y') }} · Paid From: {{ batch[3] }}</p>
+  </div>
+  <div>
+    <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">{{ batch[5] }}</span>
+  </div>
+</div>
+
+<div class="lp-card">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Vendor</th>
+        <th>Memo</th>
+        <th>Voucher No</th>
+        <th class="amount">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+      <tr>
+        <td>{{ line[0] }}</td>
+        <td>{{ line[2] or '—' }}</td>
+        <td><a href="{{ url_for('vendors.vendor_payment_detail', vendor_payment_id=line[3]) }}">{{ line[4] }}</a></td>
+        <td class="amount">{{ "%.2f"|format(line[1]) }}</td>
+      </tr>
+      {% endfor %}
+      <tr style="font-weight:700;"><td colspan="3">Total Batch Amount</td><td class="amount">{{ "%.2f"|format(batch[4]) }}</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}

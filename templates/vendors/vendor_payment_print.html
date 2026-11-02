@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Payment Voucher - {{ payment[1] }}</title>
+  <style>
+    body { font-family: Inter, Arial, sans-serif; color: #111; margin: 30px; font-size: 14px; }
+    .header { text-align: center; margin-bottom: 24px; border-bottom: 2px solid #142b3a; padding-bottom: 12px; }
+    .header h1 { margin: 0; color: #142b3a; font-size: 22px; }
+    .header p { margin: 4px 0 0; color: #555; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+    th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
+    th { background: #f3f4f6; font-weight: 600; }
+    .amount { text-align: right; }
+    .signatures { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-top: 60px; text-align: center; }
+    .sig-line { border-top: 1px solid #333; margin-top: 40px; padding-top: 4px; font-weight: 600; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>{{ payment[15] }}</h1>
+    <p><strong>BANK PAYMENT VOUCHER (BPV)</strong></p>
+  </div>
+
+  <div class="meta-grid">
+    <div>
+      <p><strong>Voucher No:</strong> {{ payment[1] }}</p>
+      <p><strong>Vendor:</strong> {{ payment[2] }}</p>
+      <p><strong>NTN:</strong> {{ payment[4] or '—' }}</p>
+      <p><strong>Address:</strong> {{ payment[3] or '—' }}</p>
+    </div>
+    <div style="text-align: right;">
+      <p><strong>Payment Date:</strong> {{ payment[6].strftime('%d %b %Y') }}</p>
+      <p><strong>Paid From:</strong> {{ payment[8] }}</p>
+      <p><strong>Method:</strong> {{ payment[9] }} {% if payment[10] %}(Cheque #{{ payment[10] }}){% endif %}</p>
+    </div>
+  </div>
+
+  {% if payment[12] %}
+  <div style="margin-bottom: 16px; background: #f9fafb; padding: 10px; border: 1px solid #e5e7eb;">
+    <p style="margin:0;"><strong>Withholding Tax Deducted:</strong> {{ payment[13] }}% = PKR {{ "%.2f"|format(payment[14]) }}</p>
+  </div>
+  {% endif %}
+
+  {% if allocations %}
+  <h3>Allocated Bills</h3>
+  <table>
+    <thead><tr><th>Bill Number</th><th>Bill Date</th><th class="amount">Allocated Amount</th></tr></thead>
+    <tbody>
+      {% for alloc in allocations %}
+      <tr>
+        <td>{{ alloc[0] }}</td>
+        <td>{{ alloc[1].strftime('%d %b %Y') }}</td>
+        <td class="amount">{{ "%.2f"|format(alloc[2]) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  <div style="text-align: right; font-size: 18px; font-weight: bold; margin-bottom: 40px;">
+    Net Amount Paid: PKR {{ "%.2f"|format(net_paid) }}
+  </div>
+
+  {% if payment[7] %}
+  <p><strong>Memo:</strong> {{ payment[7] }}</p>
+  {% endif %}
+
+  <div class="signatures">
+    <div><div class="sig-line">Prepared By</div></div>
+    <div><div class="sig-line">Checked By</div></div>
+    <div><div class="sig-line">Approved By</div></div>
+    <div><div class="sig-line">Authorized By</div></div>
+  </div>
+</body>
+</html>
