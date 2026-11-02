@@ -2,25 +2,41 @@
 {% block title %}Journal Entries{% endblock %}
 {% block active_nav %}journals{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Journal Entries</h2>
-  <a href="{{ url_for('accounting.new_journal_entry') }}" class="lp-btn primary">+ New Journal Entry</a>
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Journal Entries</h1>
+    <p class="lp-page-subtitle">Review double-entry financial journals and posting history.</p>
+  </div>
+  <a href="{{ url_for('accounting.new_journal_entry') }}" class="lp-btn primary sm">+ New Journal Entry</a>
 </div>
-<div class="lp-card">
+
+<div class="lp-table-wrapper">
   <table class="lp-table">
     <thead>
-      <tr><th>Date</th><th>Reference</th><th>Journal</th><th class="amount">Total</th><th>Status</th></tr>
+      <tr>
+        <th style="width: 130px;">Date</th>
+        <th>Reference</th>
+        <th>Journal</th>
+        <th class="amount">Total</th>
+        <th style="width: 120px;">Status</th>
+      </tr>
     </thead>
     <tbody>
       {% for entry in entries %}
       <tr onclick="window.location='{{ url_for('accounting.journal_entry_detail', journal_header_id=entry[0]) }}'" style="cursor:pointer;">
-        <td>{{ entry[2].strftime('%d %b %Y') }}</td>
-        <td>{{ entry[1] or '(no reference)' }}</td>
+        <td style="font-weight: 500;">{{ entry[2].strftime('%d %b %Y') if entry[2] else '—' }}</td>
+        <td style="font-family: monospace; font-weight: 600;">{{ entry[1] or '(no reference)' }}</td>
         <td>{{ entry[3] }}</td>
-        <td class="amount">{{ "%.2f"|format(entry[5]) }}</td>
+        <td class="amount">${{ "%.2f"|format(entry[5]) }}</td>
         <td>
           {% if entry[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
           {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5">
+          <div class="lp-empty-state">No journal entries recorded yet.</div>
         </td>
       </tr>
       {% endfor %}

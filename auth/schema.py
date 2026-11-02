@@ -26,10 +26,12 @@ def ensure_schema(cursor):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS roles (
             role_id SERIAL PRIMARY KEY,
-            name VARCHAR(50) UNIQUE NOT NULL,
+            organization_id INTEGER REFERENCES organizations(organization_id) ON DELETE CASCADE,
+            name VARCHAR(50) NOT NULL,
             description TEXT
         )
     """)
+    cursor.execute("ALTER TABLE roles ADD COLUMN IF NOT EXISTS organization_id INTEGER REFERENCES organizations(organization_id) ON DELETE CASCADE")
 
     # 3. Permissions table
     cursor.execute("""
@@ -66,6 +68,7 @@ def ensure_schema(cursor):
         CREATE TABLE IF NOT EXISTS subscription_plans (
             plan_id SERIAL PRIMARY KEY,
             name VARCHAR(100) UNIQUE NOT NULL,
+            description TEXT,
             price NUMERIC(12, 2) DEFAULT 0,
             billing_cycle VARCHAR(20) DEFAULT 'monthly',
             is_active BOOLEAN DEFAULT TRUE,
@@ -73,6 +76,7 @@ def ensure_schema(cursor):
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
+    cursor.execute("ALTER TABLE subscription_plans ADD COLUMN IF NOT EXISTS description TEXT")
 
     # 7. Plan Features table
     cursor.execute("""

@@ -1,8 +1,17 @@
 {% extends "base.html" %}
+{% block title %}Platform Users Management{% endblock %}
+{% block active_nav %}admin_users_list{% endblock %}
 {% block content %}
-<div class="panel">
-    <h2>Platform Admin User Management</h2>
-    <table>
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div>
+        <h2 style="margin: 0; font-size: 24px;">Platform Users Management</h2>
+        <p style="color: var(--lp-text-muted); margin: 4px 0 0 0; font-size: 14px;">Manage system users, platform admin rights, and account statuses.</p>
+    </div>
+    <a href="{{ url_for('auth.admin_dashboard') }}" class="lp-btn sm">Back to Dashboard</a>
+</div>
+
+<div class="lp-table-wrapper">
+    <table class="lp-table">
         <thead>
             <tr>
                 <th>ID</th>
@@ -17,24 +26,45 @@
             {% for u in users %}
             <tr>
                 <td>{{ u[0] }}</td>
-                <td>{{ u[1] }}</td>
+                <td style="font-weight: 600;">{{ u[1] }}</td>
                 <td>{{ u[2] }}</td>
-                <td>{{ u[3] }}</td>
-                <td>{{ u[4] }}</td>
                 <td>
-                    <form method="POST" action="{{ url_for('auth.admin_grant_admin', user_id=u[0]) }}" style="display:inline;">
-                        {{ csrf_field() }}
-                        <button type="submit" class="btn-sm">Grant Admin</button>
-                    </form>
-                    <form method="POST" action="{{ url_for('auth.admin_revoke_admin', user_id=u[0]) }}" style="display:inline;">
-                        {{ csrf_field() }}
-                        <button type="submit" class="btn-sm">Revoke Admin</button>
-                    </form>
-                    <form method="POST" action="{{ url_for('auth.admin_deactivate_user', user_id=u[0]) }}" style="display:inline;">
-                        {{ csrf_field() }}
-                        <button type="submit" class="btn-sm">Deactivate</button>
-                    </form>
+                    {% if u[3] %}
+                        <span class="lp-pill posted">Active</span>
+                    {% else %}
+                        <span class="lp-pill draft">Inactive</span>
+                    {% endif %}
                 </td>
+                <td>
+                    {% if u[4] %}
+                        <span class="lp-pill posted">Yes</span>
+                    {% else %}
+                        <span class="lp-pill draft">No</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div style="display: flex; gap: 6px;">
+                        {% if not u[4] %}
+                        <form method="POST" action="{{ url_for('auth.admin_grant_admin', user_id=u[0]) }}" style="display:inline;">
+                            {{ csrf_field() }}
+                            <button type="submit" class="lp-btn sm primary">Grant Admin</button>
+                        </form>
+                        {% else %}
+                        <form method="POST" action="{{ url_for('auth.admin_revoke_admin', user_id=u[0]) }}" style="display:inline;">
+                            {{ csrf_field() }}
+                            <button type="submit" class="lp-btn sm">Revoke Admin</button>
+                        </form>
+                        {% endif %}
+                        <form method="POST" action="{{ url_for('auth.admin_deactivate_user', user_id=u[0]) }}" style="display:inline;" onsubmit="return confirm('Toggle user active state?');">
+                            {{ csrf_field() }}
+                            <button type="submit" class="lp-btn sm">{% if u[3] %}Deactivate{% else %}Activate{% endif %}</button>
+                        </form>
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" style="text-align: center; color: var(--lp-text-muted); padding: 30px;">No platform users found.</td>
             </tr>
             {% endfor %}
         </tbody>

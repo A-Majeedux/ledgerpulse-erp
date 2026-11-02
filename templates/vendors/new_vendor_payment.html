@@ -10,6 +10,7 @@
   {% endif %}
 
   <form method="POST">
+    {{ csrf_field() }}
     <label style="font-size: 13px; font-weight: 600;">Vendor</label>
     <select name="vendor_id" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
       <option value="">Select vendor…</option>

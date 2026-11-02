@@ -27,7 +27,7 @@ USAGE (from any future segment, e.g. vendors/services.py):
         auto_post=True,
     )
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from core.money import to_decimal, money_round
 
 
@@ -75,7 +75,7 @@ def create_journal_entry(cursor, organization_id, reference, accounting_date,
         )
 
     status = "Posted" if auto_post else "Draft"
-    posted_at = datetime.utcnow() if auto_post else None
+    posted_at = datetime.now(timezone.utc) if auto_post else None
 
     cursor.execute("""
         INSERT INTO journal_headers
@@ -130,4 +130,4 @@ def post_journal_entry(cursor, journal_header_id):
         UPDATE journal_headers
         SET status = 'Posted', posted_at = %s
         WHERE journal_header_id = %s
-    """, (datetime.utcnow(), journal_header_id))
+    """, (datetime.now(timezone.utc), journal_header_id))

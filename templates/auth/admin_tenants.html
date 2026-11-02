@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Tenant Health Monitoring{% endblock %}
+{% block active_nav %}admin_tenants{% endblock %}
+{% block content %}
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Tenant Health & Subscriptions</h1>
+    <p class="lp-page-subtitle">Monitor organization subscription lifecycles, user counts, and status.</p>
+  </div>
+  <a href="{{ url_for('auth.admin_dashboard') }}" class="lp-btn secondary sm">Back to Dashboard</a>
+</div>
+
+<!-- Search and Filter Form -->
+<form method="GET" class="lp-form-section" style="padding: 16px 20px; display: flex; gap: 12px; margin-bottom: 20px; align-items: center; flex-wrap: wrap;">
+  <input type="text" name="search" value="{{ search }}" class="form-control" placeholder="Search by organization name or NTN..." style="width: 300px;">
+  
+  <select name="status" class="form-select" style="width: auto;">
+    <option value="ALL" {% if status_filter == 'ALL' %}selected{% endif %}>All Statuses</option>
+    <option value="ACTIVE" {% if status_filter == 'ACTIVE' %}selected{% endif %}>ACTIVE</option>
+    <option value="TRIAL" {% if status_filter == 'TRIAL' %}selected{% endif %}>TRIAL</option>
+    <option value="GRACE_PERIOD" {% if status_filter == 'GRACE_PERIOD' %}selected{% endif %}>GRACE_PERIOD</option>
+    <option value="SUSPENDED" {% if status_filter == 'SUSPENDED' %}selected{% endif %}>SUSPENDED</option>
+    <option value="EXPIRED" {% if status_filter == 'EXPIRED' %}selected{% endif %}>EXPIRED</option>
+  </select>
+
+  <button type="submit" class="lp-btn primary sm">Filter</button>
+  {% if search or status_filter != 'ALL' %}
+  <a href="{{ url_for('auth.admin_tenants') }}" class="lp-btn secondary sm">Reset</a>
+  {% endif %}
+</form>
+
+<div class="lp-table-wrapper">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Organization Name</th>
+        <th>Currency</th>
+        <th class="amount">Users</th>
+        <th>Plan</th>
+        <th>Subscription Status</th>
+        <th>Expiry Date</th>
+        <th>Created At</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for t in tenants %}
+      <tr>
+        <td>{{ t[0] }}</td>
+        <td style="font-weight: 600;">{{ t[1] }}</td>
+        <td>{{ t[2] }}</td>
+        <td class="amount">{{ t[3] }}</td>
+        <td>{{ t[6] or 'No Plan' }}</td>
+        <td>
+          {% set st = t[4] or 'TRIAL' %}
+          <span class="lp-pill {% if st == 'ACTIVE' %}posted{% elif st == 'TRIAL' %}pending{% elif st == 'GRACE_PERIOD' %}pending{% else %}overdue{% endif %}">
+            {{ st }}
+          </span>
+        </td>
+        <td>{{ t[5] or '—' }}</td>
+        <td style="font-size: 12px; color: var(--lp-text-muted);">{{ t[3] }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="8">
+          <div class="lp-empty-state">No organizations found matching criteria.</div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

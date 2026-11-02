@@ -83,3 +83,27 @@ def ensure_schema(cursor):
                         (organization_id, code, name, account_type, allow_reconciliation)
                     VALUES (%s, %s, %s, %s, %s)
                 """, (org_id, code, name, account_type, reconcilable))
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bank_transfers (
+            bank_transfer_id SERIAL PRIMARY KEY,
+            organization_id INTEGER NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
+            transfer_date DATE NOT NULL,
+            currency VARCHAR(10) DEFAULT 'PKR',
+            amount NUMERIC(14, 2) NOT NULL,
+            source_account_id INTEGER NOT NULL REFERENCES chart_of_accounts(account_id),
+            destination_account_id INTEGER NOT NULL REFERENCES chart_of_accounts(account_id),
+            memo TEXT,
+            journal_header_id INTEGER REFERENCES journal_headers(journal_header_id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_dashboard_preferences (
+            user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+            organization_id INTEGER REFERENCES organizations(organization_id) ON DELETE CASCADE,
+            layout_data TEXT,
+            PRIMARY KEY (user_id, organization_id)
+        )
+    """)

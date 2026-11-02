@@ -97,7 +97,19 @@ def security_before_request():
     if user_count == 0:
         return redirect(url_for("auth.setup"))
 
-    if not session.get("user_id"):
+    user_id = session.get("user_id")
+    if not user_id:
+        return redirect(url_for("auth.login"))
+
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT is_active FROM users WHERE user_id = %s", (user_id,))
+    user_row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not user_row or not user_row[0]:
+        session.clear()
         return redirect(url_for("auth.login"))
 
     # 3. Subscription & Grace Period Enforcement

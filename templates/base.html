@@ -2,54 +2,156 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>{% block title %}LedgerPulse{% endblock %} — LedgerPulse</title>
+  <title>{% block title %}Dashboard{% endblock %} — ZYRO ERP</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='tokens.css') }}">
 </head>
 <body>
-  {% block active_nav %}{% endblock %}
-  <div class="lp-shell">
-    <nav class="lp-sidebar">
-      <div class="lp-sidebar-brand"><span class="lp-dot"></span> LedgerPulse</div>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'dashboard' }}" href="{{ url_for('dashboard.home') }}">Dashboard</a>
-      
-      <div class="lp-nav-section-title">Sales</div>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'invoices' }}" href="{{ url_for('sales.sales_invoices_list') }}">Sales Invoices</a>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'products' }}" href="{{ url_for('sales.products_list') }}">Products</a>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'customers' }}" href="{{ url_for('customers.customers_list') }}">Customers</a>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'customer_receipts' }}" href="{{ url_for('customers.customer_receipts_list') }}">Customer Receipts</a>
-      
-      <div class="lp-nav-section-title">Purchases</div>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'vendors' }}" href="{{ url_for('vendors.vendors_list') }}">Vendors</a>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'vendor_bills' }}" href="{{ url_for('vendors.vendor_bills_list') }}">Vendor Bills</a>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'vendor_payments' }}" href="{{ url_for('vendors.vendor_payments_list') }}">Vendor Payments</a>
-      
-      <div class="lp-nav-section-title">Accounting</div>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'chart' }}" href="{{ url_for('accounting.chart_of_accounts_list') }}">Chart of Accounts</a>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'journals' }}" href="{{ url_for('accounting.journal_entries_list') }}">Journal Entries</a>
-      <a class="lp-nav-item" href="#">Banking <span class="lp-soon">soon</span></a>
-      <a class="lp-nav-item" href="#">Reports <span class="lp-soon">soon</span></a>
-      
-      <div class="lp-nav-section-title">Setup</div>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'organizations' }}" href="{{ url_for('organizations.manage_organizations') }}">Organizations</a>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'taxrates' }}" href="{{ url_for('wht.tax_rates_list') }}">WHT Rates</a>
-      <a class="lp-nav-item {{ 'active' if self.active_nav() == 'salestax' }}" href="{{ url_for('sales.sales_tax_rates_list') }}">Sales Tax Rates</a>
-    </nav>
-    <div class="lp-main">
-      <div class="lp-topbar">
-        <form class="lp-org-switcher" method="POST" onsubmit="this.action = '/organizations/switch/' + this.org_id.value; return true;">
-          <select name="org_id" onchange="this.form.requestSubmit()">
-            {% for org in organizations %}
-              <option value="{{ org[0] }}" {{ 'selected' if org[0] == active_organization_id }}>{{ org[1] }}</option>
-            {% endfor %}
-          </select>
-        </form>
-      </div>
-      <div class="lp-content">
-        {% block content %}{% endblock %}
-      </div>
+  <!-- Fixed Animated ZYRO Infinity Watermark Background -->
+  <div class="zyro-bg-watermark" aria-hidden="true">
+    <div class="zyro-watermark-logo">
+      <svg width="520" height="520" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 12C9.5 8.5 6.5 8.5 4.5 10.5C2.5 12.5 2.5 15.5 4.5 17.5C6.5 19.5 9.5 19.5 12 15C14.5 19.5 17.5 19.5 19.5 17.5C21.5 15.5 21.5 12.5 19.5 10.5C17.5 8.5 14.5 8.5 12 12Z" stroke="url(#zyro-watermark-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <defs>
+          <linearGradient id="zyro-watermark-grad" x1="3" y1="12" x2="21" y2="12" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#20B8A9"/>
+            <stop offset="1" stop-color="#A5F3E8"/>
+          </linearGradient>
+        </defs>
+      </svg>
     </div>
   </div>
+
+  <div class="lp-page-wrapper" style="position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh;">
+    <!-- Top Navigation Bar -->
+    <header class="lp-topnav">
+    <div class="lp-topnav-brand">
+      <a href="{{ url_for('dashboard.home') }}" style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--zyro-deep-navy);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 12C9.5 8.5 6.5 8.5 4.5 10.5C2.5 12.5 2.5 15.5 4.5 17.5C6.5 19.5 9.5 19.5 12 15C14.5 19.5 17.5 19.5 19.5 17.5C21.5 15.5 21.5 12.5 19.5 10.5C17.5 8.5 14.5 8.5 12 12Z" stroke="url(#zyro-base-grad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="zyro-base-grad" x1="3" y1="12" x2="21" y2="12" gradientUnits="userSpaceOnUse">
+              <stop stop-color="#20B8A9"/>
+              <stop offset="1" stop-color="#A5F3E8"/>
+            </linearGradient>
+          </defs>
+        </svg>
+        <span style="font-weight: 800; letter-spacing: -0.02em; font-size: 18px;">ZYRO</span>
+      </a>
+    </div>
+
+    <nav class="lp-topnav-nav">
+      <a class="lp-topnav-item {{ 'active' if active_nav() == 'dashboard' }}" href="{{ url_for('dashboard.home') }}">Dashboard</a>
+
+      <!-- Sales Dropdown -->
+      <div class="lp-dropdown">
+        <button type="button" class="lp-dropdown-btn {{ 'active' if active_nav() in ['invoices', 'products', 'customers', 'customer_receipts', 'salestax'] }}">
+          Sales ▾
+        </button>
+        <div class="lp-dropdown-menu">
+          <a href="{{ url_for('sales.sales_invoices_list') }}">Sales Invoices</a>
+          <a href="{{ url_for('sales.products_list') }}">Products</a>
+          <a href="{{ url_for('customers.customers_list') }}">Customers</a>
+          <a href="{{ url_for('customers.customer_receipts_list') }}">Customer Receipts</a>
+          <a href="{{ url_for('sales.sales_tax_rates_list') }}">Sales Tax Rates</a>
+        </div>
+      </div>
+
+      <!-- Purchases Dropdown -->
+      <div class="lp-dropdown">
+        <button type="button" class="lp-dropdown-btn {{ 'active' if active_nav() in ['vendors', 'vendor_bills', 'vendor_payments', 'taxrates'] }}">
+          Purchases ▾
+        </button>
+        <div class="lp-dropdown-menu">
+          <a href="{{ url_for('vendors.vendors_list') }}">Vendors</a>
+          <a href="{{ url_for('vendors.vendor_bills_list') }}">Vendor Bills</a>
+          <a href="{{ url_for('vendors.vendor_credit_notes_list') }}">Vendor Credit Notes</a>
+          <a href="{{ url_for('vendors.vendor_payments_list') }}">Vendor Payments</a>
+          <a href="{{ url_for('vendors.batch_vendor_payments_list') }}">Batch Vendor Payments</a>
+          <a href="{{ url_for('vendors.own_cheques_report') }}">Own Cheques Report</a>
+          <a href="{{ url_for('vendors.vendor_ledger') }}">Vendor Partner Ledger</a>
+          <a href="{{ url_for('vendors.vendor_aging') }}">Vendor Aging Report</a>
+          <a href="{{ url_for('wht.tax_rates_list') }}">WHT Rates</a>
+        </div>
+      </div>
+
+      <!-- Accounting Dropdown -->
+      <div class="lp-dropdown">
+        <button type="button" class="lp-dropdown-btn {{ 'active' if active_nav() in ['chart', 'journals'] }}">
+          Accounting ▾
+        </button>
+        <div class="lp-dropdown-menu">
+          <a href="{{ url_for('accounting.chart_of_accounts_list') }}">Chart of Accounts</a>
+          <a href="{{ url_for('accounting.journal_entries_list') }}">Journal Entries</a>
+          <a href="{{ url_for('accounting.new_journal_entry') }}">New Journal Entry (AI Assisted)</a>
+        </div>
+      </div>
+
+      <!-- Setup & Admin Dropdown -->
+      <div class="lp-dropdown">
+        <button type="button" class="lp-dropdown-btn {{ 'active' if active_nav() in ['organizations', 'subscriptions', 'admin_dashboard', 'admin_tenants', 'admin_plans', 'admin_users_list', 'admin_payments_list'] }}">
+          Setup &amp; Admin ▾
+        </button>
+        <div class="lp-dropdown-menu">
+          <a href="{{ url_for('organizations.manage_organizations') }}">Organizations</a>
+          <a href="{{ url_for('organizations.renew_subscription') }}">Subscription</a>
+          {% if active_organization_id %}
+            <div style="border-top: 1px solid var(--lp-border); margin: 4px 0;"></div>
+            <a href="{{ url_for('organizations.users_organization_shortcut' if False else 'organizations.users_list', organization_id=active_organization_id) }}">Business Users</a>
+            <a href="{{ url_for('organizations.roles_list', organization_id=active_organization_id) }}">Roles &amp; Permissions</a>
+          {% endif %}
+          {% if session.get('is_platform_admin') %}
+            <div style="border-top: 1px solid var(--lp-border); margin: 4px 0;"></div>
+            <a href="{{ url_for('auth.admin_clients_list') }}">Clients Management</a>
+            <a href="{{ url_for('auth.admin_dashboard') }}">Platform Dashboard</a>
+            <a href="{{ url_for('auth.admin_tenants') }}">Tenant Health</a>
+            <a href="{{ url_for('auth.admin_plans') }}">Subscription Plans</a>
+            <a href="{{ url_for('auth.admin_users_list') }}">Platform Users</a>
+            <a href="{{ url_for('auth.admin_payments_list') }}">Platform Payments</a>
+          {% endif %}
+        </div>
+      </div>
+    </nav>
+
+    <div class="lp-topnav-right">
+      <form class="lp-org-switcher" method="POST" onsubmit="this.action = '/organizations/switch/' + this.org_id.value; return true;">
+        {{ csrf_field() }}
+        <select name="org_id" onchange="this.form.requestSubmit()">
+          {% for org in organizations %}
+            <option value="{{ org[0] }}" {{ 'selected' if org[0] == active_organization_id }}>{{ org[1] }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {% if session.get('user_name') %}
+        <span class="lp-user-badge">{{ session.get('user_name') }}{% if session.get('is_platform_admin') %} (Admin){% endif %}</span>
+      {% endif %}
+      <a href="{{ url_for('auth.logout') }}" class="lp-btn secondary sm">Sign Out</a>
+    </div>
+  </header>
+
+    <div class="lp-content" style="flex: 1;">
+      {% if session.get('is_platform_admin') and active_organization_id and active_organization_id != zyro_org_id %}
+        <div style="background: #20B8A9; color: #142B3A; padding: 10px 20px; font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-radius: 6px;">
+          <span>⚠️ <strong>SUPPORT MODE:</strong> You are currently viewing a client business workspace. All actions apply to this client's books.</span>
+          <a href="{{ url_for('auth.admin_return_to_zyro') }}" class="lp-btn sm" style="background: #142B3A; color: #fff; text-decoration: none; padding: 6px 14px; border-radius: 4px;">Return to ZYRO Head Office</a>
+        </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </div>
+  </div>
+
+  <script>
+    document.addEventListener('mousemove', (e) => {
+      if (window.matchMedia('(pointer: coarse)').matches) return;
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      const card = e.target.closest('.lp-card');
+      if (card) {
+        const rect = card.getBoundingClientRect();
+        card.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
+        card.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
+      }
+    }, { passive: true });
+  </script>
 </body>
 </html>

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Bank Internal Transfers{% endblock %}
+{% block active_nav %}journals{% endblock %}
+{% block content %}
+<div class="lp-card" style="margin-bottom: 24px; padding: 24px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+    <div>
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: var(--zyro-deep-navy);">Bank Internal Transfers</h1>
+      <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--zyro-slate-blue);">Transfer funds between bank and cash accounts with automated ledger posting</p>
+    </div>
+    <div>
+      <a href="{{ url_for('accounting.new_bank_transfer') }}" class="lp-btn primary" style="background: var(--zyro-electric-teal); color: #fff; font-weight: 600;">+ New Bank Transfer</a>
+    </div>
+  </div>
+</div>
+
+<div class="lp-card" style="padding: 0; overflow: hidden;">
+  <div class="lp-table-wrapper" style="margin-bottom: 0; box-shadow: none; border: none;">
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Source Account</th>
+          <th>Destination Account</th>
+          <th>Memo</th>
+          <th class="amount">Amount</th>
+          <th style="text-align: right;">Journal Ref</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in transfers %}
+        <tr>
+          <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ t[1].strftime('%d %b %Y') if t[1] else '—' }}</td>
+          <td style="color: var(--zyro-slate-blue);">{{ t[5] }}</td>
+          <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ t[6] }}</td>
+          <td>{{ t[4] or '—' }}</td>
+          <td class="amount" style="font-weight: 600;">{{ t[3] }} {{ "%.2f"|format(t[2]) }}</td>
+          <td style="text-align: right;">
+            {% if t[7] %}
+              <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=t[7]) }}" class="lp-btn secondary sm">View #{{ t[7] }}</a>
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6">
+            <div class="lp-empty-state" style="padding: 40px; text-align: center; color: var(--zyro-slate-blue);">
+              No bank internal transfers recorded yet.
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

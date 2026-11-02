@@ -1,50 +1,72 @@
 {% extends "base.html" %}
 {% block title %}New Vendor Bill{% endblock %}
-{% block active_nav %}vendors{% endblock %}
+{% block active_nav %}vendor_bills{% endblock %}
 {% block content %}
-<div class="lp-card" style="max-width: 900px;">
-  <h2 style="margin-top:0;">New Vendor Bill</h2>
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">New Vendor Bill</h1>
+    <p class="lp-page-subtitle">Record a purchase bill from a vendor with expense accounts and line amounts.</p>
+  </div>
+  <a href="{{ url_for('vendors.vendor_bills_list') }}" class="lp-btn secondary sm">Back to Bills</a>
+</div>
 
-  {% if error %}
-    <div style="background: var(--lp-coral-bg); color: var(--lp-coral-text); padding: 12px; border-radius: 8px; margin-bottom: 16px;">{{ error }}</div>
-  {% endif %}
+{% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+{% endif %}
 
-  <form method="POST" id="bill-form">
-    <div style="display:flex; gap:16px; margin-bottom: 20px;">
-      <div style="flex:1;">
-        <label style="font-size: 13px; font-weight: 600;">Vendor</label>
-        <select name="vendor_id" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+<form method="POST" id="bill-form">
+  {{ csrf_field() }}
+  <div class="lp-form-section">
+    <div class="lp-form-grid">
+      <div class="lp-form-group">
+        <label class="form-label">Vendor</label>
+        <select name="vendor_id" class="form-select" required>
           <option value="">Select vendor…</option>
           {% for v in vendors %}<option value="{{ v[0] }}">{{ v[1] }} ({{ v[2] }})</option>{% endfor %}
         </select>
       </div>
-      <div style="flex:1;">
-        <label style="font-size: 13px; font-weight: 600;">Bill Date</label>
-        <input type="date" name="bill_date" value="{{ today }}" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      <div class="lp-form-group">
+        <label class="form-label">Bill Date</label>
+        <input type="date" name="bill_date" value="{{ today }}" class="form-control" required>
       </div>
-      <div style="flex:1;">
-        <label style="font-size: 13px; font-weight: 600;">Due Date</label>
-        <input type="date" name="due_date" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      <div class="lp-form-group">
+        <label class="form-label">Due Date</label>
+        <input type="date" name="due_date" class="form-control">
       </div>
-      <div style="flex:1;">
-        <label style="font-size: 13px; font-weight: 600;">Payment Terms</label>
-        <input type="text" name="payment_terms" placeholder="e.g. 30 days" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      <div class="lp-form-group">
+        <label class="form-label">Payment Terms</label>
+        <input type="text" name="payment_terms" placeholder="e.g. 30 days" class="form-control">
       </div>
     </div>
+  </div>
 
+  <div class="lp-table-wrapper" style="margin-bottom: 20px;">
     <table class="lp-table" id="lines-table">
-      <thead><tr><th style="width:30%;">Label</th><th style="width:30%;">Account</th><th style="width:12%;">Qty</th><th style="width:12%;">Rate</th><th style="width:14%;">Total</th><th></th></tr></thead>
+      <thead>
+        <tr>
+          <th style="width:30%;">Label</th>
+          <th style="width:30%;">Account</th>
+          <th style="width:12%;" class="amount">Qty</th>
+          <th style="width:12%;" class="amount">Rate ({{ active_currency|default('PKR') }})</th>
+          <th style="width:14%;" class="amount">Total</th>
+          <th style="width:40px;"></th>
+        </tr>
+      </thead>
       <tbody id="lines-body"></tbody>
     </table>
-    <button type="button" onclick="addLine()" class="lp-btn" style="margin-top:12px;">+ Add line</button>
+  </div>
 
-    <div style="display:flex; justify-content:flex-end; margin-top:16px; padding-top:12px; border-top:1px solid var(--lp-border);">
-      <div><strong>Bill total:</strong> <span id="grand-total">0.00</span></div>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <button type="button" onclick="addLine()" class="lp-btn secondary sm">+ Add line</button>
+    <div style="background: var(--lp-white); padding: 12px 20px; border-radius: var(--lp-radius-md); border: 1px solid var(--lp-border); font-size: 14px;">
+      Bill Total: <strong id="grand-total" style="color: var(--lp-teal); font-size: 16px;">0.00</strong>
     </div>
+  </div>
 
-    <button type="submit" class="lp-btn primary" style="margin-top: 16px;">Save Draft</button>
-  </form>
-</div>
+  <div>
+    <button type="submit" class="lp-btn primary">Save Draft Bill</button>
+  </div>
+</form>
 
 <script>
 const ACCOUNTS = [{% for a in accounts %}{ id: {{ a[0] }}, label: "{{ a[1] }} - {{ a[2] }}" },{% endfor %}];
@@ -70,12 +92,12 @@ function addLine() {
   const tbody = document.getElementById('lines-body');
   const row = document.createElement('tr');
   row.innerHTML = `
-    <td><input type="text" name="label[]"></td>
-    <td><select name="account_id[]">${accountOptions()}</select></td>
-    <td><input type="number" step="0.01" name="quantity[]" value="1" oninput="recalcRow(this.closest('tr'))"></td>
-    <td><input type="number" step="0.01" name="rate[]" value="0" oninput="recalcRow(this.closest('tr'))"></td>
-    <td><input type="number" step="0.01" name="total[]" value="0" oninput="recalcGrandTotal()"></td>
-    <td><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotal();" class="lp-btn">×</button></td>
+    <td><input type="text" name="label[]" class="form-control" placeholder="Description"></td>
+    <td><select name="account_id[]" class="form-select" required>${accountOptions()}</select></td>
+    <td><input type="number" step="0.01" name="quantity[]" value="1" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
+    <td><input type="number" step="0.01" name="rate[]" value="0" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
+    <td><input type="number" step="0.01" name="total[]" value="0" class="form-control" style="text-align:right;" oninput="recalcGrandTotal()"></td>
+    <td><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotal();" class="lp-btn danger sm" title="Remove line">✕</button></td>
   `;
   tbody.appendChild(row);
 }

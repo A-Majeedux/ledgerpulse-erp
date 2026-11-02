@@ -5,6 +5,7 @@
 <div class="lp-card" style="max-width: 480px;">
   <h2 style="margin-top:0;">New Account</h2>
   <form method="POST">
+    {{ csrf_field() }}
     <label style="font-size: 13px; font-weight: 600;">Code</label>
     <input type="text" name="code" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
 

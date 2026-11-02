@@ -2,21 +2,39 @@
 {% block title %}Customers{% endblock %}
 {% block active_nav %}customers{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Customers</h2>
-  <a href="{{ url_for('customers.new_customer') }}" class="lp-btn primary">+ New Customer</a>
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Customers</h1>
+    <p class="lp-page-subtitle">Customer directory for sales invoicing, receipts, and receivables.</p>
+  </div>
+  <a href="{{ url_for('customers.new_customer') }}" class="lp-btn primary sm">+ New Customer</a>
 </div>
-<div class="lp-card">
+
+<div class="lp-table-wrapper">
   <table class="lp-table">
-    <thead><tr><th>Name</th><th>Nature of Supply</th><th>NTN</th><th>STRN</th><th class="amount">Credit Limit</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Customer Name</th>
+        <th>Nature of Supply</th>
+        <th>NTN</th>
+        <th>STRN</th>
+        <th class="amount">Credit Limit</th>
+      </tr>
+    </thead>
     <tbody>
       {% for c in customers %}
       <tr>
-        <td>{{ c[1] }}</td>
+        <td style="font-weight: 600;">{{ c[1] }}</td>
         <td>{{ c[2] }}</td>
-        <td>{{ c[3] or '—' }}</td>
-        <td>{{ c[4] or '—' }}</td>
-        <td class="amount">{{ "%.2f"|format(c[5]) }}</td>
+        <td style="font-family: monospace; font-size: 13px;">{{ c[3] or '—' }}</td>
+        <td style="font-family: monospace; font-size: 13px;">{{ c[4] or '—' }}</td>
+        <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(c[5]) }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5">
+          <div class="lp-empty-state">No customers added yet. Click "+ New Customer" to create one.</div>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

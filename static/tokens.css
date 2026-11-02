@@ -1,29 +1,36 @@
 /*
-  tokens.css - LedgerPulse design system
+  tokens.css - ZYRO design system
 
-  OFFICIAL LOCKED COLORS:
-  - Soft Sage: #DDEFE8
-  - Muted Teal: #278C83
-  - Warm Ivory: #FAFAF6
-  - Dusty Blue: #8298B2
-  - Deep Charcoal: #243448
+  ZYRO BRAND TOKENS:
+  - Deep Navy: #142B3A
+  - Electric Teal: #20B8A9
+  - Aqua: #A5F3E8
+  - Clean Ivory: #F7FAF9
+  - Slate Blue: #60758A
 */
 
 :root {
-  /* Official Locked Palette */
+  /* ZYRO Brand Palette */
+  --zyro-deep-navy: #142B3A;
+  --zyro-dashboard-navy: #1B3547;
+  --zyro-electric-teal: #20B8A9;
+  --zyro-aqua: #A5F3E8;
+  --zyro-clean-ivory: #F7FAF9;
+  --zyro-slate-blue: #60758A;
+
   --lp-soft-sage: #DDEFE8;
-  --lp-muted-teal: #278C83;
-  --lp-warm-ivory: #FAFAF6;
-  --lp-dusty-blue: #8298B2;
-  --lp-deep-charcoal: #243448;
+  --lp-muted-teal: var(--zyro-electric-teal);
+  --lp-warm-ivory: var(--zyro-clean-ivory);
+  --lp-dusty-blue: var(--zyro-slate-blue);
+  --lp-deep-charcoal: var(--zyro-deep-navy);
 
   /* Aliases / Semantic mapping */
-  --lp-teal: var(--lp-muted-teal);
-  --lp-navy: var(--lp-deep-charcoal);
-  --lp-canvas: var(--lp-warm-ivory);
+  --lp-teal: var(--zyro-electric-teal);
+  --lp-navy: var(--zyro-deep-navy);
+  --lp-canvas: var(--zyro-clean-ivory);
   --lp-white: #ffffff;
-  --lp-text: var(--lp-deep-charcoal);
-  --lp-text-muted: var(--lp-dusty-blue);
+  --lp-text: var(--zyro-deep-navy);
+  --lp-text-muted: var(--zyro-slate-blue);
   --lp-border: #d4dedc;
 
   /* Status colors (soft background + strong text, for pills) */
@@ -115,6 +122,51 @@ a:hover { text-decoration: underline; }
 .lp-nav-item:hover { background: rgba(130, 152, 178, 0.15); color: var(--lp-white); text-decoration: none; }
 .lp-nav-item.active { background: var(--lp-muted-teal); color: var(--lp-white); font-weight: 600; }
 .lp-nav-item .lp-soon { float: right; font-size: 10px; font-weight: 600; text-transform: uppercase; background: rgba(255,255,255,0.15); padding: 1px 6px; border-radius: 4px; opacity: 0.8; }
+
+/* Accordion Sidebar Groups */
+.lp-nav-group { margin-bottom: 2px; }
+.lp-nav-group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #cdd6df;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: var(--lp-space-3);
+  border-radius: var(--lp-radius-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.lp-nav-group-header:hover { background: rgba(130, 152, 178, 0.15); color: var(--lp-white); }
+.lp-nav-group .lp-chevron {
+  transition: transform 0.2s ease;
+  opacity: 0.7;
+}
+.lp-nav-group.open .lp-chevron {
+  transform: rotate(180deg);
+}
+.lp-submenu {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  opacity: 0;
+  padding-left: var(--lp-space-3);
+}
+.lp-nav-group.open .lp-submenu {
+  max-height: 400px;
+  opacity: 1;
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+.lp-submenu .lp-nav-item {
+  font-size: 13px;
+  padding: 8px 12px;
+}
 
 .lp-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
@@ -618,3 +670,313 @@ a:hover { text-decoration: underline; }
   .lp-login-left { flex: none; padding: 40px 24px; }
   .lp-login-right { flex: none; padding: 40px 24px; }
 }
+
+/* ---------- Professional ERP Typography & Layout Enhancements ---------- */
+
+.lp-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--lp-space-6);
+  flex-wrap: wrap;
+  gap: var(--lp-space-4);
+}
+
+.lp-page-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--lp-deep-charcoal);
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.lp-page-subtitle {
+  font-size: 14px;
+  color: var(--lp-text-muted);
+  margin: var(--lp-space-1) 0 0 0;
+  line-height: 1.4;
+}
+
+.lp-form-section {
+  background: var(--lp-white);
+  border-radius: var(--lp-radius-md);
+  border: 1px solid var(--lp-border);
+  box-shadow: var(--lp-shadow-panel);
+  padding: var(--lp-space-6);
+  margin-bottom: var(--lp-space-6);
+}
+
+.lp-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--lp-space-4);
+  margin-bottom: var(--lp-space-4);
+}
+
+.lp-form-group {
+  margin-bottom: var(--lp-space-4);
+}
+
+.lp-form-group label, .form-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lp-deep-charcoal);
+  margin-bottom: var(--lp-space-2);
+}
+
+.lp-empty-state {
+  text-align: center;
+  padding: 48px var(--lp-space-6);
+  color: var(--lp-text-muted);
+  font-size: 14px;
+}
+
+.lp-btn.secondary {
+  background: #eef3f2;
+  border-color: #cbdad7;
+  color: var(--lp-deep-charcoal);
+}
+.lp-btn.secondary:hover {
+  background: #e2ebe9;
+  border-color: var(--lp-muted-teal);
+  color: var(--lp-deep-charcoal);
+}
+
+.lp-btn.danger {
+  background: var(--lp-coral-bg);
+  border-color: #f2c7c2;
+  color: var(--lp-coral-text);
+}
+.lp-btn.danger:hover {
+  background: #f8d7d3;
+  border-color: #e6a8a2;
+  color: var(--lp-coral-text);
+}
+
+.lp-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ---------- Top Navigation Bar ---------- */
+.lp-topnav {
+  background: var(--lp-white);
+  color: var(--zyro-deep-navy);
+  padding: 0 var(--lp-space-6);
+  display: flex;
+  align-items: center;
+  height: 64px;
+  border-bottom: 1px solid var(--lp-border);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  gap: var(--lp-space-6);
+  box-shadow: 0 1px 3px rgba(18, 58, 89, 0.04);
+}
+.lp-topnav-brand a {
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--zyro-deep-navy);
+  text-decoration: none;
+}
+.lp-topnav-brand .lp-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--zyro-electric-teal);
+}
+.lp-topnav-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--lp-space-2);
+  flex: 1;
+}
+.lp-topnav-item {
+  color: var(--zyro-deep-navy);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: var(--lp-radius-sm);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.lp-topnav-item:hover, .lp-topnav-item.active {
+  background: #EAF8F8;
+  color: var(--zyro-electric-teal);
+  text-decoration: none;
+}
+.lp-topnav-item.active {
+  background: var(--zyro-electric-teal);
+  color: var(--lp-white);
+  font-weight: 600;
+}
+
+/* Topnav Dropdowns */
+.lp-dropdown {
+  position: relative;
+  display: inline-block;
+}
+.lp-dropdown-btn {
+  background: transparent;
+  border: none;
+  color: var(--zyro-deep-navy);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: var(--lp-radius-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.lp-dropdown-btn:hover, .lp-dropdown-btn.active {
+  background: rgba(130, 152, 178, 0.2);
+  color: var(--lp-white);
+}
+.lp-dropdown-btn.active {
+  background: var(--lp-muted-teal);
+  font-weight: 600;
+  color: var(--lp-white);
+}
+.lp-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  background: var(--lp-white);
+  min-width: 220px;
+  box-shadow: var(--lp-shadow-panel);
+  border-radius: var(--lp-radius-md);
+  border: 1px solid var(--lp-border);
+  padding: 6px;
+  z-index: 1010;
+}
+.lp-dropdown:hover .lp-dropdown-menu, .lp-dropdown-menu:hover {
+  display: block;
+}
+.lp-dropdown-menu a {
+  display: block;
+  padding: 8px 12px;
+  color: var(--lp-text);
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: 4px;
+  transition: background 0.1s ease;
+}
+.lp-dropdown-menu a:hover {
+  background: var(--lp-canvas);
+  color: var(--lp-teal);
+  text-decoration: none;
+}
+
+.lp-topnav-right {
+  display: flex;
+  align-items: center;
+  gap: var(--lp-space-3);
+  margin-left: auto;
+}
+.lp-user-badge {
+  font-size: 13px;
+  color: var(--lp-dusty-blue);
+  font-weight: 500;
+}
+
+/* ---------- A. Fixed Animated ZYRO Infinity Background Watermark ---------- */
+
+.zyro-bg-watermark {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.10;
+  overflow: hidden;
+}
+
+.zyro-watermark-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: zyro-infinity-loop 20s ease-in-out infinite;
+}
+
+.zyro-bg-watermark svg {
+  width: 520px;
+  height: 520px;
+  max-width: 90vw;
+  max-height: 90vh;
+}
+
+@keyframes zyro-infinity-loop {
+  0% { transform: translate(0px, 0px) scale(1) rotate(0deg); }
+  12.5% { transform: translate(45px, -25px) scale(1.04) rotate(2deg); }
+  25% { transform: translate(80px, 0px) scale(1.06) rotate(4deg); }
+  37.5% { transform: translate(45px, 25px) scale(1.04) rotate(2deg); }
+  50% { transform: translate(0px, 0px) scale(1) rotate(0deg); }
+  62.5% { transform: translate(-45px, -25px) scale(0.96) rotate(-2deg); }
+  75% { transform: translate(-80px, 0px) scale(0.94) rotate(-4deg); }
+  87.5% { transform: translate(-45px, 25px) scale(0.96) rotate(-2deg); }
+  100% { transform: translate(0px, 0px) scale(1) rotate(0deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zyro-watermark-logo {
+    animation: none;
+  }
+}
+
+/* ---------- B. Smooth Cursor-Responsive Dashboard Cards ---------- */
+
+.lp-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.lp-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(
+    circle 220px at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(32, 184, 169, 0.09),
+    transparent 80%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.lp-card:hover::before {
+  opacity: 1;
+}
+
+.lp-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(20, 43, 58, 0.1);
+  border-color: rgba(32, 184, 169, 0.35);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-card {
+    transition: none !important;
+    transform: none !important;
+  }
+  .lp-card:hover {
+    transform: none !important;
+  }
+}
+
+

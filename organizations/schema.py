@@ -10,6 +10,18 @@ completely separate companies with no data crossing between them.
 
 def ensure_schema(cursor):
     cursor.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            client_id SERIAL PRIMARY KEY,
+            name VARCHAR(150) NOT NULL,
+            email VARCHAR(255),
+            phone VARCHAR(50),
+            address TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
+    cursor.execute("""
         CREATE TABLE IF NOT EXISTS organizations (
             organization_id SERIAL PRIMARY KEY,
             name VARCHAR(150) NOT NULL,
@@ -27,13 +39,18 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS warehouse_address TEXT")
     cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS logo_path VARCHAR(255)")
     cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS fiscal_year_start_month INTEGER DEFAULT 7")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(client_id) ON DELETE SET NULL")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_zyro BOOLEAN DEFAULT FALSE")
 
-    # If no organization exists yet (very first run), create one default
-    # one so the app is usable immediately instead of showing an empty
-    # picker screen.
-    cursor.execute("SELECT COUNT(*) FROM organizations")
-    if cursor.fetchone()[0] == 0:
-        cursor.execute(
-            "INSERT INTO organizations (name) VALUES (%s)",
-            ("My Organization",)
-        )
+    # Ensure ZYRO organization exists
+    cursor.execute("SELECT organization_id FROM organizations WHERE is_zyro = TRUE LIMIT 1")
+    if not cursor.fetchone():
+        cursor.execute("SELECT organization_id FROM organizations ORDER BY organization_id LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("UPDATE organizations SET is_zyro = TRUE WHERE organization_id = %s", (row[0],))
+        else:
+            cursor.execute(
+                "INSERT INTO organizations (name, is_zyro) VALUES (%s, TRUE)",
+                ("ZYRO Head Office",)
+            )

@@ -1,8 +1,21 @@
 import os
-from flask import Blueprint, render_template, request, redirect, url_for, current_app, abort
+from flask import Blueprint, render_template, request, redirect, url_for, current_app, abort, flash
 from werkzeug.utils import secure_filename
 from core.db import get_conn
 from core.context import current_organization_id, set_current_organization, require_organization
+from auth.services import (
+    require_permission,
+    get_organization_users,
+    add_organization_user,
+    update_user_role,
+    toggle_user_active,
+    get_organization_roles,
+    save_organization_role,
+    current_user_id,
+    require_platform_admin,
+    is_platform_admin,
+    user_belongs_to_organization,
+)
 
 bp = Blueprint("organizations", __name__, url_prefix="/organizations")
 
@@ -58,11 +71,10 @@ def switch_organization(organization_id):
     """
     Called from the organization-switcher dropdown in the top bar (see
     base.html) to change which company's books the user is currently
-    looking at. Verifies user membership before switching.
+    looking at. Verifies user membership or platform admin before switching.
     """
-    from auth.services import user_belongs_to_organization, current_user_id
     uid = current_user_id()
-    if not user_belongs_to_organization(uid, organization_id):
+    if not is_platform_admin() and not user_belongs_to_organization(uid, organization_id):
         abort(403, description="Access denied: You do not belong to this organization.")
 
     set_current_organization(organization_id)
@@ -70,6 +82,7 @@ def switch_organization(organization_id):
 
 
 @bp.route("/new", methods=["GET", "POST"])
+@require_platform_admin
 def new_organization():
     if request.method == "POST":
         logo_path = _save_logo(request.files.get("logo"))
@@ -94,6 +107,19 @@ def new_organization():
             int(request.form.get("fiscal_year_start_month", 7)),
         ))
         new_id = cursor.fetchone()[0]
+
+        from auth.services import current_user_id
+        uid = current_user_id()
+        if uid:
+            cursor.execute("SELECT role_id FROM roles WHERE name = 'Admin'")
+            role_row = cursor.fetchone()
+            role_id = role_row[0] if role_row else 1
+            cursor.execute("""
+                INSERT INTO organization_memberships (organization_id, user_id, role_id)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (organization_id, user_id) DO NOTHING
+            """, (new_id, uid, role_id))
+
         conn.commit()
         cursor.close()
         conn.close()
@@ -213,6 +239,195 @@ def renew_subscription():
     """, (org_id,))
     payments = cursor.fetchall()
 
+    cursor.execute("""
+        SELECT payment_id, amount, payment_date, status, payment_method, reference_number, notes, created_at
+        FROM organization_payments
+        WHERE organization_id = %s
+        ORDER BY payment_id DESC
+    """, (org_id,))
+    payments = cursor.fetchall()
+
     cursor.close()
     conn.close()
     return render_template("organizations/renew.html", sub=sub, plans=plans, payments=payments)
+
+
+@bp.route("/<int:organization_id>/users", methods=["GET"])
+@require_organization
+@require_permission("users.manage")
+def users_list(organization_id):
+    if organization_id != current_organization_id():
+        abort(403)
+    users = get_organization_users(organization_id)
+    roles = get_organization_roles(organization_id)
+    return render_template("organizations/users_list.html", users=users, roles=roles, organization_id=organization_id)
+
+
+@bp.route("/<int:organization_id>/users/new", methods=["GET", "POST"])
+@require_organization
+@require_permission("users.manage")
+def new_user(organization_id):
+    if organization_id != current_organization_id():
+        abort(403)
+    roles = get_organization_roles(organization_id)
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        role_id = int(request.form.get("role_id", 0))
+
+        if not name or not email or not role_id:
+            flash("Name, email, and role are required.", "error")
+            return render_template("organizations/new_user.html", roles=roles, organization_id=organization_id)
+
+        try:
+            add_organization_user(
+                organization_id=organization_id,
+                name=name,
+                email=email,
+                password=password,
+                role_id=role_id,
+                actor_user_id=current_user_id()
+            )
+            flash("User added successfully to the organization.", "success")
+            return redirect(url_for("organizations.users_list", organization_id=organization_id))
+        except Exception as e:
+            flash(f"Error adding user: {e}", "error")
+
+    return render_template("organizations/new_user.html", roles=roles, organization_id=organization_id)
+
+
+@bp.route("/<int:organization_id>/users/<int:user_id>/role", methods=["POST"])
+@require_organization
+@require_permission("users.manage")
+def change_user_role(organization_id, user_id):
+    if organization_id != current_organization_id():
+        abort(403)
+    new_role_id = int(request.form.get("role_id", 0))
+    try:
+        update_user_role(
+            organization_id=organization_id,
+            target_user_id=user_id,
+            new_role_id=new_role_id,
+            actor_user_id=current_user_id()
+        )
+        flash("User role updated successfully.", "success")
+    except Exception as e:
+        flash(f"Error updating role: {e}", "error")
+    return redirect(url_for("organizations.users_list", organization_id=organization_id))
+
+
+@bp.route("/<int:organization_id>/users/<int:user_id>/toggle", methods=["POST"])
+@require_organization
+@require_permission("users.manage")
+def toggle_user(organization_id, user_id):
+    if organization_id != current_organization_id():
+        abort(403)
+    try:
+        toggle_user_active(
+            organization_id=organization_id,
+            target_user_id=user_id,
+            actor_user_id=current_user_id()
+        )
+        flash("User status toggled successfully.", "success")
+    except Exception as e:
+        flash(f"Error toggling user status: {e}", "error")
+    return redirect(url_for("organizations.users_list", organization_id=organization_id))
+
+
+@bp.route("/<int:organization_id>/roles", methods=["GET"])
+@require_organization
+@require_permission("users.manage")
+def roles_list(organization_id):
+    if organization_id != current_organization_id():
+        abort(403)
+    roles = get_organization_roles(organization_id)
+    return render_template("organizations/roles_list.html", roles=roles, organization_id=organization_id)
+
+
+@bp.route("/<int:organization_id>/roles/new", methods=["GET", "POST"])
+@require_organization
+@require_permission("users.manage")
+def new_role(organization_id):
+    if organization_id != current_organization_id():
+        abort(403)
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT permission_id, code, name, module FROM permissions ORDER BY module, code")
+    all_permissions = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "").strip()
+        permission_ids = request.form.getlist("permission_ids")
+
+        if not name:
+            flash("Role name is required.", "error")
+            return render_template("organizations/new_role.html", all_permissions=all_permissions, organization_id=organization_id, role=None, assigned_perm_ids=[])
+
+        try:
+            save_organization_role(
+                organization_id=organization_id,
+                role_id=None,
+                name=name,
+                description=description,
+                permission_ids=permission_ids,
+                actor_user_id=current_user_id()
+            )
+            flash("Custom role created successfully.", "success")
+            return redirect(url_for("organizations.roles_list", organization_id=organization_id))
+        except Exception as e:
+            flash(f"Error creating role: {e}", "error")
+
+    return render_template("organizations/new_role.html", all_permissions=all_permissions, organization_id=organization_id, role=None, assigned_perm_ids=[])
+
+
+@bp.route("/<int:organization_id>/roles/<int:role_id>/edit", methods=["GET", "POST"])
+@require_organization
+@require_permission("users.manage")
+def edit_role(organization_id, role_id):
+    if organization_id != current_organization_id():
+        abort(403)
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT role_id, name, description, organization_id FROM roles WHERE role_id = %s", (role_id,))
+    role = cursor.fetchone()
+    if not role or role[3] is None:
+        cursor.close()
+        conn.close()
+        abort(403, description="Cannot edit built-in system roles.")
+
+    cursor.execute("SELECT permission_id, code, name, module FROM permissions ORDER BY module, code")
+    all_permissions = cursor.fetchall()
+
+    cursor.execute("SELECT permission_id FROM role_permissions WHERE role_id = %s", (role_id,))
+    assigned_perm_ids = [row[0] for row in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        description = request.form.get("description", "").strip()
+        permission_ids = request.form.getlist("permission_ids")
+
+        if not name:
+            flash("Role name is required.", "error")
+            return render_template("organizations/new_role.html", all_permissions=all_permissions, organization_id=organization_id, role=role, assigned_perm_ids=assigned_perm_ids)
+
+        try:
+            save_organization_role(
+                organization_id=organization_id,
+                role_id=role_id,
+                name=name,
+                description=description,
+                permission_ids=permission_ids,
+                actor_user_id=current_user_id()
+            )
+            flash("Custom role updated successfully.", "success")
+            return redirect(url_for("organizations.roles_list", organization_id=organization_id))
+        except Exception as e:
+            flash(f"Error updating role: {e}", "error")
+
+    return render_template("organizations/new_role.html", all_permissions=all_permissions, organization_id=organization_id, role=role, assigned_perm_ids=assigned_perm_ids)

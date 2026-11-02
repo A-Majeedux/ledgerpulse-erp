@@ -2,39 +2,44 @@
 {% block title %}Sales Invoices{% endblock %}
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Sales Invoices</h2>
-  <a href="{{ url_for('sales.new_sales_invoice') }}" class="lp-btn primary">+ New Invoice</a>
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Sales Invoices</h1>
+    <p class="lp-page-subtitle">Manage customer invoices, sales tracking, and billing statuses.</p>
+  </div>
+  <a href="{{ url_for('sales.new_sales_invoice') }}" class="lp-btn primary sm">+ New Invoice</a>
 </div>
-<div class="lp-card">
+
+<div class="lp-table-wrapper">
   <table class="lp-table">
     <thead>
       <tr>
         <th>Customer</th>
-        <th>Invoice Date</th>
-        <th>Due Date</th>
+        <th style="width: 130px;">Invoice Date</th>
+        <th style="width: 130px;">Due Date</th>
         <th class="amount">Grand Total</th>
-        <th>Status</th>
+        <th style="width: 120px;">Status</th>
       </tr>
     </thead>
     <tbody>
       {% for inv in invoices %}
       <tr onclick="window.location='{{ url_for('sales.sales_invoice_detail', sales_invoice_id=inv[0]) }}'" style="cursor:pointer;">
         <td style="font-weight:600;">{{ inv[1] }}</td>
-        <td>{{ inv[2].strftime('%d %b %Y') }}</td>
+        <td>{{ inv[2].strftime('%d %b %Y') if inv[2] else '—' }}</td>
         <td>{{ inv[3].strftime('%d %b %Y') if inv[3] else '—' }}</td>
-        <td class="amount">{{ "%.2f"|format(inv[5]) }}</td>
+        <td class="amount">${{ "%.2f"|format(inv[5]) }}</td>
         <td>
           {% if inv[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
           {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
         </td>
       </tr>
-      {% endfor %}
-      {% if not invoices %}
+      {% else %}
       <tr>
-        <td colspan="5" style="text-align: center; color: var(--lp-text-muted); padding: 24px;">No invoices created yet. Click "+ New Invoice" to start.</td>
+        <td colspan="5">
+          <div class="lp-empty-state">No invoices created yet. Click "+ New Invoice" to start.</div>
+        </td>
       </tr>
-      {% endif %}
+      {% endfor %}
     </tbody>
   </table>
 </div>

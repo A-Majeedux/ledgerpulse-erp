@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Register New Client{% endblock %}
+{% block content %}
+<div style="max-width: 600px; margin: 40px auto; padding: 24px;" class="lp-card">
+  <a href="{{ url_for('auth.admin_clients') }}" style="font-size: 13px; color: var(--zyro-electric-teal); text-decoration: none; font-weight: 600;">← Back to Clients</a>
+  <h1 style="margin: 8px 0 20px 0; font-size: 24px; font-weight: 700; color: var(--zyro-deep-navy);">Register New Client Account</h1>
+  
+  <form method="POST">
+    {{ csrf_field() }}
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Client / Company Name *</label>
+      <input type="text" name="name" required style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+    </div>
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Email Address</label>
+      <input type="email" name="email" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+    </div>
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Phone Number</label>
+      <input type="text" name="phone" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+    </div>
+    <div style="margin-bottom: 24px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Billing / Physical Address</label>
+      <textarea name="address" rows="3" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;"></textarea>
+    </div>
+    <div style="display: flex; gap: 12px;">
+      <button type="submit" class="lp-btn primary" style="background: var(--zyro-electric-teal); color: #fff; font-weight: 600; padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer;">Register Client</button>
+      <a href="{{ url_for('auth.admin_clients') }}" class="lp-btn secondary" style="padding: 12px 24px; border-radius: 8px; text-decoration: none; color: var(--zyro-deep-navy); border: 1px solid var(--lp-border);">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

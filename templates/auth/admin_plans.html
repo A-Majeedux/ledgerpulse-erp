@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Subscription Plans Management{% endblock %}
+{% block active_nav %}admin_plans{% endblock %}
+{% block content %}
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Global Subscription Plans</h1>
+    <p class="lp-page-subtitle">Configure available subscription plans, pricing, and module entitlements.</p>
+  </div>
+  <div style="display: flex; gap: 12px;">
+    <a href="{{ url_for('auth.admin_new_plan') }}" class="lp-btn primary sm">Create New Plan</a>
+    <a href="{{ url_for('auth.admin_dashboard') }}" class="lp-btn secondary sm">Back to Dashboard</a>
+  </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert {{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="lp-table-wrapper">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Plan Name</th>
+        <th class="amount">Price / Cycle</th>
+        <th>Grace Period</th>
+        <th>Status</th>
+        <th class="amount">Active Subscribers</th>
+        <th>Included Modules</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in plans %}
+      <tr>
+        <td>
+          <strong style="font-size: 15px;">{{ p.name }}</strong>
+          {% if p.description %}
+          <div style="font-size: 12px; color: var(--lp-text-muted); margin-top: 2px;">{{ p.description }}</div>
+          {% endif %}
+        </td>
+        <td class="amount"><strong>{{ active_currency|default('PKR') }} {{ "%.2f"|format(p.price) }}</strong> / {{ p.billing_cycle }}</td>
+        <td>{{ p.grace_period_days }} days</td>
+        <td>
+          {% if p.is_active %}
+          <span class="lp-pill posted">Active</span>
+          {% else %}
+          <span class="lp-pill draft">Inactive</span>
+          {% endif %}
+        </td>
+        <td class="amount">{{ p.active_sub_count }} org(s)</td>
+        <td>
+          <div style="display: flex; flex-wrap: wrap; gap: 4px; max-width: 300px;">
+            {% for mod in p.features %}
+            <span style="background: #f3f4f6; color: #374151; font-size: 11px; padding: 2px 6px; border-radius: 4px; font-family: monospace;">{{ mod }}</span>
+            {% else %}
+            <span style="color: var(--lp-text-muted); font-size: 12px;">No modules</span>
+            {% endfor %}
+          </div>
+        </td>
+        <td>
+          <div style="display: flex; gap: 6px;">
+            <a href="{{ url_for('auth.admin_edit_plan', plan_id=p.plan_id) }}" class="lp-btn sm">Edit</a>
+            <form method="POST" action="{{ url_for('auth.admin_toggle_plan', plan_id=p.plan_id) }}" style="display: inline;">
+              {{ csrf_field() }}
+              <button type="submit" class="lp-btn sm">
+                {% if p.is_active %}Deactivate{% else %}Activate{% endif %}
+              </button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7">
+          <div class="lp-empty-state">No subscription plans defined.</div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

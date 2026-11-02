@@ -5,6 +5,7 @@
 <div class="lp-card" style="max-width: 420px;">
   <h2 style="margin-top:0;">New Sales Tax Rate</h2>
   <form method="POST">
+    {{ csrf_field() }}
     <label style="font-size: 13px; font-weight: 600;">Label</label>
     <input type="text" name="label" placeholder="e.g. Sales Tax 18%" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
 

@@ -2,23 +2,39 @@
 {% block title %}Chart of Accounts{% endblock %}
 {% block active_nav %}chart{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Chart of Accounts</h2>
-  <a href="{{ url_for('accounting.new_account') }}" class="lp-btn primary">+ New Account</a>
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Chart of Accounts</h1>
+    <p class="lp-page-subtitle">Master list of ledger accounts for organization financial posting.</p>
+  </div>
+  <a href="{{ url_for('accounting.new_account') }}" class="lp-btn primary sm">+ New Account</a>
 </div>
-<div class="lp-card">
+
+<div class="lp-table-wrapper">
   <table class="lp-table">
     <thead>
-      <tr><th>Code</th><th>Name</th><th>Type</th><th>Reconciliation</th><th>Status</th></tr>
+      <tr>
+        <th style="width: 120px;">Code</th>
+        <th>Account Name</th>
+        <th>Type</th>
+        <th>Reconciliation</th>
+        <th>Status</th>
+      </tr>
     </thead>
     <tbody>
       {% for acc in accounts %}
       <tr>
-        <td>{{ acc[1] }}</td>
-        <td>{{ acc[2] }}</td>
-        <td>{{ acc[3] }}</td>
-        <td>{% if acc[4] %}<span class="lp-pill posted">Allowed</span>{% else %}—{% endif %}</td>
+        <td style="font-family: monospace; font-weight: 600;">{{ acc[1] }}</td>
+        <td style="font-weight: 600;">{{ acc[2] }}</td>
+        <td><span class="lp-pill pending" style="font-size: 11px;">{{ acc[3] }}</span></td>
+        <td>{% if acc[4] %}<span class="lp-pill posted">Allowed</span>{% else %}<span class="lp-pill draft">No</span>{% endif %}</td>
         <td>{% if acc[5] %}<span class="lp-pill posted">Active</span>{% else %}<span class="lp-pill draft">Inactive</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5">
+          <div class="lp-empty-state">No accounts found in chart of accounts.</div>
+        </td>
       </tr>
       {% endfor %}
     </tbody>

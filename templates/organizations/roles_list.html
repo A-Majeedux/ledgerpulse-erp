@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Organization Roles & Permissions{% endblock %}
+{% block active_nav %}organizations{% endblock %}
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div>
+        <h2 style="margin: 0; font-size: 24px;">Roles & Permissions Management</h2>
+        <p style="color: var(--lp-text-muted); margin: 4px 0 0 0; font-size: 14px;">Manage custom organization roles and review access permissions.</p>
+    </div>
+    <div style="display: flex; gap: 12px;">
+        <a href="{{ url_for('organizations.new_role', organization_id=organization_id) }}" class="lp-btn primary sm">Create Custom Role</a>
+        <a href="{{ url_for('organizations.users_list', organization_id=organization_id) }}" class="lp-btn sm">Back to Users</a>
+    </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert {{ category }}" style="padding: 10px; margin-bottom: 16px; border-radius: 6px; background: {% if category == 'error' %}#fde8e8{% else %}#def7ec{% endif %}; color: {% if category == 'error' %}#9b1c1c{% else %}#03543f{% endif %};">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="lp-table-wrapper">
+    <table class="lp-table">
+        <thead>
+            <tr>
+                <th>Role Name</th>
+                <th>Scope / Type</th>
+                <th>Description</th>
+                <th class="amount">Assigned Members</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in roles %}
+            <tr>
+                <td style="font-weight: 600;">{{ r[1] }}</td>
+                <td>
+                    {% if r[3] is none %}
+                        <span class="lp-pill pending">Built-in System Role</span>
+                    {% else %}
+                        <span class="lp-pill posted">Custom Organization Role</span>
+                    {% endif %}
+                </td>
+                <td style="color: var(--lp-text-muted);">{{ r[2] or '—' }}</td>
+                <td class="amount">{{ r[4] }} user(s)</td>
+                <td>
+                    {% if r[3] is not none %}
+                        <a href="{{ url_for('organizations.edit_role', organization_id=organization_id, role_id=r[0]) }}" class="lp-btn sm">Edit Role</a>
+                    {% else %}
+                        <span style="color: var(--lp-text-muted); font-size: 12px;">Read-Only</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" style="text-align: center; color: var(--lp-text-muted); padding: 30px;">No roles defined.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
