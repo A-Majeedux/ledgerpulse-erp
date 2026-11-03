@@ -41,6 +41,11 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS fiscal_year_start_month INTEGER DEFAULT 7")
     cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(client_id) ON DELETE SET NULL")
     cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_zyro BOOLEAN DEFAULT FALSE")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS address TEXT")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS city VARCHAR(100)")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS country VARCHAR(100)")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS accent_colour VARCHAR(20) DEFAULT '#6b4fa3'")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS default_bill_terms TEXT")
 
     # Ensure ZYRO organization exists
     cursor.execute("SELECT organization_id FROM organizations WHERE is_zyro = TRUE LIMIT 1")

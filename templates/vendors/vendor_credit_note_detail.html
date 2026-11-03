@@ -5,14 +5,17 @@
 <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
   <div>
     <h2 style="margin:0;">Credit Note {{ cn[1] }}</h2>
-    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Vendor: {{ cn[2] }} · Date: {{ cn[3].strftime('%d %b %Y') }}</p>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Vendor: {{ cn[2] }} · Date: {{ cn[3]|fmt_date }}</p>
   </div>
   <div>
     {% if cn[4] == 'Posted' %}
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
+      <a href="{{ url_for('vendors.vendor_credit_note_print', vendor_credit_note_id=cn[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Credit Note</a>
+      <a href="{{ url_for('vendors.vendor_credit_note_journal_print', vendor_credit_note_id=cn[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Journal Entry</a>
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
-      <form method="POST" action="{{ url_for('vendors.post_vendor_credit_note', vendor_credit_note_id=cn[0]) }}" style="display:inline;">
+      <a href="{{ url_for('vendors.vendor_credit_note_print', vendor_credit_note_id=cn[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Credit Note</a>
+      <form method="POST" action="{{ url_for('vendors.post_vendor_credit_note', vendor_credit_note_id=cn[0]) }}" style="display:inline; margin-left: 8px;">
         {{ csrf_field() }}
         <button type="submit" class="lp-btn primary">Post Credit Note</button>
       </form>

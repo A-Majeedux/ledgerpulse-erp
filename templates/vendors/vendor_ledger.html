@@ -46,7 +46,7 @@
     <tbody>
       {% for tx in transactions %}
       <tr>
-        <td>{{ tx[0].strftime('%d %b %Y') }}</td>
+        <td>{{ tx[0]|fmt_date }}</td>
         <td>{{ tx[1] }}</td>
         <td>{{ tx[2] }}</td>
         <td class="amount">{{ "%.2f"|format(tx[3]) if tx[3] > 0 else '—' }}</td>

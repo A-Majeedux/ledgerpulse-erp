@@ -31,7 +31,7 @@
       <p><strong>Address:</strong> {{ payment[3] or '—' }}</p>
     </div>
     <div style="text-align: right;">
-      <p><strong>Payment Date:</strong> {{ payment[6].strftime('%d %b %Y') }}</p>
+      <p><strong>Payment Date:</strong> {{ payment[6]|fmt_date }}</p>
       <p><strong>Paid From:</strong> {{ payment[8] }}</p>
       <p><strong>Method:</strong> {{ payment[9] }} {% if payment[10] %}(Cheque #{{ payment[10] }}){% endif %}</p>
     </div>
@@ -51,7 +51,7 @@
       {% for alloc in allocations %}
       <tr>
         <td>{{ alloc[0] }}</td>
-        <td>{{ alloc[1].strftime('%d %b %Y') }}</td>
+        <td>{{ alloc[1]|fmt_date }}</td>
         <td class="amount">{{ "%.2f"|format(alloc[2]) }}</td>
       </tr>
       {% endfor %}

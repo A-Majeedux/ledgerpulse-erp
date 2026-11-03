@@ -27,14 +27,23 @@
         <th>Nature of Purchase</th>
         <th>Phone / City</th>
         <th>NTN</th>
-        <th>STRN</th>
+        <th>STN</th>
         <th class="amount">Credit Limit</th>
       </tr>
     </thead>
     <tbody>
       {% for v in vendors %}
       <tr onclick="window.location='{{ url_for('vendors.vendor_detail', vendor_id=v[0]) }}'" style="cursor: pointer;">
-        <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ v[1] }}</td>
+        <td style="font-weight: 600; color: var(--zyro-deep-navy);">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            {% if v[9] %}
+              <img src="{{ url_for('static', filename=v[9]) }}" alt="" style="width: 28px; height: 28px; object-fit: cover; border-radius: 50%;">
+            {% else %}
+              <span style="display: inline-block; width: 28px; height: 28px; background: #e2e8f0; border-radius: 50%; text-align: center; line-height: 28px; font-size: 12px; font-weight: 600; color: #475569;">{{ v[1][0]|upper }}</span>
+            {% endif %}
+            <span>{{ v[1] }}</span>
+          </div>
+        </td>
         <td>{{ v[2] }}</td>
         <td>{{ v[6] or '—' }} {% if v[7] %}({{ v[7] }}){% endif %}</td>
         <td style="font-family: monospace; font-size: 13px;">{{ v[3] or '—' }}</td>

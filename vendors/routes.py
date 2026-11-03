@@ -13,7 +13,10 @@ Modular Flask Blueprint for LedgerPulse Vendors & Purchases:
 
 from datetime import date
 from decimal import Decimal
-from flask import Blueprint, render_template, request, redirect, url_for, abort
+import os
+import uuid
+from werkzeug.utils import secure_filename
+from flask import Blueprint, render_template, request, redirect, url_for, abort, flash, current_app
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
 from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
@@ -53,7 +56,7 @@ def _get_bank_accounts(org_id):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT account_id, code, name FROM chart_of_accounts
-        WHERE organization_id = %s AND is_active = TRUE AND (account_type = 'Bank' OR lower(name) LIKE '%bank%' OR lower(name) LIKE '%cash%')
+        WHERE organization_id = %s AND is_active = TRUE AND (account_type = 'Bank' OR lower(name) LIKE '%%bank%%' OR lower(name) LIKE '%%cash%%')
         ORDER BY code
     """, (org_id,))
     accounts = cursor.fetchall()
@@ -144,7 +147,7 @@ def vendors_list():
     total_count = cursor.fetchone()[0]
 
     cursor.execute(f"""
-        SELECT vendor_id, name, nature_of_purchase, ntn, strn, credit_limit, phone, city, is_active
+        SELECT vendor_id, name, nature_of_purchase, ntn, strn, credit_limit, phone, city, is_active, logo_path
         FROM vendors WHERE {where_clause}
         ORDER BY name LIMIT %s OFFSET %s
     """, params + [per_page, offset])
@@ -163,46 +166,225 @@ def vendors_list():
 @require_organization
 def new_vendor():
     org_id = current_organization_id()
+    form_data = {}
     if request.method == "POST":
+        form_data = request.form.to_dict()
+        entity_type = request.form.get("entity_type")
+        name = request.form.get("name", "").strip()
+        nature_of_purchase = request.form.get("nature_of_purchase", "").strip()
+        account_type = request.form.get("account_type", "Trade Creditors").strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        contact_person = request.form.get("contact_person", "").strip()
+        address = request.form.get("address", "").strip()
+        ntn = request.form.get("ntn", "").strip() or None
+        strn = request.form.get("strn", "").strip() or None
+        credit_limit_raw = request.form.get("credit_limit", "0")
+
+        error = None
+        if not entity_type or entity_type not in ("company", "person"):
+            error = "Please select Company or Person (Individual)."
+        elif not name:
+            error = "Vendor name is required."
+        elif not nature_of_purchase or nature_of_purchase not in ("Supplies", "Services"):
+            error = "Please select Supplies or Services."
+        elif email and ("@" not in email or "." not in email):
+            error = "Please enter a valid email address."
+        else:
+            try:
+                credit_limit = to_decimal(credit_limit_raw)
+                if credit_limit < 0:
+                    error = "Credit limit cannot be negative."
+            except Exception:
+                error = "Invalid credit limit value."
+
+        logo_path = None
+        if not error:
+            file = request.files.get("logo")
+            if file and file.filename:
+                filename_lower = file.filename.lower()
+                allowed_exts = (".png", ".jpg", ".jpeg", ".webp")
+                if not filename_lower.endswith(allowed_exts):
+                    error = "Invalid file type. Only PNG, JPG, JPEG, and WEBP files are allowed."
+                else:
+                    file_bytes = file.read()
+                    if len(file_bytes) > 2 * 1024 * 1024:
+                        error = "File size exceeds 2 MB limit."
+                    else:
+                        upload_dir = os.path.join(current_app.root_path, "static", "uploads", "vendor_logos", str(org_id))
+                        os.makedirs(upload_dir, exist_ok=True)
+                        ext = os.path.splitext(file.filename)[1].lower()
+                        safe_name = f"{uuid.uuid4().hex}{ext}"
+                        file_path = os.path.join(upload_dir, safe_name)
+                        with open(file_path, "wb") as f:
+                            f.write(file_bytes)
+                        logo_path = f"vendor_logos/{org_id}/{safe_name}"
+
+        if error:
+            flash(error, "error")
+            return render_template("vendors/new_vendor.html", nature_options=NATURE_OF_PURCHASE_OPTIONS, form_data=form_data, vendor=None), 400
+
         conn = get_conn()
         cursor = conn.cursor()
         cursor.execute("""
+            SELECT 1 FROM vendors 
+            WHERE organization_id = %s AND lower(name) = lower(%s)
+        """, (org_id, name))
+        if cursor.fetchone():
+            flash("Warning: Another vendor with the same name already exists in this organization.", "warning")
+        elif ntn:
+            cursor.execute("""
+                SELECT 1 FROM vendors 
+                WHERE organization_id = %s AND ntn = %s
+            """, (org_id, ntn))
+            if cursor.fetchone():
+                flash("Warning: Another vendor with the same NTN already exists in this organization.", "warning")
+
+        is_company = (entity_type == "company")
+        cursor.execute("""
             INSERT INTO vendors
                 (organization_id, name, nature_of_purchase, ntn, strn, address, credit_limit,
-                 is_company, email, phone, city, state, postal_code, country, cnic, website,
-                 category, tags, region, territory, is_customer, payment_terms, default_payment_method, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                 is_company, email, phone, contact_person, logo_path, account_type)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING vendor_id
         """, (
-            org_id,
-            request.form["name"].strip(),
-            request.form.get("nature_of_purchase", "Supplies"),
-            request.form.get("ntn", "").strip() or None,
-            request.form.get("strn", "").strip() or None,
-            request.form.get("address", "").strip() or None,
-            to_decimal(request.form.get("credit_limit") or 0),
-            "is_company" in request.form,
-            request.form.get("email", "").strip() or None,
-            request.form.get("phone", "").strip() or None,
-            request.form.get("city", "").strip() or None,
-            request.form.get("state", "").strip() or None,
-            request.form.get("postal_code", "").strip() or None,
-            request.form.get("country", "Pakistan").strip() or "Pakistan",
-            request.form.get("cnic", "").strip() or None,
-            request.form.get("website", "").strip() or None,
-            request.form.get("category", "").strip() or None,
-            request.form.get("tags", "").strip() or None,
-            request.form.get("region", "").strip() or None,
-            request.form.get("territory", "").strip() or None,
-            "is_customer" in request.form,
-            request.form.get("payment_terms", "").strip() or None,
-            request.form.get("default_payment_method", "Manual").strip() or "Manual",
-            request.form.get("notes", "").strip() or None,
+            org_id, name, nature_of_purchase, ntn, strn, address or None, credit_limit,
+            is_company, email or None, phone or None, contact_person or None, logo_path, account_type
+        ))
+        new_vid = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return redirect(url_for("vendors.vendor_detail", vendor_id=new_vid))
+
+    return render_template("vendors/new_vendor.html", nature_options=NATURE_OF_PURCHASE_OPTIONS, form_data=None, vendor=None)
+
+
+@bp.route("/<int:vendor_id>/edit", methods=["GET", "POST"])
+@require_organization
+def edit_vendor(vendor_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT vendor_id, name, nature_of_purchase, ntn, strn, address, credit_limit,
+               is_company, email, phone, contact_person, logo_path, account_type
+        FROM vendors WHERE vendor_id = %s AND organization_id = %s
+    """, (vendor_id, org_id))
+    vendor_row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not vendor_row:
+        abort(404)
+
+    vendor = {
+        "vendor_id": vendor_row[0],
+        "name": vendor_row[1],
+        "nature_of_purchase": vendor_row[2],
+        "ntn": vendor_row[3],
+        "strn": vendor_row[4],
+        "address": vendor_row[5],
+        "credit_limit": vendor_row[6],
+        "is_company": vendor_row[7],
+        "email": vendor_row[8],
+        "phone": vendor_row[9],
+        "contact_person": vendor_row[10],
+        "logo_path": vendor_row[11],
+        "account_type": vendor_row[12]
+    }
+
+    if request.method == "POST":
+        form_data = request.form.to_dict()
+        entity_type = request.form.get("entity_type")
+        name = request.form.get("name", "").strip()
+        nature_of_purchase = request.form.get("nature_of_purchase", "").strip()
+        account_type = request.form.get("account_type", "Trade Creditors").strip()
+        email = request.form.get("email", "").strip()
+        phone = request.form.get("phone", "").strip()
+        contact_person = request.form.get("contact_person", "").strip()
+        address = request.form.get("address", "").strip()
+        ntn = request.form.get("ntn", "").strip() or None
+        strn = request.form.get("strn", "").strip() or None
+        credit_limit_raw = request.form.get("credit_limit", "0")
+
+        error = None
+        if not entity_type or entity_type not in ("company", "person"):
+            error = "Please select Company or Person (Individual)."
+        elif not name:
+            error = "Vendor name is required."
+        elif not nature_of_purchase or nature_of_purchase not in ("Supplies", "Services"):
+            error = "Please select Supplies or Services."
+        elif email and ("@" not in email or "." not in email):
+            error = "Please enter a valid email address."
+        else:
+            try:
+                credit_limit = to_decimal(credit_limit_raw)
+                if credit_limit < 0:
+                    error = "Credit limit cannot be negative."
+            except Exception:
+                error = "Invalid credit limit value."
+
+        logo_path = vendor["logo_path"]
+        if not error:
+            file = request.files.get("logo")
+            if file and file.filename:
+                filename_lower = file.filename.lower()
+                allowed_exts = (".png", ".jpg", ".jpeg", ".webp")
+                if not filename_lower.endswith(allowed_exts):
+                    error = "Invalid file type. Only PNG, JPG, JPEG, and WEBP files are allowed."
+                else:
+                    file_bytes = file.read()
+                    if len(file_bytes) > 2 * 1024 * 1024:
+                        error = "File size exceeds 2 MB limit."
+                    else:
+                        upload_dir = os.path.join(current_app.root_path, "static", "uploads", "vendor_logos", str(org_id))
+                        os.makedirs(upload_dir, exist_ok=True)
+                        ext = os.path.splitext(file.filename)[1].lower()
+                        safe_name = f"{uuid.uuid4().hex}{ext}"
+                        file_path = os.path.join(upload_dir, safe_name)
+                        with open(file_path, "wb") as f:
+                            f.write(file_bytes)
+                        logo_path = f"vendor_logos/{org_id}/{safe_name}"
+
+        if error:
+            flash(error, "error")
+            return render_template("vendors/edit_vendor.html", vendor=vendor, nature_options=NATURE_OF_PURCHASE_OPTIONS, form_data=form_data), 400
+
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 1 FROM vendors 
+            WHERE organization_id = %s AND lower(name) = lower(%s) AND vendor_id != %s
+        """, (org_id, name, vendor_id))
+        if cursor.fetchone():
+            flash("Warning: Another vendor with the same name already exists in this organization.", "warning")
+        elif ntn:
+            cursor.execute("""
+                SELECT 1 FROM vendors 
+                WHERE organization_id = %s AND ntn = %s AND vendor_id != %s
+            """, (org_id, ntn, vendor_id))
+            if cursor.fetchone():
+                flash("Warning: Another vendor with the same NTN already exists in this organization.", "warning")
+
+        is_company = (entity_type == "company")
+        cursor.execute("""
+            UPDATE vendors
+            SET name = %s, nature_of_purchase = %s, ntn = %s, strn = %s, address = %s,
+                credit_limit = %s, is_company = %s, email = %s, phone = %s,
+                contact_person = %s, logo_path = %s, account_type = %s
+            WHERE vendor_id = %s AND organization_id = %s
+        """, (
+            name, nature_of_purchase, ntn, strn, address or None, credit_limit,
+            is_company, email or None, phone or None, contact_person or None,
+            logo_path, account_type, vendor_id, org_id
         ))
         conn.commit()
         cursor.close()
         conn.close()
-        return redirect(url_for("vendors.vendors_list"))
-    return render_template("vendors/new_vendor.html", nature_options=NATURE_OF_PURCHASE_OPTIONS, payment_methods=PAYMENT_METHODS)
+        return redirect(url_for("vendors.vendor_detail", vendor_id=vendor_id))
+
+    return render_template("vendors/edit_vendor.html", vendor=vendor, nature_options=NATURE_OF_PURCHASE_OPTIONS, form_data=None)
 
 
 @bp.route("/<int:vendor_id>")
@@ -214,7 +396,8 @@ def vendor_detail(vendor_id):
     cursor.execute("""
         SELECT vendor_id, name, nature_of_purchase, ntn, strn, address, credit_limit,
                is_company, email, phone, city, state, postal_code, country, cnic, website,
-               category, tags, region, territory, is_customer, payment_terms, default_payment_method, notes, is_active
+               category, tags, region, territory, is_customer, payment_terms, default_payment_method, notes, is_active,
+               contact_person, logo_path, account_type
         FROM vendors WHERE vendor_id = %s AND organization_id = %s
     """, (vendor_id, org_id))
     vendor = cursor.fetchone()
@@ -224,8 +407,14 @@ def vendor_detail(vendor_id):
         abort(404)
 
     # Smart-button counts & bills/payments lists
-    cursor.execute("SELECT COUNT(*), COALESCE(SUM(total), 0) FROM vendor_bills WHERE vendor_id = %s", (vendor_id,))
-    bill_count, total_billed = cursor.fetchone()
+    cursor.execute("SELECT COUNT(*) FROM vendor_bills WHERE vendor_id = %s", (vendor_id,))
+    bill_count = cursor.fetchone()[0]
+    cursor.execute("""
+        SELECT COALESCE(SUM(vbl.total), 0) FROM vendor_bill_lines vbl
+        JOIN vendor_bills vb ON vb.vendor_bill_id = vbl.vendor_bill_id
+        WHERE vb.vendor_id = %s
+    """, (vendor_id,))
+    total_billed = cursor.fetchone()[0]
 
     cursor.execute("SELECT COUNT(*), COALESCE(SUM(amount), 0) FROM vendor_payments WHERE vendor_id = %s", (vendor_id,))
     payment_count, total_paid = cursor.fetchone()
@@ -272,8 +461,9 @@ def vendor_bills_list():
     cursor = conn.cursor()
 
     query = """
-        SELECT vb.vendor_bill_id, vb.bill_number, v.name, vb.bill_date, vb.due_date, vb.status,
-               COALESCE((SELECT SUM(vbl.total) FROM vendor_bill_lines vbl WHERE vbl.vendor_bill_id = vb.vendor_bill_id), 0) AS total
+        SELECT vb.vendor_bill_id, v.name, vb.bill_date, vb.due_date, vb.status,
+               COALESCE((SELECT SUM(vbl.total) FROM vendor_bill_lines vbl WHERE vbl.vendor_bill_id = vb.vendor_bill_id), 0) AS total,
+               vb.bill_number
         FROM vendor_bills vb
         JOIN vendors v ON v.vendor_id = vb.vendor_id
         WHERE vb.organization_id = %s
@@ -475,7 +665,7 @@ def vendor_bill_print(vendor_bill_id):
     cursor.execute("""
         SELECT vb.vendor_bill_id, vb.bill_number, v.name, v.address, v.ntn, v.strn,
                vb.bill_date, vb.due_date, vb.status, vb.amount_due, vb.paid_amount,
-               vb.payment_reference, vb.recipient_bank, vb.lc_reference, org.name
+               vb.payment_reference, vb.recipient_bank, vb.lc_reference, org.name, org.default_bill_terms
         FROM vendor_bills vb
         JOIN vendors v ON v.vendor_id = vb.vendor_id
         JOIN organizations org ON org.organization_id = vb.organization_id
@@ -497,7 +687,22 @@ def vendor_bill_print(vendor_bill_id):
     conn.close()
 
     total = sum((to_decimal(line[5]) for line in lines), to_decimal(0))
-    return render_template("vendors/vendor_bill_print.html", bill=bill, lines=lines, total=total)
+    return render_template("vendors/print/vendor_bill_print.html", bill=bill, lines=lines, total=total)
+
+
+@bp.route("/bills/<int:vendor_bill_id>/journal-print")
+@require_organization
+def vendor_bill_journal_print(vendor_bill_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT journal_header_id FROM vendor_bills WHERE vendor_bill_id = %s AND organization_id = %s", (vendor_bill_id, org_id))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not row or not row[0]:
+        abort(404)
+    return render_journal_print(row[0], url_for('vendors.vendor_bill_detail', vendor_bill_id=vendor_bill_id))
 
 
 @bp.route("/bills/<int:vendor_bill_id>/post", methods=["POST"])
@@ -749,8 +954,8 @@ def vendor_payments_list():
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT vp.vendor_payment_id, vp.voucher_number, v.name, vp.amount, vp.payment_date,
-               vp.payment_method, vp.has_wht, vp.status
+        SELECT vp.vendor_payment_id, v.name, vp.amount, vp.payment_date,
+               vp.payment_method, vp.has_wht, vp.status, vp.voucher_number
         FROM vendor_payments vp JOIN vendors v ON v.vendor_id = vp.vendor_id
         WHERE vp.organization_id = %s
         ORDER BY vp.payment_date DESC, vp.vendor_payment_id DESC
@@ -935,6 +1140,38 @@ def vendor_payment_detail(vendor_payment_id):
     return render_template("vendors/vendor_payment_detail.html", payment=payment, allocations=allocations)
 
 
+def render_journal_print(journal_header_id, back_url):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT journal_header_id, voucher_number, journal_name, entry_date, memo
+        FROM journal_headers WHERE journal_header_id = %s AND organization_id = %s
+    """, (journal_header_id, org_id))
+    je = cursor.fetchone()
+    if not je:
+        cursor.close()
+        conn.close()
+        abort(404)
+    cursor.execute("""
+        SELECT coa.code, coa.name, jl.partner_name, jl.analytic_tag, jl.label, jl.debit, jl.credit
+        FROM journal_lines jl
+        JOIN chart_of_accounts coa ON coa.account_id = jl.account_id
+        WHERE jl.journal_header_id = %s
+        ORDER BY jl.line_order
+    """, (journal_header_id,))
+    lines = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    total_debit = sum((to_decimal(l[5]) for l in lines), to_decimal(0))
+    total_credit = sum((to_decimal(l[6]) for l in lines), to_decimal(0))
+    return render_template(
+        "vendors/print/journal_entry_print.html",
+        je=je, lines=lines, total_debit=total_debit, total_credit=total_credit, back_url=back_url
+    )
+
+
 @bp.route("/payments/<int:vendor_payment_id>/print")
 @require_organization
 def vendor_payment_print(vendor_payment_id):
@@ -959,7 +1196,7 @@ def vendor_payment_print(vendor_payment_id):
         abort(404)
 
     cursor.execute("""
-        SELECT vb.bill_number, vb.bill_date, vpa.allocated_amount
+        SELECT vb.vendor_bill_id, vb.bill_number, vb.bill_date, vpa.allocated_amount
         FROM vendor_payment_allocations vpa
         JOIN vendor_bills vb ON vb.vendor_bill_id = vpa.vendor_bill_id
         WHERE vpa.vendor_payment_id = %s
@@ -968,8 +1205,100 @@ def vendor_payment_print(vendor_payment_id):
     cursor.close()
     conn.close()
 
-    net_paid = payment[5] - (payment[14] or 0)
-    return render_template("vendors/vendor_payment_print.html", payment=payment, allocations=allocations, net_paid=net_paid)
+    net_paid = to_decimal(payment[5]) - to_decimal(payment[14] or 0)
+    return render_template("vendors/print/vendor_payment_print.html", payment=payment, allocations=allocations, net_paid=net_paid)
+
+
+@bp.route("/payments/<int:vendor_payment_id>/journal-print")
+@require_organization
+def vendor_payment_journal_print(vendor_payment_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT journal_header_id FROM vendor_payments WHERE vendor_payment_id = %s AND organization_id = %s", (vendor_payment_id, org_id))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not row or not row[0]:
+        abort(404)
+    return render_journal_print(row[0], url_for('vendors.vendor_payment_detail', vendor_payment_id=vendor_payment_id))
+
+
+@bp.route("/credit-notes/<int:vendor_credit_note_id>/print")
+@require_organization
+def vendor_credit_note_print(vendor_credit_note_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT cn.vendor_credit_note_id, cn.credit_note_number, v.name, v.address,
+               cn.status, cn.credit_date, vb.bill_number
+        FROM vendor_credit_notes cn
+        JOIN vendors v ON v.vendor_id = cn.vendor_id
+        LEFT JOIN vendor_bills vb ON vb.vendor_bill_id = cn.original_bill_id
+        WHERE cn.vendor_credit_note_id = %s AND cn.organization_id = %s
+    """, (vendor_credit_note_id, org_id))
+    cn = cursor.fetchone()
+    if not cn:
+        cursor.close()
+        conn.close()
+        abort(404)
+    cursor.execute("""
+        SELECT cnl.label, coa.code, coa.name, cnl.total
+        FROM vendor_credit_note_lines cnl
+        JOIN chart_of_accounts coa ON coa.account_id = cnl.account_id
+        WHERE cnl.vendor_credit_note_id = %s ORDER BY cnl.line_order
+    """, (vendor_credit_note_id,))
+    lines = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    total = sum((to_decimal(l[3]) for l in lines), to_decimal(0))
+    return render_template("vendors/print/vendor_credit_note_print.html", cn=cn, lines=lines, total=total)
+
+
+@bp.route("/credit-notes/<int:vendor_credit_note_id>/journal-print")
+@require_organization
+def vendor_credit_note_journal_print(vendor_credit_note_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT journal_header_id FROM vendor_credit_notes WHERE vendor_credit_note_id = %s AND organization_id = %s", (vendor_credit_note_id, org_id))
+    row = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not row or not row[0]:
+        abort(404)
+    return render_journal_print(row[0], url_for('vendors.vendor_credit_note_detail', vendor_credit_note_id=vendor_credit_note_id))
+
+
+@bp.route("/batch-payments/<int:batch_payment_id>/print")
+@require_organization
+def batch_vendor_payment_print(batch_payment_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT bp.batch_payment_id, bp.batch_number, bp.payment_date, coa.name, bp.total_amount, bp.status
+        FROM batch_vendor_payments bp
+        JOIN chart_of_accounts coa ON coa.account_id = bp.paid_from_account_id
+        WHERE bp.batch_payment_id = %s AND bp.organization_id = %s
+    """, (batch_payment_id, org_id))
+    batch = cursor.fetchone()
+    if not batch:
+        cursor.close()
+        conn.close()
+        abort(404)
+    cursor.execute("""
+        SELECT v.name, bpl.memo, vp.voucher_number, bpl.amount
+        FROM batch_vendor_payment_lines bpl
+        JOIN vendors v ON v.vendor_id = bpl.vendor_id
+        LEFT JOIN vendor_payments vp ON vp.vendor_payment_id = bpl.vendor_payment_id
+        WHERE bpl.batch_payment_id = %s
+    """, (batch_payment_id,))
+    lines = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template("vendors/print/batch_vendor_payment_print.html", batch=batch, lines=lines)
 
 
 # ---------------------------------------------------------------------

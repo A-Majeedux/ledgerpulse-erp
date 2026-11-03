@@ -31,24 +31,24 @@ MONTH_NAMES = [
 ORG_COLUMNS = """
     organization_id, name, currency, nature_of_business, ntn, strn,
     head_office_address, warehouse_address, logo_path,
-    fiscal_year_start_month, created_at
+    fiscal_year_start_month, created_at, address, city, country, accent_colour, default_bill_terms
 """
 
 
-def _save_logo(file_storage):
+def _save_logo(file_storage, org_id):
     """
     Saves an uploaded logo file (if one was actually provided) and returns
     the relative path to store in the database, or None if no file was
-    uploaded. Keeping this in one place means every route that needs to
-    handle a logo upload does it the same way.
+    uploaded. Saved under static/uploads/org_logos/<org_id>/.
     """
     if not file_storage or file_storage.filename == "":
         return None
     filename = secure_filename(file_storage.filename)
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-    save_path = os.path.join(UPLOAD_FOLDER, filename)
+    folder = os.path.join("static", "uploads", "org_logos", str(org_id))
+    os.makedirs(folder, exist_ok=True)
+    save_path = os.path.join(folder, filename)
     file_storage.save(save_path)
-    return save_path
+    return save_path.replace("\\", "/")
 
 
 @bp.route("/pick")
@@ -85,15 +85,15 @@ def switch_organization(organization_id):
 @require_platform_admin
 def new_organization():
     if request.method == "POST":
-        logo_path = _save_logo(request.files.get("logo"))
         conn = get_conn()
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO organizations (
                 name, currency, nature_of_business, ntn, strn,
-                head_office_address, warehouse_address, logo_path,
-                fiscal_year_start_month
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                head_office_address, warehouse_address,
+                fiscal_year_start_month, address, city, country,
+                accent_colour, default_bill_terms
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING organization_id
         """, (
             request.form["name"].strip(),
@@ -103,10 +103,18 @@ def new_organization():
             request.form.get("strn", "").strip() or None,
             request.form.get("head_office_address", "").strip() or None,
             request.form.get("warehouse_address", "").strip() or None,
-            logo_path,
             int(request.form.get("fiscal_year_start_month", 7)),
+            request.form.get("address", "").strip() or None,
+            request.form.get("city", "").strip() or None,
+            request.form.get("country", "").strip() or None,
+            request.form.get("accent_colour", "#6b4fa3").strip() or "#6b4fa3",
+            request.form.get("default_bill_terms", "").strip() or None,
         ))
         new_id = cursor.fetchone()[0]
+
+        logo_path = _save_logo(request.files.get("logo"), new_id)
+        if logo_path:
+            cursor.execute("UPDATE organizations SET logo_path = %s WHERE organization_id = %s", (logo_path, new_id))
 
         from auth.services import current_user_id
         uid = current_user_id()
@@ -136,21 +144,24 @@ def edit_organization(organization_id):
     cursor = conn.cursor()
 
     if request.method == "POST":
-        new_logo_path = _save_logo(request.files.get("logo"))
+        new_logo_path = _save_logo(request.files.get("logo"), organization_id)
         if new_logo_path is None:
             # No new logo uploaded - keep whatever logo it already has.
             cursor.execute(
                 "SELECT logo_path FROM organizations WHERE organization_id = %s",
                 (organization_id,)
             )
-            new_logo_path = cursor.fetchone()[0]
+            row = cursor.fetchone()
+            new_logo_path = row[0] if row else None
 
         cursor.execute("""
             UPDATE organizations SET
                 name = %s, currency = %s, nature_of_business = %s,
                 ntn = %s, strn = %s, head_office_address = %s,
                 warehouse_address = %s, logo_path = %s,
-                fiscal_year_start_month = %s
+                fiscal_year_start_month = %s,
+                address = %s, city = %s, country = %s,
+                accent_colour = %s, default_bill_terms = %s
             WHERE organization_id = %s
         """, (
             request.form["name"].strip(),
@@ -162,6 +173,11 @@ def edit_organization(organization_id):
             request.form.get("warehouse_address", "").strip() or None,
             new_logo_path,
             int(request.form.get("fiscal_year_start_month", 7)),
+            request.form.get("address", "").strip() or None,
+            request.form.get("city", "").strip() or None,
+            request.form.get("country", "").strip() or None,
+            request.form.get("accent_colour", "#6b4fa3").strip() or "#6b4fa3",
+            request.form.get("default_bill_terms", "").strip() or None,
             organization_id,
         ))
         conn.commit()

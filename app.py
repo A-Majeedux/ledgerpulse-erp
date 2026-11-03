@@ -31,6 +31,23 @@ from dashboard.routes import bp as dashboard_bp
 
 app = Flask(__name__)
 
+from datetime import datetime
+
+def fmt_date(value, fmt='%d %b %Y'):
+    if not value:
+        return '—'
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            return dt.strftime(fmt)
+        except ValueError:
+            return value
+    if hasattr(value, 'strftime'):
+        return value.strftime(fmt)
+    return str(value)
+
+app.template_filter('fmt_date')(fmt_date)
+
 # Session security & secret key configuration
 secret_key = os.getenv("SECRET_KEY")
 if not secret_key:
@@ -44,16 +61,15 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("FLASK_ENV") == "production"
 
 # --- 1. Make sure every table exists in dependency order ---
-if os.getenv("TESTING") != "true" and os.getenv("FLASK_ENV") != "testing":
-    ensure_all_schemas([
-        auth_schema,
-        organizations_schema,
-        accounting_schema,
-        wht_schema,
-        vendors_schema,
-        customers_schema,
-        sales_schema,
-    ])
+ensure_all_schemas([
+    auth_schema,
+    organizations_schema,
+    accounting_schema,
+    wht_schema,
+    vendors_schema,
+    customers_schema,
+    sales_schema,
+])
 
 # --- 2. Register blueprints ---
 app.register_blueprint(auth_bp)

@@ -15,7 +15,79 @@ from core.context import current_organization_id
 from flask import request
 
 
+def fmt_date_print(value):
+    if not value:
+        return ""
+    if isinstance(value, str):
+        try:
+            from datetime import datetime
+            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
+            return dt.strftime('%d/%m/%Y')
+        except ValueError:
+            return value
+    if hasattr(value, 'strftime'):
+        return value.strftime('%d/%m/%Y')
+    return str(value)
+
+
+def fmt_money_print(value):
+    if value is None:
+        return "0.00 Rs"
+    try:
+        from decimal import Decimal
+        d = Decimal(str(value))
+        return f"{d:,.2f} Rs"
+    except Exception:
+        return f"{value} Rs"
+
+
+def fmt_qty_print(value):
+    if value is None:
+        return ""
+    try:
+        from decimal import Decimal
+        d = Decimal(str(value))
+        if d % 1 == 0:
+            return str(int(d))
+        return f"{d:f}".rstrip('0').rstrip('.')
+    except Exception:
+        return str(value)
+
+
+def safe_str(value):
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if s.lower() in ("none", "false", "null", "none"):
+        return ""
+    return s
+
+
 def register_context_processors(app):
+    app.template_filter('fmt_date_print')(fmt_date_print)
+    app.template_filter('fmt_money_print')(fmt_money_print)
+    app.template_filter('fmt_qty_print')(fmt_qty_print)
+    app.template_filter('safe_str')(safe_str)
+
+    @app.context_processor
+    def inject_active_organization():
+        org_id = current_organization_id()
+        if not org_id:
+            return {"active_org": None}
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT organization_id, name, currency, nature_of_business, ntn, strn,
+                   head_office_address, warehouse_address, logo_path,
+                   fiscal_year_start_month, created_at, address, city, country,
+                   accent_colour, default_bill_terms
+            FROM organizations WHERE organization_id = %s
+        """, (org_id,))
+        org = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        return {"active_org": org}
+
     @app.context_processor
     def inject_organizations():
         from auth.services import current_user_id, is_platform_admin, get_zyro_organization_id

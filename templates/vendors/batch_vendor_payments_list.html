@@ -21,7 +21,7 @@
       {% for batch in batches %}
       <tr onclick="window.location='{{ url_for('vendors.batch_vendor_payment_detail', batch_payment_id=batch[0]) }}'" style="cursor:pointer;">
         <td>{{ batch[1] }}</td>
-        <td>{{ batch[2].strftime('%d %b %Y') }}</td>
+        <td>{{ batch[2]|fmt_date }}</td>
         <td>{{ batch[3] }}</td>
         <td class="amount">{{ "%.2f"|format(batch[4]) }}</td>
         <td><span class="lp-pill posted">{{ batch[5] }}</span></td>

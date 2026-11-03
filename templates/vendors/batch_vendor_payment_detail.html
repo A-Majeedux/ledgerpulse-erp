@@ -5,10 +5,11 @@
 <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
   <div>
     <h2 style="margin:0;">Batch Payment {{ batch[1] }}</h2>
-    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Date: {{ batch[2].strftime('%d %b %Y') }} · Paid From: {{ batch[3] }}</p>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Date: {{ batch[2]|fmt_date }} · Paid From: {{ batch[3] }}</p>
   </div>
   <div>
     <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">{{ batch[5] }}</span>
+    <a href="{{ url_for('vendors.batch_vendor_payment_print', batch_payment_id=batch[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Batch Sheet</a>
   </div>
 </div>
 

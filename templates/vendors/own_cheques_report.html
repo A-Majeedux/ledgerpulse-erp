@@ -44,7 +44,7 @@
     <tbody>
       {% for chq in cheques %}
       <tr>
-        <td>{{ chq[0].strftime('%d %b %Y') }}</td>
+        <td>{{ chq[0]|fmt_date }}</td>
         <td><strong>{{ chq[1] }}</strong></td>
         <td>{{ chq[2] }}</td>
         <td>{{ chq[3] }}</td>

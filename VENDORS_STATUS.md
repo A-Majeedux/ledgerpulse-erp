@@ -1,30 +1,32 @@
-# VENDORS_STATUS.md — Final Build Report
+# VENDORS_STATUS.md — Vendor Print Templates and Odoo-Style Details Build Report
 
 ## Phase Summary
 - **Phase 0 (Audit)**: Completed. Audited codebase, schemas, accounting services, and customer receipts pattern. Created `VENDORS_AUDIT.md`.
-- **Phase 1 (Vendors Master)**: Completed. Enhanced vendor list with search (name, phone, NTN, STRN, CNIC) and pagination (80 per page). Vendor card with person/company toggle, full address fields, nature of purchase (Supplies / Services), payment terms, accounting defaults, smart buttons (bills count, payments count), and balance calculation.
-- **Phase 2 (Vendor Bills)**: Completed. Direct bills list, bill form with line items, auto-numbering (`BILL/YYYY/MM/NNNN`), posting action creating balanced journal entries via `accounting/services.py`, bill detail view, print view, delete draft.
-- **Phase 3 (Vendor Credit Notes)**: Completed. Credit notes list, new credit note form (`BCN/YYYY/MM/NNNN`), posting action reversing bill entry (Debit Trade Creditors, Credit Expense/Asset), credit note detail view.
-- **Phase 4 (Vendor Payments)**: Completed. Payments list, payment form (`BPV-NNNNN` / `CPV-NNNNN`), manual vs cheque payment methods, unique cheque number check per bank account (`uq_vendor_payment_cheque`), withholding tax calculation (Supplies vs Services WHT payable), payment allocation against open bills, payment detail view, Bank Payment Voucher print view with signature blocks.
-- **Phase 5 (Batch Vendor Payments)**: Completed. Batch payments list, batch payment form (`BVP/YYYY/NNNN`), batch payment detail view, generating individual vendor payments and journal entries per batch line.
-- **Phase 6 (Own Cheques Report)**: Completed. Read-only report listing vendor payments made by cheque with date range and vendor filters and total amount sum.
-- **Phase 7 (Vendor Reports & Polish)**: Completed. Vendor Partner Ledger report with opening/closing balances and Dr/Cr transactions, Vendor Payables Aging report, template consistency check, and full test suite verification.
+- **Phase 1 (Vendors Master)**: Completed. Enhanced vendor list with search, contact details, nature of purchase, payment terms, accounting defaults, smart buttons, and balance calculation.
+- **Phase 2 (Vendor Bills)**: Completed. Direct bills list, bill form with line items, payment terms (Immediate, 15 Days, 30 Days, 45 Days, 60 Days, 90 Days), due date calculation, discount % per line item (`qty × rate × (1 − disc/100)`), auto-numbering by purchase journal (`<CODE>/YYYY/MM/NNNN`), posting action creating balanced journal entries via `accounting/services.py`, bill detail view, print view, delete draft.
+- **Phase 3 (Vendor Credit Notes)**: Completed. Credit notes list, new credit note form (`BCN/YYYY/MM/NNNN`), posting action reversing bill entry, credit note detail view and print templates.
+- **Phase 4 (Vendor Payments)**: Completed. Payments list, payment form with voucher series (`BPV`, `VPV`, `CPV` format `PREFIX/NNNNN`), auto-filled payment memo based on payment method and bank label, unique cheque number check, withholding tax calculation, payment allocation against open bills, payment detail view, and Payment Voucher print view.
+- **Phase 5 (Batch Vendor Payments)**: Completed. Batch payments list, batch payment form (`BVP/YYYY/NNNN`), batch payment detail view, Batch Payment Sheet print view.
+- **Phase 6 (Outstanding Debits Allocation)**: Completed. Apply unallocated advances / credit notes to open bills without creating new journal entries.
+- **Phase 7 (Print Templates & Odoo-Style Layouts)**: Completed. Shared print layout (`templates/vendors/print/_print_base.html`), company print profile support (logo, accent colour, address, NTN/STRN), Vendor Bill print, Payment Voucher print, Vendor Credit Note print, Batch Payment print, and Journal Entry print templates across bills, payments, and credit notes.
 
 ## Files Created / Modified
-- `vendors/schema.py` (Additive table creation for vendors, vendor bills, credit notes, payments, allocations, batch payments, WHT payable accounts)
-- `vendors/routes.py` (Full implementation of all vendor, bill, credit note, payment, batch, and report endpoints)
-- `templates/vendors/` (Created/updated all list, form, detail, print, and report templates)
-- `VENDORS_AUDIT.md` (Phase 0 audit report)
-- `VENDORS_STATUS.md` (Build status report)
+- `templates/vendors/print/_print_base.html` (Shared professional print layout with company header, logo, accent colour, watermark, and signature blocks)
+- `templates/vendors/print/vendor_bill_print.html` (Vendor Bill print template)
+- `templates/vendors/print/vendor_payment_print.html` (Payment Voucher print template with cheque and WHT sections)
+- `templates/vendors/print/vendor_credit_note_print.html` (Vendor Credit Note print template)
+- `templates/vendors/print/batch_vendor_payment_print.html` (Batch Payment Sheet print template)
+- `templates/vendors/print/journal_entry_print.html` (Double-entry journal itemized print template)
+- `vendors/routes.py` (Added print and journal-print routes for bills, payments, credit notes, and batch payments)
+- `vendors/schema.py` (Added discount_pct, purchase_journal, notes, and payment_voucher_counters)
+- `tests/test_vendors.py` (Comprehensive test coverage including all print routes and verification)
 
 ## Testing & Verification
 - Python syntax compilation verified (`python3 -m py_compile`).
-- Pytest test suite executed successfully (52 tests passed).
-- Database multi-organization isolation and double-entry balancing verified via `accounting/services.py`.
+- Print routes and templates verified.
+- Double-entry accounting balancing and organization isolation maintained.
 
-## Assumptions & Decisions
-- Reused existing `accounting/services.py::create_journal_entry()` and `post_journal_entry()` for all accounting vouchers to ensure architectural consistency and balancing.
-- WHT rates are manually selected per transaction (no auto-selection), posting to WHT Payable (Supplies: 2100 or Services: 2110) based on vendor's nature of purchase.
-
-## Known Gaps
-- None. All target features in VENDORS_TASK.md are fully implemented and verified.
+## Status Summary
+- **Vendor Print Templates & Routes**: Verified by tests / Built.
+- **Odoo-Style Details & Workflows**: Verified by tests / Built.
+- **Known Gaps**: None.

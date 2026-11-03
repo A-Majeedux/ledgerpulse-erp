@@ -34,11 +34,28 @@
 
     <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--lp-text-muted); margin: 20px 0 8px;">Addresses</p>
 
+    <label style="font-size: 13px; font-weight: 600;">Street Address / Print Address</label>
+    <textarea name="address" rows="2" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit;">{{ org[11] or '' }}</textarea>
+
+    <label style="font-size: 13px; font-weight: 600;">City</label>
+    <input type="text" name="city" value="{{ org[12] or '' }}" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Country</label>
+    <input type="text" name="country" value="{{ org[13] or 'Pakistan' }}" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
     <label style="font-size: 13px; font-weight: 600;">Head Office address</label>
     <textarea name="head_office_address" rows="2" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit;">{{ org[6] or '' }}</textarea>
 
     <label style="font-size: 13px; font-weight: 600;">Warehouse address</label>
     <textarea name="warehouse_address" rows="2" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit;">{{ org[7] or '' }}</textarea>
+
+    <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--lp-text-muted); margin: 20px 0 8px;">Print Settings</p>
+
+    <label style="font-size: 13px; font-weight: 600;">Accent Colour (HEX)</label>
+    <input type="color" name="accent_colour" value="{{ org[14] or '#6b4fa3' }}" style="width:100px; height:38px; padding:4px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; display:block;">
+
+    <label style="font-size: 13px; font-weight: 600;">Default Bill Terms Text</label>
+    <textarea name="default_bill_terms" rows="3" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit;">{{ org[15] or '' }}</textarea>
 
     <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--lp-text-muted); margin: 20px 0 8px;">Financial Settings</p>
 

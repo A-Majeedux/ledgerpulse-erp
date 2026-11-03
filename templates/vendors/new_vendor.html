@@ -1,33 +1,153 @@
 {% extends "base.html" %}
-{% block title %}New Vendor{% endblock %}
+{% block title %}{% if vendor %}Edit Vendor: {{ vendor.name }}{% else %}New Vendor{% endif %}{% endblock %}
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
-<div class="lp-card" style="max-width: 480px;">
-  <h2 style="margin-top:0;">New Vendor</h2>
-  <form method="POST">
+<div class="lp-card" style="max-width: 600px; margin: 0 auto;">
+  <h2 style="margin-top:0;">{% if vendor %}Edit Vendor{% else %}New Vendor{% endif %}</h2>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div style="padding: 10px; margin-bottom: 15px; border-radius: 6px; background: {% if category == 'error' %}#f8d7da{% elif category == 'warning' %}#fff3cd{% else %}#d1e7dd{% endif %}; color: {% if category == 'error' %}#842029{% elif category == 'warning' %}#664d03{% else %}#0f5132{% endif %}; border: 1px solid transparent;">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <form method="POST" enctype="multipart/form-data">
     {{ csrf_field() }}
-    <label style="font-size: 13px; font-weight: 600;">Vendor name</label>
-    <input type="text" name="name" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
 
-    <label style="font-size: 13px; font-weight: 600;">Nature of purchase</label>
-    <select name="nature_of_purchase" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
-      {% for opt in nature_options %}<option value="{{ opt }}">{{ opt }}</option>{% endfor %}
-    </select>
-    <p style="font-size: 12px; color: var(--lp-text-muted); margin-top: -10px;">Decides which WHT Payable ledger this vendor's tax deductions route to - not a tax rate.</p>
+    <!-- 1. First selection (required radio buttons): Company / Person (Individual) -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Entity Type <span style="color:red;">*</span></label>
+      <div style="display: flex; gap: 20px;">
+        <label style="font-weight: normal; cursor: pointer;">
+          <input type="radio" name="entity_type" value="company" required
+            {% if vendor and vendor.is_company %}checked
+            {% elif form_data and form_data.entity_type == 'company' %}checked
+            {% endif %}> Company
+        </label>
+        <label style="font-weight: normal; cursor: pointer;">
+          <input type="radio" name="entity_type" value="person" required
+            {% if vendor and vendor.is_company == False %}checked
+            {% elif form_data and form_data.entity_type == 'person' %}checked
+            {% endif %}> Person (Individual)
+        </label>
+      </div>
+    </div>
 
-    <label style="font-size: 13px; font-weight: 600;">NTN</label>
-    <input type="text" name="ntn" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+    <!-- 2. Name (required) -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Name <span style="color:red;">*</span></label>
+      <input type="text" name="name" required
+        value="{% if vendor %}{{ vendor.name }}{% elif form_data %}{{ form_data.get('name', '') }}{% endif %}"
+        style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
 
-    <label style="font-size: 13px; font-weight: 600;">STRN</label>
-    <input type="text" name="strn" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+    <!-- 3. Contact Person -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Contact Person</label>
+      <input type="text" name="contact_person"
+        value="{% if vendor %}{{ vendor.contact_person or '' }}{% elif form_data %}{{ form_data.get('contact_person', '') }}{% endif %}"
+        style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
 
-    <label style="font-size: 13px; font-weight: 600;">Address</label>
-    <textarea name="address" rows="2" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit;"></textarea>
+    <!-- 4. Vendor Logo (image upload) -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Vendor Logo (PNG, JPG, JPEG, WEBP, max 2MB)</label>
+      {% if vendor and vendor.logo_path %}
+        <div style="margin-bottom: 8px; display: flex; align-items: center; gap: 10px;">
+          <img src="{{ url_for('static', filename=vendor.logo_path) }}" alt="Logo" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px; border: 1px solid var(--lp-border);">
+          <span style="font-size: 12px; color: var(--lp-text-muted);">Current logo saved</span>
+        </div>
+      {% endif %}
+      <input type="file" name="logo" accept=".png,.jpg,.jpeg,.webp"
+        style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
 
-    <label style="font-size: 13px; font-weight: 600;">Credit limit</label>
-    <input type="number" step="0.01" name="credit_limit" value="0" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+    <!-- 5. Office Address -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Office Address</label>
+      <textarea name="address" rows="2" style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit;">{% if vendor %}{{ vendor.address or '' }}{% elif form_data %}{{ form_data.get('address', '') }}{% endif %}</textarea>
+    </div>
 
-    <button type="submit" class="lp-btn primary">Create Vendor</button>
+    <!-- 6. NTN -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">NTN</label>
+      <input type="text" name="ntn"
+        value="{% if vendor %}{{ vendor.ntn or '' }}{% elif form_data %}{{ form_data.get('ntn', '') }}{% endif %}"
+        style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
+
+    <!-- 7. STN (existing STRN column) -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">STN</label>
+      <input type="text" name="strn"
+        value="{% if vendor %}{{ vendor.strn or '' }}{% elif form_data %}{{ form_data.get('strn', '') }}{% endif %}"
+        style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
+
+    <!-- 8. Email -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Email</label>
+      <input type="email" name="email"
+        value="{% if vendor %}{{ vendor.email or '' }}{% elif form_data %}{{ form_data.get('email', '') }}{% endif %}"
+        style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
+
+    <!-- 9. Phone (PH) -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Phone (PH)</label>
+      <input type="text" name="phone"
+        value="{% if vendor %}{{ vendor.phone or '' }}{% elif form_data %}{{ form_data.get('phone', '') }}{% endif %}"
+        style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
+
+    <!-- 10. Supplies or Services (required dropdown) -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Supplies or Services <span style="color:red;">*</span></label>
+      <select name="nature_of_purchase" required style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+        <option value="">-- Select Nature of Purchase --</option>
+        {% for opt in nature_options %}
+          <option value="{{ opt }}"
+            {% if vendor and vendor.nature_of_purchase == opt %}selected
+            {% elif form_data and form_data.get('nature_of_purchase') == opt %}selected
+            {% endif %}>{{ opt }}</option>
+        {% endfor %}
+      </select>
+      <p style="font-size: 12px; color: var(--lp-text-muted); margin-top: 4px;">Drives which WHT Payable account is used on payments.</p>
+    </div>
+
+    <!-- 11. Account Type (required dropdown) -->
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Account Type <span style="color:red;">*</span></label>
+      <select name="account_type" required style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+        <option value="Trade Creditors"
+          {% if vendor and vendor.account_type == 'Trade Creditors' %}selected
+          {% elif form_data and form_data.get('account_type') == 'Trade Creditors' %}selected
+          {% elif not vendor and not form_data %}selected
+          {% endif %}>Trade Creditors</option>
+        <option value="Trade Receivables"
+          {% if vendor and vendor.account_type == 'Trade Receivables' %}selected
+          {% elif form_data and form_data.get('account_type') == 'Trade Receivables' %}selected
+          {% endif %}>Trade Receivables</option>
+      </select>
+      <p style="font-size: 12px; color: var(--lp-text-muted); margin-top: 4px;">Default control account used when posting for this party.</p>
+    </div>
+
+    <!-- 12. Credit Limit (number, 0 or more, PKR) -->
+    <div style="margin-bottom: 24px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Credit Limit (PKR)</label>
+      <input type="number" step="0.01" min="0" name="credit_limit"
+        value="{% if vendor is not none %}{{ vendor.credit_limit }}{% elif form_data %}{{ form_data.get('credit_limit', '0') }}{% else %}0{% endif %}"
+        style="width:100%; padding:8px; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
+
+    <div style="display: flex; gap: 10px;">
+      <button type="submit" class="lp-btn primary">{% if vendor %}Save Changes{% else %}Create Vendor{% endif %}</button>
+      <a href="{% if vendor %}{{ url_for('vendors.vendor_detail', vendor_id=vendor.vendor_id) }}{% else %}{{ url_for('vendors.vendors_list') }}{% endif %}" class="lp-btn secondary">Cancel</a>
+    </div>
   </form>
 </div>
 {% endblock %}

@@ -3,11 +3,19 @@
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
 <div class="lp-page-header">
-  <div>
-    <h1 class="lp-page-title">{{ vendor[1] }}</h1>
-    <p class="lp-page-subtitle">Vendor Profile & Account Overview</p>
+  <div style="display: flex; align-items: center; gap: 15px;">
+    {% if vendor[26] %}
+      <img src="{{ url_for('static', filename=vendor[26]) }}" alt="" style="width: 56px; height: 56px; object-fit: cover; border-radius: 8px; border: 1px solid var(--lp-border);">
+    {% else %}
+      <div style="width: 56px; height: 56px; background: #e2e8f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 700; color: #475569;">{{ vendor[1][0]|upper }}</div>
+    {% endif %}
+    <div>
+      <h1 class="lp-page-title">{{ vendor[1] }}</h1>
+      <p class="lp-page-subtitle">{{ 'Company' if vendor[7] else 'Person (Individual)' }} • Account Type: {{ vendor[27] or 'Trade Creditors' }}</p>
+    </div>
   </div>
   <div style="display: flex; gap: 10px;">
+    <a href="{{ url_for('vendors.edit_vendor', vendor_id=vendor[0]) }}" class="lp-btn secondary sm">Edit Vendor</a>
     <a href="{{ url_for('vendors.vendors_list') }}" class="lp-btn secondary sm">← Back to Vendors</a>
     <a href="{{ url_for('vendors.new_vendor_bill') }}" class="lp-btn primary sm">+ New Bill</a>
   </div>
@@ -37,13 +45,16 @@
   <div style="background: #fff; border: 1px solid var(--lp-border); border-radius: 8px; padding: 20px;">
     <h3 style="margin-top: 0; font-size: 16px; font-weight: 700; border-bottom: 1px solid var(--lp-border); padding-bottom: 10px;">Contact & Tax Details</h3>
     <table style="width: 100%; font-size: 14px; border-collapse: collapse;">
-      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0; width: 40%;">Nature of Purchase:</td><td style="font-weight: 600;">{{ vendor[2] }}</td></tr>
+      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0; width: 40%;">Entity Type:</td><td style="font-weight: 600;">{{ 'Company' if vendor[7] else 'Person (Individual)' }}</td></tr>
+      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">Contact Person:</td><td>{{ vendor[25] or '—' }}</td></tr>
+      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">Nature of Purchase:</td><td style="font-weight: 600;">{{ vendor[2] }}</td></tr>
+      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">Account Type:</td><td style="font-weight: 600;">{{ vendor[27] or 'Trade Creditors' }}</td></tr>
       <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">NTN:</td><td style="font-family: monospace;">{{ vendor[3] or '—' }}</td></tr>
-      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">STRN:</td><td style="font-family: monospace;">{{ vendor[4] or '—' }}</td></tr>
+      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">STN:</td><td style="font-family: monospace;">{{ vendor[4] or '—' }}</td></tr>
       <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">CNIC:</td><td style="font-family: monospace;">{{ vendor[14] or '—' }}</td></tr>
       <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">Email:</td><td>{{ vendor[8] or '—' }}</td></tr>
-      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">Phone:</td><td>{{ vendor[9] or '—' }}</td></tr>
-      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">Address:</td><td>{{ vendor[5] or '—' }}{% if vendor[10] %}, {{ vendor[10] }}{% endif %}{% if vendor[13] %}, {{ vendor[13] }}{% endif %}</td></tr>
+      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">Phone (PH):</td><td>{{ vendor[9] or '—' }}</td></tr>
+      <tr><td style="color: var(--zyro-slate-blue); padding: 6px 0;">Office Address:</td><td>{{ vendor[5] or '—' }}{% if vendor[10] %}, {{ vendor[10] }}{% endif %}{% if vendor[13] %}, {{ vendor[13] }}{% endif %}</td></tr>
     </table>
   </div>
 

@@ -38,6 +38,9 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(50)")
     cursor.execute("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS default_payment_method VARCHAR(50) DEFAULT 'Manual'")
     cursor.execute("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS notes TEXT")
+    cursor.execute("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS contact_person VARCHAR(150)")
+    cursor.execute("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS logo_path VARCHAR(255)")
+    cursor.execute("ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_type VARCHAR(50) DEFAULT 'Trade Creditors'")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS vendor_bills (
@@ -61,6 +64,8 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE vendor_bills ADD COLUMN IF NOT EXISTS amount_due NUMERIC(14, 2) DEFAULT 0")
     cursor.execute("ALTER TABLE vendor_bills ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(14, 2) DEFAULT 0")
     cursor.execute("ALTER TABLE vendor_bills ADD COLUMN IF NOT EXISTS journal_header_id INTEGER REFERENCES journal_headers(journal_header_id)")
+    cursor.execute("ALTER TABLE vendor_bills ADD COLUMN IF NOT EXISTS notes TEXT")
+    cursor.execute("ALTER TABLE vendor_bills ADD COLUMN IF NOT EXISTS purchase_journal VARCHAR(50) DEFAULT 'D-PUR'")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS vendor_bill_lines (
@@ -74,6 +79,16 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS quantity NUMERIC(14, 2) DEFAULT 1")
     cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS rate NUMERIC(14, 2) DEFAULT 0")
     cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS line_order INTEGER NOT NULL DEFAULT 0")
+    cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS discount_pct NUMERIC(5, 2) DEFAULT 0")
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS payment_voucher_counters (
+            organization_id INTEGER REFERENCES organizations(organization_id),
+            series VARCHAR(20),
+            next_number INTEGER DEFAULT 1,
+            PRIMARY KEY (organization_id, series)
+        )
+    """)
 
     # Vendor Credit Notes
     cursor.execute("""

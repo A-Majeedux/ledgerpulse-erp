@@ -4,22 +4,26 @@
 {% block content %}
 <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
   <div>
-    <h2 style="margin:0;">Bill from {{ bill[1] }}</h2>
-    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">{{ bill[2].strftime('%d %b %Y') }}{% if bill[3] %} · Due {{ bill[3].strftime('%d %b %Y') }}{% endif %}</p>
+    <h2 style="margin:0;">Bill from {{ bill[2] }}</h2>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Bill #: <strong>{{ bill[1] }}</strong> · Date: {{ bill[3]|fmt_date }}{% if bill[4] %} · Due {{ bill[4]|fmt_date }}{% endif %}</p>
   </div>
   <div>
-    {% if bill[4] == 'Posted' %}
+    {% if bill[7] == 'Posted' %}
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
+      <a href="{{ url_for('vendors.vendor_bill_print', vendor_bill_id=bill[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Bill</a>
+      <a href="{{ url_for('vendors.vendor_bill_journal_print', vendor_bill_id=bill[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Journal Entry</a>
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
-      <form method="POST" action="{{ url_for('vendors.post_vendor_bill', vendor_bill_id=bill[0]) }}" style="display:inline;">
+      <form method="POST" action="{{ url_for('vendors.post_vendor_bill', vendor_bill_id=bill[0]) }}" style="display:inline; margin-left: 8px;">
         {{ csrf_field() }}
         <button type="submit" class="lp-btn primary">Post</button>
       </form>
     {% endif %}
   </div>
 </div>
+
 <div class="lp-card">
+  <h3 style="margin-top:0; font-size:16px;">Invoice Lines</h3>
   <table class="lp-table">
     <thead><tr><th>Label</th><th>Account</th><th class="amount">Qty</th><th class="amount">Rate</th><th class="amount">Total</th></tr></thead>
     <tbody>
@@ -32,8 +36,54 @@
         <td class="amount">{{ "%.2f"|format(line[5]) }}</td>
       </tr>
       {% endfor %}
-      <tr style="font-weight:700;"><td colspan="4">Total</td><td class="amount">{{ "%.2f"|format(total) }}</td></tr>
+      <tr style="font-weight:700;"><td colspan="4">Total Amount Due</td><td class="amount">Rs. {{ "%.2f"|format(total) }}</td></tr>
     </tbody>
   </table>
 </div>
+
+{% if journal_lines %}
+<div class="lp-card" style="margin-top: 20px;">
+  <h3 style="margin-top:0; font-size:16px;">Journal Items (Double-Entry Posting View)</h3>
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Account</th>
+        <th>Partner</th>
+        <th>Label</th>
+        <th class="amount">Debit</th>
+        <th class="amount">Credit</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for jl in journal_lines %}
+      <tr>
+        <td>{{ jl[0] }} — {{ jl[1] }}</td>
+        <td>{{ jl[2] or '—' }}</td>
+        <td>{{ jl[3] or '—' }}</td>
+        <td class="amount">{{ "%.2f"|format(jl[4]) if jl[4] > 0 else '—' }}</td>
+        <td class="amount">{{ "%.2f"|format(jl[5]) if jl[5] > 0 else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if allocations %}
+<div class="lp-card" style="margin-top: 20px;">
+  <h3 style="margin-top:0; font-size:16px;">Applied Payments</h3>
+  <table class="lp-table">
+    <thead><tr><th>Voucher #</th><th>Payment Date</th><th class="amount">Allocated Amount</th></tr></thead>
+    <tbody>
+      {% for alloc in allocations %}
+      <tr>
+        <td><a href="{{ url_for('vendors.vendor_payment_detail', vendor_payment_id=alloc[0]) }}">{{ alloc[1] }}</a></td>
+        <td>{{ alloc[2]|fmt_date }}</td>
+        <td class="amount">Rs. {{ "%.2f"|format(alloc[3]) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

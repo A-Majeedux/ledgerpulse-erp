@@ -1,0 +1,112 @@
+{% extends "vendors/print/_print_base.html" %}
+{% set is_draft = false %}
+{% set voucher_num = payment[1] | safe_str %}
+{% set series_prefix = voucher_num.split('/')[0] if '/' in voucher_num else 'BPV' %}
+{% if series_prefix == 'CPV' %}
+  {% set doc_title = 'CASH PAYMENT VOUCHER' %}
+{% elif series_prefix == 'VPV' %}
+  {% set doc_title = 'VENDOR PAYMENT VOUCHER' %}
+{% else %}
+  {% set doc_title = 'BANK PAYMENT VOUCHER' %}
+{% endif %}
+
+{% block title %}Payment Voucher {{ voucher_num }}{% endblock %}
+{% block toolbar_title %}{{ doc_title }} — {{ voucher_num }}{% endblock %}
+{% block back_url %}{{ url_for('vendors.vendor_payment_detail', vendor_payment_id=payment[0]) }}{% endblock %}
+
+{% block content %}
+<div class="title-block">
+  <div class="doc-main-title">{{ doc_title }}</div>
+  <div class="doc-sub-number">Voucher Number: {{ voucher_num }}</div>
+</div>
+
+<table class="info-table">
+  <tr>
+    <th>Vendor</th>
+    <td><strong>{{ payment[2] | safe_str }}</strong>{% if payment[3] %}<br>{{ payment[3] | safe_str }}{% endif %}{% if payment[4] %}<br>NTN: {{ payment[4] | safe_str }}{% endif %}</td>
+    <th>Bank / Journal</th>
+    <td>{{ payment[8] | safe_str }}</td>
+  </tr>
+  <tr>
+    <th>Payment Method</th>
+    <td>{{ payment[9] | safe_str }}</td>
+    <th>Date</th>
+    <td>{{ payment[6] | fmt_date_print }}</td>
+  </tr>
+  <tr>
+    <th>Memo</th>
+    <td colspan="3">{{ payment[7] | safe_str }}</td>
+  </tr>
+</table>
+
+{% if payment[9] == 'Cheque' and payment[10] %}
+<div style="font-weight: bold; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; color: #333;">Cheque Details</div>
+<table class="lines-table">
+  <thead>
+    <tr>
+      <th>Cheque Number</th>
+      <th>Label / Bank</th>
+      <th>Date</th>
+      <th style="text-align: right;">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>{{ payment[10] | safe_str }}</strong></td>
+      <td>{{ payment[8] | safe_str }}</td>
+      <td>{{ payment[11] | fmt_date_print }}</td>
+      <td class="text-right">{{ payment[5] | fmt_money_print }}</td>
+    </tr>
+  </tbody>
+</table>
+{% endif %}
+
+{% if payment[12] %}
+<div style="font-weight: bold; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; color: #333;">Withholding Tax Deduction</div>
+<table class="lines-table">
+  <thead>
+    <tr>
+      <th>Withholding Tax Rate</th>
+      <th style="text-align: right;">Withheld Amount</th>
+      <th style="text-align: right;">Net Amount Paid</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>WHT @ {{ payment[13] | fmt_qty_print }}%</td>
+      <td class="text-right">{{ payment[14] | fmt_money_print }}</td>
+      <td class="text-right">{{ net_paid | fmt_money_print }}</td>
+    </tr>
+  </tbody>
+</table>
+{% endif %}
+
+{% if allocations %}
+<div style="font-weight: bold; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; color: #333;">Allocated Bills</div>
+<table class="lines-table">
+  <thead>
+    <tr>
+      <th>Bill No.</th>
+      <th>Bill Date</th>
+      <th style="text-align: right;">Allocated Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for alloc in allocations %}
+    <tr>
+      <td><strong>{{ alloc[1] | safe_str }}</strong></td>
+      <td>{{ alloc[2] | fmt_date_print }}</td>
+      <td class="text-right">{{ alloc[3] | fmt_money_print }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<div class="totals-box">
+  <div class="totals-row">
+    <span>Total Amount:</span>
+    <span>{{ net_paid | fmt_money_print }}</span>
+  </div>
+</div>
+{% endblock %}
