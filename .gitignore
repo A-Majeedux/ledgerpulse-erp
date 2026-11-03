@@ -45,3 +45,4 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
+static/uploads/
