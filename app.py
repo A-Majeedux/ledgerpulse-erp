@@ -28,6 +28,7 @@ from sales.schema import ensure_schema as sales_schema
 from sales.routes import bp as sales_bp
 
 from dashboard.routes import bp as dashboard_bp
+from reports.routes import bp as reports_bp
 
 app = Flask(__name__)
 
@@ -80,6 +81,7 @@ app.register_blueprint(vendors_bp)
 app.register_blueprint(customers_bp)
 app.register_blueprint(sales_bp)
 app.register_blueprint(dashboard_bp)
+app.register_blueprint(reports_bp)
 
 # --- 3. Make organization switcher and auth helpers available everywhere ---
 register_context_processors(app)
