@@ -88,7 +88,7 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 | Inventory | ❌ | |
 | Fixed assets | ❌ | |
 | Bank reconciliation | ❌ | |
-| **Reports (Trial Balance, GL, Partner Ledger)** | ❌ | **Build first: this is how we prove the books are right** |
+| Reports | ✅ | Trial Balance done (GL and Partner Ledger not built yet) |
 
 ## 8. Voucher numbering (per old status report, re-verify)
 
@@ -128,3 +128,4 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 ## 12. Session log (add one line per working session)
 
 - 2026-11-03 — Repo reviewed, cleanup started, PROJECT.md created
+- 2026-11-08 — Cleanup done, Trial Balance built and balanced
