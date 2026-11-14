@@ -138,6 +138,9 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 - 2026-11-14 — Sales invoice numbers: INV/2026/00001, given at save, never repeated, per company per year; the two
   boxes from his screen (Delivery Date, LC Reference); the invoice page laid out like his; the customer card and the
   journal entry show the number (see section 14)
+- 2026-11-14 — Fixed the "column p.organization_id does not exist" crash on his own database: an old products
+  table with no company column; products and tax rates now get every missing column and a company, never the ZYRO
+  head office while a real company exists (see section 14)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -297,6 +300,37 @@ renamed or rewritten. The only change to existing rows is the number itself (emp
 
 **Not done, and why:** there is **no printout** for a sales invoice yet, so the number is on the screen but on no
 paper; and the **dashboard** still lists invoices without their numbers. Both are small jobs for later.
+
+### The crash this found (14 Nov 2026): an old products table
+
+Opening **New Sales Invoice** on the owner's own database gave:
+
+```
+psycopg2.errors.UndefinedColumn: column p.organization_id does not exist
+```
+
+His `products` table was made by an earlier version of ZYRO and had **no company column at all**.
+`CREATE TABLE IF NOT EXISTS` never adds a column to a table that already exists, so the schema's definition
+had never reached it, and every sales screen that asks for "the products of this company" crashed.
+
+**The fix, additive only, in `sales/schema.py`:**
+
+- `products` now has a defensive `ADD COLUMN IF NOT EXISTS` for **every** column in its definition
+  (`organization_id`, `name`, `unit`, `created_at`, on top of the two it already had).
+- `sales_tax_rates` got the same treatment.
+- `attach_master_data_to_a_company()` gives the rows that have **no company** one, so they can be seen again:
+  first the company of the product's own default revenue account; otherwise the company chosen by
+  `_target_company()` — **never** the ZYRO head office while a real company exists, preferring the company
+  with the most customers, oldest first — and it prints one line saying how many rows were attached and where.
+  A row that already has a company is never touched, and running it again changes nothing.
+- The tests build a throwaway database shaped the old way (no company column, a head office plus his real
+  company, products on no company) and prove the screens work again, the products land in **his** company and
+  not the head office, and a product that already had a company keeps it
+  (`tests/test_sales_schema_repair.py`, 5 checks; each test builds and drops its own database).
+
+**Worth knowing:** any other table made by an earlier version can be missing a column in the same way. ZYRO's own
+rule - a defensive `ADD COLUMN IF NOT EXISTS` for every column beyond the bare minimum - is what prevents it, and
+`products` and `sales_tax_rates` were the two that had slipped through on the Sales side.
 
 **Checks.** `tests/test_sales_invoice_numbers.py` (15 checks: the shape of a number, the two new boxes checked, then
 the numbers and the screens on a real database — going up, starting again each year, per company, never repeated,
