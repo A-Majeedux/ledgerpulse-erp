@@ -828,6 +828,9 @@ class CustomerCardDatabaseTests(unittest.TestCase):
         invoice_id = cursor.fetchone()[0]
         cursor.execute("INSERT INTO sales_invoice_lines (sales_invoice_id, line_order, label, quantity, rate, total) "
                        "VALUES (%s, 0, 'Line', 1, %s, %s)", (invoice_id, total, total))
+        # the number the invoice would have been given when it was saved
+        from sales.services import give_invoice_a_number
+        give_invoice_a_number(cursor, self.org_id, invoice_id, day)
         conn.commit()
         cursor.close()
         conn.close()
@@ -945,7 +948,7 @@ class CustomerCardDatabaseTests(unittest.TestCase):
         self.save(name="Buying Traders", credit_limit="100000")
         self.save(name="Quiet Traders")
         buying_id, quiet_id = [row[0] for row in self.customers()]
-        posted = self.invoice(buying_id, "2000.00", "Posted", day="2026-11-01")
+        self.invoice(buying_id, "2000.00", "Posted", day="2026-11-01")
         self.invoice(buying_id, "1000.00", "Draft", day="2026-11-05")
         self.receipt(buying_id, "500.00")
         page = self.client.get(f"/customers/{buying_id}/edit?tab=sales").get_data(as_text=True)
@@ -957,7 +960,8 @@ class CustomerCardDatabaseTests(unittest.TestCase):
         self.assertIn("Draft", page)
         self.assertIn("Receipts received", page)
         self.assertIn("500.00", page)
-        self.assertIn(f'<td class="lp-nowrap">{posted}</td>', page)   # the invoice's own number
+        self.assertIn("INV/2026/00001", page)               # the invoice's printed number
+        self.assertIn("INV/2026/00002", page)
         # the quiet customer has nothing
         page = self.client.get(f"/customers/{quiet_id}/edit?tab=sales").get_data(as_text=True)
         self.assertIn("No sales invoice for this customer yet.", page)

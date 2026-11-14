@@ -5,6 +5,7 @@ from core.db import get_conn
 from core.context import current_organization_id, require_organization
 from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
 from sales.schema import UOM_CHOICES
+from sales.services import clean_date, clean_lc_reference, give_invoice_a_number
 from core.money import to_decimal, money_round
 
 bp = Blueprint("sales", __name__, url_prefix="/sales")
@@ -218,12 +219,12 @@ def sales_invoices_list():
     cursor = conn.cursor()
     cursor.execute("""
         SELECT si.sales_invoice_id, c.name, si.invoice_date, si.due_date, si.status,
-               COALESCE(SUM(sil.total), 0) AS total
+               COALESCE(SUM(sil.total), 0) AS total, si.invoice_no, si.lc_reference
         FROM sales_invoices si
         JOIN customers c ON c.customer_id = si.customer_id
         LEFT JOIN sales_invoice_lines sil ON sil.sales_invoice_id = si.sales_invoice_id
         WHERE si.organization_id = %s
-        GROUP BY si.sales_invoice_id, c.name
+        GROUP BY si.sales_invoice_id, c.name, si.invoice_no, si.lc_reference
         ORDER BY si.invoice_date DESC, si.sales_invoice_id DESC
     """, (org_id,))
     invoices = cursor.fetchall()
@@ -246,6 +247,24 @@ def new_sales_invoice():
         rates = request.form.getlist("rate[]")
         discount_percents = request.form.getlist("discount_percent[]")
         tax_rate_ids = request.form.getlist("sales_tax_rate_id[]")
+
+        # The two boxes his own invoice screen has. A date that is not a date,
+        # or an LC Reference that is too long, stops the invoice before it is
+        # saved, and the message says what to correct.
+        try:
+            lc_reference = clean_lc_reference(request.form.get("lc_reference"))
+            delivery_date = clean_date(request.form.get("delivery_date"))
+        except ValueError as error:
+            return render_template(
+                "sales/new_sales_invoice.html",
+                customers=_get_active_customers(org_id),
+                products=_get_active_products(org_id),
+                accounts=_get_revenue_accounts(org_id),
+                tax_rates=_get_active_sales_tax_rates(org_id),
+                uom_choices=UOM_CHOICES,
+                error=str(error),
+                today=date.today().isoformat(),
+            )
 
         conn = get_conn()
         cursor = conn.cursor()
@@ -283,8 +302,9 @@ def new_sales_invoice():
 
         cursor.execute("""
             INSERT INTO sales_invoices
-                (organization_id, customer_id, invoice_date, due_date, payment_terms, journal_name)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (organization_id, customer_id, invoice_date, due_date, payment_terms, journal_name,
+                 lc_reference, delivery_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING sales_invoice_id
         """, (
             org_id,
@@ -293,8 +313,13 @@ def new_sales_invoice():
             request.form.get("due_date") or None,
             request.form.get("payment_terms", "").strip() or None,
             request.form.get("journal_name", "Customer Invoices").strip(),
+            lc_reference,
+            delivery_date,
         ))
         sales_invoice_id = cursor.fetchone()[0]
+        # The invoice's own number: given here, and never changed afterwards
+        # (sales/services.py).
+        invoice_no = give_invoice_a_number(cursor, org_id, sales_invoice_id, request.form["invoice_date"])
 
         # Fetch tax rates for lookups
         cursor.execute("SELECT sales_tax_rate_id, rate_percent FROM sales_tax_rates WHERE organization_id = %s", (org_id,))
@@ -350,7 +375,7 @@ def new_sales_invoice():
         je_lines = [{
             "account_id": trade_receivables_id,
             "partner_name": customer_name,
-            "label": f"Customer Invoice - {customer_name}",
+            "label": f"Customer Invoice {invoice_no} - {customer_name}",
             "debit": invoice_grand_total,
             "credit": 0,
         }]
@@ -378,7 +403,7 @@ def new_sales_invoice():
             journal_header_id = create_journal_entry(
                 cursor,
                 organization_id=org_id,
-                reference=f"Invoice - {customer_name}",
+                reference=f"Invoice {invoice_no} - {customer_name}",
                 accounting_date=request.form["invoice_date"],
                 journal_name=request.form.get("journal_name", "Customer Invoices").strip(),
                 lines=je_lines,
@@ -430,9 +455,12 @@ def sales_invoice_detail(sales_invoice_id):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT si.sales_invoice_id, c.name, si.invoice_date, si.due_date,
-               si.status, si.journal_header_id, si.payment_terms
+               si.status, si.journal_header_id, si.payment_terms,
+               si.invoice_no, si.lc_reference, si.delivery_date, c.ntn, c.address, c.city,
+               si.journal_name, header.accounting_date
         FROM sales_invoices si
         JOIN customers c ON c.customer_id = si.customer_id
+        LEFT JOIN journal_headers header ON header.journal_header_id = si.journal_header_id
         WHERE si.sales_invoice_id = %s AND si.organization_id = %s
     """, (sales_invoice_id, org_id))
     invoice = cursor.fetchone()

@@ -135,6 +135,9 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 - 2026-11-14 — The five tabs under his card, from his own screens: Contacts & Addresses, Sales & Purchase (his
   invoices and receipts, read-only), Accounting (the 1100 lines under his name), Notes (a new column) and Credit
   Limit (see section 13)
+- 2026-11-14 — Sales invoice numbers: INV/2026/00001, given at save, never repeated, per company per year; the two
+  boxes from his screen (Delivery Date, LC Reference); the invoice page laid out like his; the customer card and the
+  journal entry show the number (see section 14)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -247,3 +250,59 @@ name of a customer with a receipt was locked; the three figures came out right f
 made; and a contact was added, made primary and shown on an old customer. The five tabs were then opened on that
 same upgraded database: his old invoice and his old receipt were listed, the Due figure came out right, and a note
 was saved and read back. Not done: a run on the real (Neon) database.
+
+## 14. Sales invoice numbers (built 14 Nov 2026)
+
+His own screen numbers invoices **INV/2026/01749**. ZYRO now numbers a sales invoice the same way:
+
+```
+INV / 2026 / 00001
+ |     |       |
+ |     |       +-- running number, starting again at 1 each year, per company
+ |     +---------- the year of the invoice date
+ +---------------- the letters every sales invoice starts with
+```
+
+**The rules** (`sales/services.py`; the screens in `sales/routes.py` only show and save):
+
+- **A number is given when the invoice is saved, and never changes after that** — not when it is posted, not when
+  anything else on it changes. A number on a paper invoice cannot be taken back.
+- **A number is never used twice**, even if two invoices are saved in the same second: a unique index on
+  (company, number) refuses the second one, and the save simply takes the number after it.
+- **Each company numbers its own invoices.** Two companies can both have INV/2026/00001.
+- **Drafts are numbered too**, so every invoice has a number to quote from the moment it is saved. If a draft is
+  deleted its number is not given out again — a gap in the sequence is right for books; a repeated number is not.
+- **The invoices made before numbering existed** get their numbers once, on the first start of this version: oldest
+  invoice first, per company per year, so the order on the screen is the order on paper. An invoice that already has
+  a number keeps it, so starting again changes nothing.
+- **The journal entry carries the number** in its reference and on the Trade Receivables line
+  ("Invoice INV/2026/00001 - Gulf Agro Chemicals"), so the books and the customer card's Accounting tab show it too.
+  Old journal entries keep the wording they were written with.
+
+**The invoice screens:**
+
+- **The list** has a **Number** column first. Its Grand Total now shows the company's currency — it was printing a
+  dollar sign regardless of the company's currency, which was wrong and is fixed here.
+- **The invoice page** is titled with its number and shows the details from his own screen: Customer, NTN,
+  Delivery Address, LC Reference, Invoice Date, Due Date, Delivery Date, Accounting Date, Journal, Currency.
+- **The new-invoice screen** has two new boxes: **Delivery Date** and **LC Reference** (only if there is a letter of
+  credit). A date that is not a date, or an LC Reference over 100 characters, stops the invoice before it is saved
+  and says what to correct.
+- **The customer card's Sales & Purchase tab** now shows the invoice number instead of the invoice's internal number.
+
+**Database change — additive only.** Three columns on `sales_invoices` (`invoice_no VARCHAR(30)`,
+`lc_reference VARCHAR(100)`, `delivery_date DATE`) with `ADD COLUMN IF NOT EXISTS`, and one partial unique index,
+`sales_invoices_number_per_organization`, on (company, number) where the number is not null. Nothing dropped,
+renamed or rewritten. The only change to existing rows is the number itself (empty → its number).
+
+**Not done, and why:** there is **no printout** for a sales invoice yet, so the number is on the screen but on no
+paper; and the **dashboard** still lists invoices without their numbers. Both are small jobs for later.
+
+**Checks.** `tests/test_sales_invoice_numbers.py` (15 checks: the shape of a number, the two new boxes checked, then
+the numbers and the screens on a real database — going up, starting again each year, per company, never repeated,
+old invoices numbered once oldest first, the journal entry carrying the number, and a bad date or LC Reference
+refused with nothing saved). Whole suite: **94 passed**, with only the vendor print case failing that failed before
+this work. Rehearsed on a database built and filled by the previous version (5 invoices, two years, one draft): every
+invoice got its number oldest-first and each year started again at 00001, no other row changed except the customers
+getting their IDs (which the customer card has always done), and the list, the invoice page and the customer card all
+showed the numbers. Not done: a run on the real (Neon) database.

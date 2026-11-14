@@ -1,7 +1,7 @@
 {# Sales & Purchase - what the customer has bought, read from the documents.
 
    invoices  every sales invoice entered for him (drafts included), newest first:
-             invoice_id, status, date_text, due_text, total, total_text
+             invoice_id, invoice_no, status, date_text, due_text, total, total_text
    receipts  the money received from him, newest first:
              receipt_id, date_text, amount, amount_text, memo
 
@@ -29,7 +29,7 @@
       <tbody>
         {% for invoice in invoices %}
           <tr>
-            <td class="lp-nowrap">{{ invoice.invoice_id }}</td>
+            <td class="lp-nowrap">{{ invoice.invoice_no or '(not numbered)' }}</td>
             <td class="lp-nowrap">{{ invoice.date_text }}</td>
             <td class="lp-nowrap">{{ invoice.due_text }}</td>
             <td class="amount lp-nowrap">{{ active_currency }} {{ invoice.total_text }}</td>
@@ -40,7 +40,7 @@
     </table>
   </div>
   <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 8px 0 0;">
-    ZYRO does not print a number on an invoice yet, so the invoice's own number is shown.
+    The number on an invoice (INV/2026/00001) is given when it is saved and never changes.
     To open or change an invoice, use the Invoices screen.
   </p>
 {% else %}

@@ -14,6 +14,7 @@
   <table class="lp-table">
     <thead>
       <tr>
+        <th style="width: 170px;">Number</th>
         <th>Customer</th>
         <th style="width: 130px;">Invoice Date</th>
         <th style="width: 130px;">Due Date</th>
@@ -24,10 +25,11 @@
     <tbody>
       {% for inv in invoices %}
       <tr onclick="window.location='{{ url_for('sales.sales_invoice_detail', sales_invoice_id=inv[0]) }}'" style="cursor:pointer;">
+        <td style="font-weight:600; white-space:nowrap;">{{ inv[6] or '(no number)' }}</td>
         <td style="font-weight:600;">{{ inv[1] }}</td>
         <td>{{ inv[2].strftime('%d %b %Y') if inv[2] else '—' }}</td>
         <td>{{ inv[3].strftime('%d %b %Y') if inv[3] else '—' }}</td>
-        <td class="amount">${{ "%.2f"|format(inv[5]) }}</td>
+        <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(inv[5]) }}</td>
         <td>
           {% if inv[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
           {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
@@ -35,7 +37,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="5">
+        <td colspan="6">
           <div class="lp-empty-state">No invoices created yet. Click "+ New Invoice" to start.</div>
         </td>
       </tr>

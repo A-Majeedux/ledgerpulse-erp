@@ -1301,3 +1301,42 @@ a:hover { text-decoration: underline; }
   font-size: 13px;
   font-weight: 700;
 }
+
+/* ==========================================================================
+   SALES INVOICE - the details block at the top of one invoice, laid out the
+   way the owner's own invoice screen shows it.
+   Used by templates/sales/sales_invoice_detail.html only. Added, never
+   changed: every name here is new.
+   ========================================================================== */
+
+.lp-invoice-info {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: var(--lp-space-5);
+  font-size: 13.5px;
+  background: var(--lp-white);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-sm);
+}
+
+.lp-invoice-info th,
+.lp-invoice-info td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--lp-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.lp-invoice-info th {
+  width: 18%;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: var(--lp-text-muted);
+  background: var(--lp-canvas);
+  white-space: nowrap;
+}
+
+.lp-invoice-info td { color: var(--lp-text); overflow-wrap: anywhere; }
+.lp-invoice-info tr:last-child th,
+.lp-invoice-info tr:last-child td { border-bottom: none; }

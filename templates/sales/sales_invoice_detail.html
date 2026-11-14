@@ -1,12 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Sales Invoice{% endblock %}
+{% block title %}{{ invoice[7] or 'Sales Invoice' }}{% endblock %}
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
 <div class="lp-page-header">
   <div>
-    <h1 class="lp-page-title">Invoice to {{ invoice[1] }}</h1>
+    <h1 class="lp-page-title">{{ invoice[7] or 'Draft invoice' }}</h1>
     <p class="lp-page-subtitle">
-      {{ invoice[2].strftime('%d %b %Y') }}
+      Invoice to {{ invoice[1] }}
+      {% if invoice[2] %} · {{ invoice[2].strftime('%d %b %Y') }}{% endif %}
       {% if invoice[3] %} · Due {{ invoice[3].strftime('%d %b %Y') }}{% endif %}
       {% if invoice[6] %} · Terms: {{ invoice[6] }}{% endif %}
     </p>
@@ -23,6 +24,42 @@
     {% endif %}
   </div>
 </div>
+
+{# The details of the invoice, laid out the way his own invoice screen shows
+   them: the customer and his NTN, the delivery address, the three dates, the
+   LC Reference, and the currency everything is kept in. #}
+<table class="lp-invoice-info">
+  <tr>
+    <th>Customer</th>
+    <td><strong>{{ invoice[1] }}</strong></td>
+    <th>NTN</th>
+    <td>{{ invoice[10] or '—' }}</td>
+  </tr>
+  <tr>
+    <th>Delivery Address</th>
+    <td>{{ invoice[11] or invoice[1] }}</td>
+    <th>LC Reference</th>
+    <td>{{ invoice[8] or '—' }}</td>
+  </tr>
+  <tr>
+    <th>Invoice Date</th>
+    <td>{{ invoice[2].strftime('%d %b %Y') if invoice[2] else '—' }}</td>
+    <th>Due Date</th>
+    <td>{{ invoice[3].strftime('%d %b %Y') if invoice[3] else '—' }}</td>
+  </tr>
+  <tr>
+    <th>Delivery Date</th>
+    <td>{{ invoice[9].strftime('%d %b %Y') if invoice[9] else '—' }}</td>
+    <th>Accounting Date</th>
+    <td>{{ invoice[14].strftime('%d %b %Y') if invoice[14] else (invoice[2].strftime('%d %b %Y') if invoice[2] else '—') }}</td>
+  </tr>
+  <tr>
+    <th>Journal</th>
+    <td>{{ invoice[13] or 'Customer Invoices' }}</td>
+    <th>Currency</th>
+    <td>{{ active_currency|default('PKR') }}</td>
+  </tr>
+</table>
 
 <div class="lp-table-wrapper">
   <table class="lp-table">

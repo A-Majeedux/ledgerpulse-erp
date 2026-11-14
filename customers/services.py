@@ -911,9 +911,10 @@ def save_notes(cursor, organization_id, customer_id, notes):
     return cursor.rowcount > 0
 
 
-def _invoice_row(invoice_id, invoice_date, due_date, status, total):
+def _invoice_row(invoice_id, invoice_no, invoice_date, due_date, status, total):
     return {
         "invoice_id": invoice_id,
+        "invoice_no": invoice_no,
         "status": status,
         "date_text": format_date(invoice_date),
         "due_text": format_date(due_date),
@@ -925,16 +926,17 @@ def _invoice_row(invoice_id, invoice_date, due_date, status, total):
 def list_customer_invoices(cursor, organization_id, customer_id):
     """Every sales invoice entered for the customer, newest first - drafts included.
 
-    ZYRO does not print a number on an invoice yet, so the card shows the
-    invoice's own number (its ID) and says so.
+    The number shown is the invoice's own printed number (INV/2026/00001),
+    given when it was saved (sales/services.py).
     """
     cursor.execute("""
-        SELECT invoice.sales_invoice_id, invoice.invoice_date, invoice.due_date, invoice.status,
-               COALESCE(SUM(line.total), 0)
+        SELECT invoice.sales_invoice_id, invoice.invoice_no, invoice.invoice_date, invoice.due_date,
+               invoice.status, COALESCE(SUM(line.total), 0)
         FROM sales_invoices invoice
         LEFT JOIN sales_invoice_lines line ON line.sales_invoice_id = invoice.sales_invoice_id
         WHERE invoice.organization_id = %s AND invoice.customer_id = %s
-        GROUP BY invoice.sales_invoice_id, invoice.invoice_date, invoice.due_date, invoice.status
+        GROUP BY invoice.sales_invoice_id, invoice.invoice_no, invoice.invoice_date, invoice.due_date,
+                 invoice.status
         ORDER BY invoice.invoice_date DESC, invoice.sales_invoice_id DESC
     """, (organization_id, customer_id))
     return [_invoice_row(*row) for row in cursor.fetchall()]

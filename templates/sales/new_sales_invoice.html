@@ -39,7 +39,19 @@
         <label class="form-label">Payment Terms</label>
         <input type="text" name="payment_terms" placeholder="e.g. 30 days" class="form-control">
       </div>
+      <div class="lp-form-group">
+        <label class="form-label">Delivery Date</label>
+        <input type="date" name="delivery_date" class="form-control">
+      </div>
+      <div class="lp-form-group">
+        <label class="form-label">LC Reference</label>
+        <input type="text" name="lc_reference" maxlength="100" placeholder="Only if there is a letter of credit"
+               class="form-control">
+      </div>
     </div>
+    <p style="margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--lp-text-muted);">
+      The invoice number (INV/2026/00001) is given when you save, and never changes after that.
+    </p>
   </div>
 
   <!-- Hidden templates for options used by JavaScript -->

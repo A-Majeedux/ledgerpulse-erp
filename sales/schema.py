@@ -77,6 +77,20 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS journal_name VARCHAR(100) DEFAULT 'Customer Invoices'")
     cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'Draft'")
     cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS journal_header_id INTEGER REFERENCES journal_headers(journal_header_id)")
+    # --- the printed number of the invoice (sales/services.py) -------------
+    # His own screen numbers invoices INV/2026/01749; ZYRO does the same. A
+    # number is given when the invoice is saved and never changes after that.
+    cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS invoice_no VARCHAR(30)")
+    # The two boxes his invoice screen has and ZYRO had no place for.
+    cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS lc_reference VARCHAR(100)")
+    cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS delivery_date DATE")
+    # Two invoices of one company can never carry the same number. Invoices
+    # made before numbering existed have none yet, and many "none"s are fine.
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS sales_invoices_number_per_organization
+        ON sales_invoices (organization_id, invoice_no)
+        WHERE invoice_no IS NOT NULL
+    """)
 
     # -----------------------------------------------------------------
     # 4. Sales Invoice Lines
@@ -99,6 +113,11 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE sales_invoice_lines ADD COLUMN IF NOT EXISTS sales_tax_rate_id INTEGER REFERENCES sales_tax_rates(sales_tax_rate_id)")
     cursor.execute("ALTER TABLE sales_invoice_lines ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(14, 2) DEFAULT 0")
     cursor.execute("ALTER TABLE sales_invoice_lines ADD COLUMN IF NOT EXISTS total NUMERIC(14, 2) NOT NULL DEFAULT 0")
+
+    # A number for the invoices made before numbering existed - once, oldest
+    # first, per company per year (sales/services.py).
+    from sales.services import number_missing_invoices
+    number_missing_invoices(cursor)
 
     # -----------------------------------------------------------------
     # 5. Output Tax Payable Account
