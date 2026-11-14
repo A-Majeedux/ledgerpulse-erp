@@ -82,7 +82,7 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 | Bank internal transfer | 🟡 | Exists, needs review |
 | Vendors: master | 🟡 | List/new/detail work. Edit page reuses the New Vendor form (works) |
 | Vendors: bills, credit notes, payments, batch | 🟡 | Most complete module. Claimed done; verify by running tests |
-| Customers + receipts | 🟡 | Smaller than vendors, older pattern |
+| Customers + receipts | 🟡 | Customer card rebuilt 14 Nov 2026 (ID, Edit, search, Columns menu — section 13). Receipts unchanged, older pattern |
 | Sales invoices | 🟡 | Invoices only. No quotation → order → delivery chain |
 | Purchases (RFQ → PO → Receipt) | ❌ | |
 | Inventory | ❌ | |
@@ -128,3 +128,49 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 
 - 2026-11-03 — Repo reviewed, cleanup started, PROJECT.md created
 - 2026-11-08 — Cleanup done, Trial Balance built and balanced
+- 2026-11-14 — Customer card: ID, the new boxes, an Edit screen with Active / Inactive, the list with search and the
+  Columns tick-box menu; the rules in the new `customers/services.py` (see section 13)
+
+## 13. The customer card (built 14 Nov 2026)
+
+Built from the owner's pictures of his own customer screens, in ZYRO's look. Only the `customers` table is written;
+no journal entry is created or changed.
+
+**The card.** ID, Person / Company, Name, Email, Phone, the address in parts (Street, Street 2, City, State, ZIP,
+Country), Region, Territory, Category Parent, Category, LIC Number, LIC Expiry Date, NTN, STRN, CNIC, Nature of supply,
+Credit limit. There is an **Edit** screen, with Status **Active / Inactive**.
+
+**The rules** (`customers/services.py`; the pages in `customers/routes.py` only show and save):
+
+- **ID.** A running number inside each company (1, 2, 3…), given when the customer is saved, and never changed.
+  Customers saved before this version are numbered oldest first the first time it started. A unique index,
+  `customers_id_per_organization` on (company, ID), makes sure no two customers of a company share an ID.
+- **Wrong input is refused with a message**, and nothing that was typed is lost: a missing name, text too long for
+  its column, a wrong email, a wrong date, a credit limit that is negative or above 999,999,999,999.99. All the
+  mistakes are listed together.
+- **Two name rules**, both because a journal line remembers its customer by *name*: a second customer with the same
+  name in the same company is refused, and the name is locked once the customer has a receipt, an invoice or a
+  journal line on Trade Receivables (account 1100). Both rules can go when journal lines store the customer's ID.
+- **Inactive** keeps the customer on the list (marked Inactive) with its history and its balance; it is no longer
+  offered when a receipt, invoice or journal entry is entered. Receipts and sales already read only active
+  customers, so nothing had to change there.
+- **The list** has 19 columns and shows 11 of them first (ID, Name, Credit Limit, Email, Phone, Region, Territory,
+  LIC Number, LIC Expiry Date, Category Parent, Country). The **Columns** button opens a menu of tick-boxes that
+  shows or hides each column; the choice is remembered in that browser only. Search finds a customer by name,
+  region, territory, city, both categories, NTN, CNIC, LIC number, phone, email or ID, and every typed word must be
+  found.
+
+**Database change — additive only.** 15 columns added with `ADD COLUMN IF NOT EXISTS`, the ID given to the customers
+that had none, and one new unique index. Nothing is dropped, renamed or rewritten.
+
+**Still open from his customer form:** Tags, Is Vendor, Currency, Website, the contact cards, the totals on top
+(Sales, Invoiced, Due) and the tabs. LIC Number and LIC Expiry Date are on every company's card for now — the owner
+was asked whether they are for Hextar only.
+
+**Checks.** `tests/test_customer_card.py` (29 checks, the rules without a database and the screens on one), plus
+ZYRO's own `tests/` (51 passed; `test_vendors.py::test_10_all_print_templates_and_routes` failed before this work
+and still fails — it looks for the words "INVOICE LINES" on the vendor bill print, which the template writes as
+"Invoice lines"). Rehearsed on a database built and filled by the previous version: none of its rows changed; the
+15 columns and the index were added; every customer got its ID oldest first; the old blank-named customer showed as
+"(no name)" and could be given a name; two customers that already shared a name both stayed; the name of a customer
+with a receipt was locked. Not done: a run on the real (Neon) database.

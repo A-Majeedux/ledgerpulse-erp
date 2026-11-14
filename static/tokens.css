@@ -980,3 +980,105 @@ a:hover { text-decoration: underline; }
 }
 
 
+
+/* ==========================================================================
+   CUSTOMER LIST - the search bar, the "Columns" tick-box menu, and the wide
+   list that uses it
+   --------------------------------------------------------------------------
+   Used by templates/customers/customers_list.html only.
+   Nothing above this line was changed; these rules only add, and every name
+   here is new, so no other screen can be affected.
+
+     .lp-list-toolbar      the row above the list: search, count, Columns
+     .lp-list-search       the search box and its two buttons
+     .lp-list-count        "12 customers" (or "3 of 12 customers")
+     .lp-colmenu           the Columns button, with .lp-colmenu-panel below it
+     .lp-list              the same .lp-table, a little tighter and allowed to scroll
+     .lp-clip              one line of text, ended with "..." when it does not fit
+     .lp-nowrap            a value that must not be broken over two lines
+   ========================================================================== */
+
+.lp-list-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--lp-space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--lp-space-4);
+}
+
+.lp-list-search {
+  display: flex;
+  gap: var(--lp-space-2);
+  align-items: center;
+  flex: 1 1 320px;
+  max-width: 520px;
+}
+.lp-list-search .form-control { flex: 1 1 auto; min-width: 0; }
+
+.lp-list-count {
+  font-size: 13px;
+  color: var(--lp-text-muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* The panel opens underneath the toolbar, inside the card, so that it can
+   never be cut off - the card clips anything that hangs outside it. */
+.lp-colmenu { flex: 0 0 auto; }
+.lp-colmenu-panel {
+  flex: 1 1 100%;
+  order: 10;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 2px var(--lp-space-4);
+  padding: var(--lp-space-3) var(--lp-space-4);
+  background: var(--lp-canvas);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-sm);
+}
+.lp-colmenu-panel[hidden] { display: none; }
+.lp-colmenu-panel label {
+  display: flex;
+  align-items: center;
+  gap: var(--lp-space-2);
+  padding: 6px var(--lp-space-2);
+  border-radius: 4px;
+  font-size: 13.5px;
+  color: var(--lp-text);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lp-colmenu-panel label:hover { background: var(--lp-canvas); }
+.lp-colmenu-panel input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--zyro-electric-teal);
+}
+
+/* A hidden column is hidden, in the heading and in every row. */
+.lp-table [hidden] { display: none; }
+
+.lp-list th,
+.lp-list td { padding: var(--lp-space-3) 10px; }
+.lp-list th:first-child,
+.lp-list td:first-child { padding-left: var(--lp-space-3); }
+.lp-list td { font-size: 13.5px; }
+.lp-list th { vertical-align: bottom; line-height: 1.35; white-space: nowrap; }
+/* A wide list scrolls sideways inside its card instead of widening the page. */
+.lp-table-wrapper > .lp-table.lp-list { min-width: 900px; }
+/* A page that holds such a list may use the whole width of a wide screen. */
+.lp-content:has(.lp-list) { max-width: none; }
+
+.lp-list-name { font-weight: 600; color: var(--zyro-deep-navy); }
+.lp-list-name:hover { color: var(--lp-teal); }
+
+.lp-clip {
+  display: block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp-nowrap { white-space: nowrap; }

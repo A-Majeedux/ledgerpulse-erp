@@ -1,0 +1,157 @@
+{# The boxes of the customer card - shared by New Customer and Edit Customer.
+
+   values       what every box shows (text)
+   problems     what was wrong with the card that was just refused (may be empty)
+   limits       the longest text each box accepts
+   suggestions  values this company's other customers already use, offered
+                while typing (Region, Territory, the categories, ...)
+   customer     the saved customer            (Edit only)
+   name_locked  why the name cannot be changed (Edit only, else nothing)
+
+   The rules behind these boxes are in customers/services.py. #}
+
+{# A small heading over a group of boxes, as on the other ZYRO forms. #}
+{% macro section(title) %}
+  <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--lp-text-muted); margin: 24px 0 12px;">{{ title }}</p>
+{% endmacro %}
+
+{% macro text_box(field, label, type="text", suggest=false) %}
+  <div class="lp-form-group">
+    <label for="c-{{ field }}">{{ label }}</label>
+    <input type="{{ type }}" id="c-{{ field }}" name="{{ field }}" value="{{ values[field] }}" maxlength="{{ limits[field] }}"
+           {% if suggest %}list="c-{{ field }}-list" autocomplete="off"{% endif %} class="form-control">
+    {% if suggest %}
+      <datalist id="c-{{ field }}-list">{% for option in suggestions[field] %}<option value="{{ option }}">{% endfor %}</datalist>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% if problems %}
+  <div class="alert alert-error">
+    {% if problems|length == 1 %}
+      {{ problems[0] }}
+    {% else %}
+      <strong>Nothing was saved. Please correct these {{ problems|length }} things:</strong>
+      <ul style="margin: 6px 0 0; padding-left: 20px;">{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+{% endif %}
+
+{{ section("Identity") }}
+
+<div class="lp-form-group">
+  <label>Person or Company</label>
+  <div style="display: flex; gap: 20px; align-items: center; padding: 6px 0;">
+    <label style="font-weight: 400; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+      <input type="radio" name="partner_type" value="company" {{ 'checked' if values.partner_type != 'person' }}> Company
+    </label>
+    <label style="font-weight: 400; display: flex; align-items: center; gap: 6px; cursor: pointer;">
+      <input type="radio" name="partner_type" value="person" {{ 'checked' if values.partner_type == 'person' }}> Person
+    </label>
+  </div>
+</div>
+
+<div class="lp-form-grid">
+  <div class="lp-form-group" style="grid-column: 1 / -1;">
+    <label for="c-name">Customer name <span style="color: var(--lp-coral-text);">*</span></label>
+    <input type="text" id="c-name" name="name" value="{{ values.name }}" maxlength="{{ limits.name }}" required
+           {% if name_locked %}readonly{% endif %} class="form-control"
+           style="font-size: 17px; font-weight: 600;{% if name_locked %} background: #eef3f2; cursor: not-allowed;{% endif %}">
+    {% if name_locked %}
+      <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 6px 0 0;">{{ name_locked }}</p>
+    {% endif %}
+  </div>
+
+  <div class="lp-form-group">
+    <label>ID</label>
+    <div class="form-control" style="background: var(--lp-canvas); color: var(--lp-text-muted);">
+      {% if customer %}<strong style="color: var(--lp-text);">{{ customer.customer_no }}</strong>{% else %}Given automatically when you save{% endif %}
+    </div>
+  </div>
+
+  <div class="lp-form-group">
+    <label for="c-nature_of_supply">Nature of supply</label>
+    <select id="c-nature_of_supply" name="nature_of_supply" class="form-select">
+      {% for option in nature_options %}<option value="{{ option }}" {{ 'selected' if values.nature_of_supply == option }}>{{ option }}</option>{% endfor %}
+    </select>
+  </div>
+
+  <div class="lp-form-group">
+    <label for="c-credit_limit">Credit limit</label>
+    <input type="number" id="c-credit_limit" name="credit_limit" value="{{ values.credit_limit }}" step="0.01" min="0" max="999999999999.99" class="form-control">
+  </div>
+
+  {% if customer %}
+    <div class="lp-form-group">
+      <label for="c-status">Status</label>
+      <select id="c-status" name="status" class="form-select">
+        <option value="active" {{ 'selected' if values.status != 'inactive' }}>Active</option>
+        <option value="inactive" {{ 'selected' if values.status == 'inactive' }}>Inactive</option>
+      </select>
+      <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 6px 0 0;">
+        An inactive customer keeps its history and its balance. It only stops being offered when you enter a new receipt, invoice or journal entry.
+      </p>
+    </div>
+  {% endif %}
+</div>
+<p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: -6px 0 0;">
+  Nature of supply decides which WHT Receivable ledger applies if this customer withholds tax on their payment - it is not a tax rate.
+</p>
+
+{{ section("Contact") }}
+<div class="lp-form-grid">
+  {{ text_box("email", "Email", type="email") }}
+  {{ text_box("phone", "Phone", type="tel") }}
+</div>
+
+{{ section("Address") }}
+<div class="lp-form-grid">
+  <div class="lp-form-group" style="grid-column: 1 / -1;">
+    <label for="c-address">Street</label>
+    <textarea id="c-address" name="address" rows="2" maxlength="{{ limits.address }}" class="form-control"
+              placeholder="Canal Road, Block B">{{ values.address }}</textarea>
+  </div>
+  <div class="lp-form-group" style="grid-column: 1 / -1;">
+    <label for="c-street2">Street 2</label>
+    <input type="text" id="c-street2" name="street2" value="{{ values.street2 }}" maxlength="{{ limits.street2 }}" class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="c-city">City</label>
+    <input type="text" id="c-city" name="city" value="{{ values.city }}" maxlength="{{ limits.city }}" list="c-city-list" autocomplete="off" class="form-control">
+    <datalist id="c-city-list">{% for option in suggestions.city %}<option value="{{ option }}">{% endfor %}</datalist>
+  </div>
+  <div class="lp-form-group">
+    <label for="c-state">State</label>
+    <input type="text" id="c-state" name="state" value="{{ values.state }}" maxlength="{{ limits.state }}" list="c-state-list" autocomplete="off" class="form-control">
+    <datalist id="c-state-list">{% for option in suggestions.state %}<option value="{{ option }}">{% endfor %}</datalist>
+  </div>
+  <div class="lp-form-group">
+    <label for="c-zip_code">ZIP</label>
+    <input type="text" id="c-zip_code" name="zip_code" value="{{ values.zip_code }}" maxlength="{{ limits.zip_code }}" class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="c-country">Country</label>
+    <input type="text" id="c-country" name="country" value="{{ values.country }}" maxlength="{{ limits.country }}" list="c-country-list" autocomplete="off" class="form-control">
+    <datalist id="c-country-list">{% for option in suggestions.country %}<option value="{{ option }}">{% endfor %}</datalist>
+  </div>
+</div>
+
+{{ section("Sales details") }}
+<div class="lp-form-grid">
+  {{ text_box("region", "Region", suggest=true) }}
+  {{ text_box("territory", "Territory", suggest=true) }}
+  {{ text_box("category_parent", "Category Parent", suggest=true) }}
+  {{ text_box("category", "Category", suggest=true) }}
+  {{ text_box("lic_number", "LIC Number") }}
+  <div class="lp-form-group">
+    <label for="c-lic_expiry_date">LIC Expiry Date</label>
+    <input type="date" id="c-lic_expiry_date" name="lic_expiry_date" value="{{ values.lic_expiry_date }}" min="1900-01-01" max="2200-12-31" class="form-control">
+  </div>
+</div>
+
+{{ section("Registration") }}
+<div class="lp-form-grid">
+  {{ text_box("ntn", "NTN") }}
+  {{ text_box("strn", "STRN") }}
+  {{ text_box("cnic", "CNIC") }}
+</div>

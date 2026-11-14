@@ -6,10 +6,19 @@ from core.context import current_organization_id, require_organization
 from accounting.services import create_journal_entry, UnbalancedEntryError
 from wht.routes import get_active_tax_rates
 from core.money import to_decimal, money_round
+from customers.services import (
+    LIST_COLUMNS, NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS, TEXT_FIELDS,
+    ValidationError, blank_form, clean_customer_form, clean_search, count_customers,
+    create_customer, field_suggestions, form_as_typed, form_from_customer, get_customer,
+    list_customers, list_row, name_lock_reason, update_customer,
+)
 
 bp = Blueprint("customers", __name__, url_prefix="/customers")
 
-NATURE_OF_SUPPLY_OPTIONS = ["Supplies", "Services"]
+
+def _field_limits():
+    """The longest text each box of the card accepts, for the maxlength attribute."""
+    return dict({field: max_length for field, _label, max_length in TEXT_FIELDS}, name=NAME_MAX_LENGTH)
 
 
 def _get_account_id_by_code(cursor, org_id, code):
@@ -49,50 +58,106 @@ def _get_customers(org_id):
 
 # ---------------------------------------------------------------------
 # Customer master
+#
+# These three screens only read and write the customers table. The rules
+# (what may be typed, the ID, when a name is locked) live in
+# customers/services.py; nothing here touches a journal entry.
 # ---------------------------------------------------------------------
+
+def _customer_card(template, cursor, org_id, **context):
+    """Show one of the two card screens with everything they need."""
+    return render_template(
+        template,
+        nature_options=NATURE_OF_SUPPLY_OPTIONS,
+        limits=_field_limits(),
+        suggestions=field_suggestions(cursor, org_id),
+        **context,
+    )
+
 
 @bp.route("/")
 @require_organization
 def customers_list():
     org_id = current_organization_id()
+    search = clean_search(request.args.get("q"))
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT customer_id, name, nature_of_supply, ntn, strn, credit_limit
-        FROM customers WHERE organization_id = %s ORDER BY name
-    """, (org_id,))
-    customers = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return render_template("customers/customers_list.html", customers=customers)
+    try:
+        customers = list_customers(cursor, org_id, search)
+        total = count_customers(cursor, org_id)
+    finally:
+        cursor.close()
+        conn.close()
+    return render_template(
+        "customers/customers_list.html",
+        customers=[list_row(customer) for customer in customers],
+        columns=LIST_COLUMNS, search=search, total=total,
+    )
 
 
 @bp.route("/new", methods=["GET", "POST"])
 @require_organization
 def new_customer():
     org_id = current_organization_id()
-    if request.method == "POST":
-        conn = get_conn()
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO customers
-                (organization_id, name, nature_of_supply, ntn, strn, cnic, address, credit_limit)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (
-            org_id,
-            request.form["name"].strip(),
-            request.form.get("nature_of_supply", "Supplies"),
-            request.form.get("ntn", "").strip() or None,
-            request.form.get("strn", "").strip() or None,
-            request.form.get("cnic", "").strip() or None,
-            request.form.get("address", "").strip() or None,
-            to_decimal(request.form.get("credit_limit") or 0),
-        ))
-        conn.commit()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        values, problems = blank_form(), []
+        if request.method == "POST":
+            data, problems = clean_customer_form(request.form)
+            if not problems:
+                try:
+                    create_customer(cursor, org_id, data)
+                    conn.commit()
+                    return redirect(url_for("customers.customers_list"))
+                except ValidationError as error:
+                    conn.rollback()
+                    problems = [str(error)]
+            # Refused: show the card again with everything that was typed.
+            values = form_as_typed(request.form)
+        return _customer_card("customers/new_customer.html", cursor, org_id, values=values, problems=problems)
+    finally:
         cursor.close()
         conn.close()
-        return redirect(url_for("customers.customers_list"))
-    return render_template("customers/new_customer.html", nature_options=NATURE_OF_SUPPLY_OPTIONS)
+
+
+@bp.route("/<int:customer_id>/edit", methods=["GET", "POST"])
+@require_organization
+def edit_customer(customer_id):
+    """
+    Change a customer's card. The ID never changes. The name can be changed
+    only while the customer has no entries (see customers/services.py).
+
+    An INACTIVE customer keeps its history and its balance; it only stops
+    being offered when a new receipt, invoice or journal entry is entered.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        customer = get_customer(cursor, org_id, customer_id)
+        if customer is None:            # no such customer in THIS organization
+            abort(404)
+        values, problems = form_from_customer(customer), []
+        if request.method == "POST":
+            data, problems = clean_customer_form(request.form, editing=True)
+            if not problems:
+                try:
+                    update_customer(cursor, org_id, customer_id, data)
+                    conn.commit()
+                    return redirect(url_for("customers.customers_list"))
+                except ValidationError as error:
+                    conn.rollback()
+                    problems = [str(error)]
+            values = form_as_typed(request.form, base=values)
+        return _customer_card(
+            "customers/edit_customer.html", cursor, org_id,
+            customer=customer, values=values, problems=problems,
+            name_locked=name_lock_reason(cursor, org_id, customer),
+        )
+    finally:
+        cursor.close()
+        conn.close()
 
 
 # ---------------------------------------------------------------------
