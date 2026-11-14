@@ -2,17 +2,404 @@
 {% block title %}Dashboard{% endblock %}
 {% block active_nav %}dashboard{% endblock %}
 {% block content %}
-<div class="lp-hero">
-  <span style="font-size:12px; text-transform:uppercase; letter-spacing:0.05em; opacity:0.7;">Financial Control Center</span>
-  <h1>Welcome back{% if org_name %}, {{ org_name }}{% endif %}</h1>
-  <p>Foundation is live: organizations, design system, and templates are all wired up.</p>
+{#
+  The Financial Control Center.
+
+  Every figure comes from dashboard/services.py (d = build_dashboard(...)),
+  worked out from POSTED journal entries of the active organization only.
+  This template does no arithmetic of its own - it only decides how a
+  figure is worded and coloured.
+
+    money(x)    1250000 -> 1,250,000.00
+    plain(x)    1250000 -> 1250000.00   (exact figure in data-* attributes,
+                                         read by the automated checks)
+    percent(x)  25.0 -> 25.0%
+#}
+
+{# ---- line icons (drawn inline so the page needs no icon font) ---- #}
+{% macro icon(name, size=18, stroke=2) -%}
+<svg class="lp-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ stroke }}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+  {%- if name == 'bank' -%}<path d="M3 10l9-6 9 6"/><path d="M5 10v8"/><path d="M9.5 10v8"/><path d="M14.5 10v8"/><path d="M19 10v8"/><path d="M3 21h18"/>
+  {%- elif name == 'incoming' -%}<line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/>
+  {%- elif name == 'outgoing' -%}<line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
+  {%- elif name == 'revenue' -%}<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+  {%- elif name == 'expenses' -%}<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>
+  {%- elif name == 'profit' -%}<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>
+  {%- elif name == 'plus' -%}<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  {%- elif name == 'document' -%}<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+  {%- elif name == 'calendar' -%}<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+  {%- elif name == 'check' -%}<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+  {%- elif name == 'alert' -%}<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+  {%- elif name == 'chevron' -%}<polyline points="9 18 15 12 9 6"/>
+  {%- elif name == 'up' -%}<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
+  {%- elif name == 'down' -%}<line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
+  {%- endif -%}
+</svg>
+{%- endmacro %}
+
+{# ---- one stat card: icon chip, figure, how it moved, six-month bars ---- #}
+{% macro stat_card(card, colour, icon_name) %}
+{% set shown = money(card.value) %}
+<article class="lp-card lp-stat-card" data-kpi="{{ card.key }}">
+  <div class="lp-stat-head">
+    <span class="lp-stat-icon {{ colour }}">{{ icon(icon_name, 20) }}</span>
+    <div>
+      <div class="lp-stat-label">{{ card.label }}</div>
+      <div class="lp-stat-note" title="{{ card.note }}">{{ card.note }}</div>
+    </div>
+  </div>
+  <div class="lp-stat-value{{ ' negative' if card.value < 0 }}{{ ' long' if shown|length > 13 }}{{ ' xlong' if shown|length > 16 }}" data-figure="{{ card.key }}" data-value="{{ plain(card.value) }}">
+    {%- if d.organization.currency %}<span class="lp-currency">{{ d.organization.currency }}</span>{% endif -%}
+    {{ shown }}
+  </div>
+  <div class="lp-stat-foot">
+    <div class="lp-stat-delta" data-delta="{{ card.key }}" data-direction="{{ card.direction }}" data-previous="{{ plain(card.previous) }}" data-change="{{ plain(card.change) }}">
+      {% if card.kind == 'balance' %}
+        {# a balance: how far it moved since the day before the period started #}
+        {% if card.direction == 'flat' %}
+          <span>No change since {{ d.opening_label }}</span>
+        {% else %}
+          <span class="lp-trend {{ card.tone }}">{{ icon(card.direction, 12, 3) }}<span class="lp-sr-only">{{ card.direction }} </span>{{ money(card.change|abs) }}</span>
+          <span>since {{ d.opening_label }}</span>
+        {% endif %}
+      {% elif card.percent is not none %}
+        <span class="lp-trend {{ card.tone }}">{{ icon(card.direction, 12, 3) }}<span class="lp-sr-only">{{ card.direction }} </span>{{ percent(card.percent) }}</span>
+        <span>vs {{ money(card.previous) }} in {{ d.period.compare_label }}</span>
+      {% elif card.direction == 'flat' %}
+        <span>{% if card.value == 0 %}Nothing posted in this period, or in {{ d.period.compare_label }}{% else %}Same as {{ d.period.compare_label }}{% endif %}</span>
+      {% else %}
+        {# Nothing positive to take a percentage of: show the two amounts, never an invented percentage. #}
+        <span class="lp-trend {{ card.tone }}">{{ icon(card.direction, 12, 3) }}<span class="lp-sr-only">{{ card.direction }} </span>{{ money(card.change|abs) }}</span>
+        <span>vs {{ money(card.previous) }} in {{ d.period.compare_label }}</span>
+      {% endif %}
+    </div>
+    <div class="lp-spark {{ colour }}" role="img" aria-label="{{ card.label }}, {{ card.series[0].label }} to {{ card.series[-1].label }}">
+      {% for point in card.series -%}
+      <span class="{{ 'current' if point.current }}{{ ' negative' if point.negative }}" style="height: {{ point.height }}%" title="{{ point.label }}: {{ money(point.value) }}"></span>
+      {%- endfor %}
+    </div>
+  </div>
+</article>
+{% endmacro %}
+
+{# ============================== HERO ============================== #}
+<section class="lp-hero control-center">
+  <div class="lp-hero-top">
+    <div>
+      <span class="lp-hero-eyebrow"><span class="lp-hero-pulse"></span>Financial Control Center</span>
+      <h1>Welcome back{% if user_name %}, {{ user_name }}{% endif %}</h1>
+      <p>{{ d.organization.name }}&nbsp;· <span style="white-space: nowrap;">{{ d.today_label }}</span></p>
+    </div>
+    <div class="lp-hero-period">
+      <nav class="lp-segment" aria-label="Period shown">
+        {% for option in d.periods %}
+        <a href="{{ url_for('dashboard.home') if option.key == 'month' else url_for('dashboard.home', period=option.key) }}"
+           class="{{ 'active' if option.active }}"{% if option.active %} aria-current="true"{% endif %}>{{ option.label }}</a>
+        {% endfor %}
+      </nav>
+      <div class="lp-hero-range">
+        <strong>{{ d.period.range_label }}</strong>{% if d.period.detail %} · {{ d.period.detail }}{% endif %}<br>
+        compared with {{ d.period.compare_label }}
+      </div>
+    </div>
+  </div>
+  <div class="lp-hero-actions">
+    <span class="lp-hero-actions-label">New</span>
+    <a class="lp-btn primary" href="{{ url_for('sales.new_sales_invoice') }}">{{ icon('plus', 16) }}Sales invoice</a>
+    <a class="lp-btn on-dark" href="{{ url_for('customers.new_customer_receipt') }}">Customer receipt</a>
+    <a class="lp-btn on-dark" href="{{ url_for('vendors.new_vendor_bill') }}">Vendor bill</a>
+    <a class="lp-btn on-dark" href="{{ url_for('vendors.new_vendor_payment') }}">Vendor payment</a>
+    <a class="lp-btn on-dark" href="{{ url_for('accounting.new_journal_entry') }}">Journal entry</a>
+  </div>
+</section>
+
+{# ---- warnings that must never be missed ---- #}
+{% if not d.position.balanced %}
+<div class="alert alert-danger" data-alert="out-of-balance">
+  <strong>The ledger is out of balance by {{ money(d.position.difference|abs) }}.</strong>
+  Posted debits and posted credits should always be equal. Do not rely on the figures below until this is found and corrected.
+</div>
+{% endif %}
+{% if d.position.unclassified != 0 %}
+<div class="alert alert-warning" data-alert="unclassified">
+  <strong>{{ money(d.position.unclassified|abs) }} sits on accounts with an unrecognised type{% if d.position.unclassified_types %} ({{ d.position.unclassified_types|join(', ') }}){% endif %}.</strong>
+  Account types must be one of {{ d.account_types|join(', ') }}; these amounts are not part of any figure below.
+</div>
+{% endif %}
+
+{# ============================ POSITION ============================ #}
+<div class="lp-section-head">
+  <h2>Where you stand</h2>
+  <span>Balances as at {{ d.as_at_label }}</span>
+</div>
+<div class="lp-grid">
+  {{ stat_card(d.cards.cash, 'green', 'bank') }}
+  {{ stat_card(d.cards.receivables, 'blue', 'incoming') }}
+  {{ stat_card(d.cards.payables, 'amber', 'outgoing') }}
 </div>
 
-<div class="lp-card">
-  <p style="margin:0; color: var(--lp-text-muted);">
-    This is a clean starting point. Next up: the Accounting segment
-    (Chart of Accounts + Journal Entries), which everything else will post
-    through.
-  </p>
+{# ========================== PERFORMANCE ========================== #}
+<div class="lp-section-head">
+  <h2>How the period went</h2>
+  <span>{{ d.period.label }}: {{ d.period.range_label }} · compared with {{ d.period.compare_label }}</span>
 </div>
+<div class="lp-grid">
+  {{ stat_card(d.cards.revenue, 'green', 'revenue') }}
+  {{ stat_card(d.cards.expenses, 'coral', 'expenses') }}
+  {{ stat_card(d.cards.profit, 'blue', 'profit') }}
+</div>
+
+{# ================== TREND  +  NEEDS ATTENTION ================== #}
+<div class="lp-grid" style="margin-top: var(--lp-space-8);">
+  {% if d.has_any_entry %}
+  <section class="lp-card span-2" data-panel="trend">
+    <div class="lp-panel-head">
+      <div>
+        <h3 class="lp-panel-title">Revenue and expenses</h3>
+        <p class="lp-panel-sub">Last {{ d.trend.months|length }} months, posted entries only{% if d.trend.partial_month %} · {{ d.trend.months[-1].label }} is up to {{ d.as_at_label }}{% endif %}</p>
+      </div>
+      <div class="lp-legend"><span><i class="revenue"></i>Revenue</span><span><i class="expenses"></i>Expenses</span></div>
+    </div>
+    {% if d.trend.has_data %}
+    <div class="lp-trend-chart" role="img" aria-label="Revenue and expenses for {{ d.trend.months[0].long_label }} to {{ d.trend.months[-1].long_label }}">
+      <span class="lp-trend-peak">Tallest bar = {{ money(d.trend.peak) }}</span>
+      <div class="lp-trend-plot">
+        {% for month in d.trend.months %}
+        <div class="lp-trend-group{{ ' current' if month.current }}" data-month="{{ month.long_label }}" data-revenue="{{ plain(month.revenue) }}" data-expenses="{{ plain(month.expenses) }}">
+          <span class="lp-trend-bar revenue{{ ' negative' if month.revenue < 0 }}" style="height: {{ month.revenue_height }}%" title="Revenue, {{ month.long_label }}: {{ money(month.revenue) }}"></span>
+          <span class="lp-trend-bar expenses{{ ' negative' if month.expenses < 0 }}" style="height: {{ month.expenses_height }}%" title="Expenses, {{ month.long_label }}: {{ money(month.expenses) }}"></span>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="lp-trend-axis">
+        {% for month in d.trend.months %}
+        <div class="lp-trend-tick">
+          <strong>{{ month.label }}</strong>
+          <span class="{{ 'gain' if month.profit > 0 else 'loss' if month.profit < 0 }}" title="Net profit, {{ month.long_label }}: {{ money(month.profit) }}">{{ '+' if month.profit > 0 }}{{ money(month.profit) }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <p class="lp-footnote">The figure under each month is its net profit (revenue less expenses). Hover over a bar for its exact amount.</p>
+    {% else %}
+    <div class="lp-empty">No revenue or expenses were posted in these {{ d.trend.months|length }} months.</div>
+    {% endif %}
+  </section>
+  {% else %}
+  <section class="lp-card span-2" data-panel="getting-started">
+    <div class="lp-panel-head">
+      <div>
+        <h3 class="lp-panel-title">Start your books</h3>
+        <p class="lp-panel-sub">Nothing has been recorded for {{ d.organization.name }} yet. These four steps get real numbers onto this page.</p>
+      </div>
+    </div>
+    <ol class="lp-steps">
+      <li><a href="{{ url_for('accounting.chart_of_accounts_list') }}"><span><strong>Check the Chart of Accounts</strong><small>A starter set of accounts is already there. Add your own bank accounts and expense heads.</small></span></a></li>
+      <li><a href="{{ url_for('accounting.new_journal_entry') }}"><span><strong>Enter opening balances</strong><small>One journal entry: what you own, what you owe, and the owner's equity.</small></span></a></li>
+      <li><a href="{{ url_for('customers.customers_list') }}"><span><strong>Add customers and vendors</strong><small>With NTN, STRN and whether they deal in Supplies or Services.</small></span></a></li>
+      <li><a href="{{ url_for('sales.new_sales_invoice') }}"><span><strong>Record your first invoice or bill</strong><small>It appears here as soon as it is posted.</small></span></a></li>
+    </ol>
+  </section>
+  {% endif %}
+
+  <section class="lp-card" data-panel="attention">
+    <div class="lp-panel-head">
+      <div>
+        <h3 class="lp-panel-title">Needs attention</h3>
+        <p class="lp-panel-sub">A draft is not in your books until it is posted.</p>
+      </div>
+    </div>
+    {% if d.drafts.count or d.future_dated %}
+    <ul class="lp-rows">
+      {% if d.drafts.sales_invoices.count %}
+      <li><a class="lp-row-link" href="{{ url_for('sales.sales_invoices_list') }}" data-attention="draft-invoices">
+        <span class="lp-stat-icon sm amber">{{ icon('document', 16) }}</span>
+        <span class="grow"><span class="name">Draft sales invoice{{ 's' if d.drafts.sales_invoices.count != 1 }}</span><small>{{ money(d.drafts.sales_invoices.total) }} not yet posted</small></span>
+        <span class="lp-count">{{ d.drafts.sales_invoices.count }}</span>{{ icon('chevron', 16) }}
+      </a></li>
+      {% endif %}
+      {% if d.drafts.vendor_bills.count %}
+      <li><a class="lp-row-link" href="{{ url_for('vendors.vendor_bills_list') }}" data-attention="draft-bills">
+        <span class="lp-stat-icon sm amber">{{ icon('document', 16) }}</span>
+        <span class="grow"><span class="name">Draft vendor bill{{ 's' if d.drafts.vendor_bills.count != 1 }}</span><small>{{ money(d.drafts.vendor_bills.total) }} not yet posted</small></span>
+        <span class="lp-count">{{ d.drafts.vendor_bills.count }}</span>{{ icon('chevron', 16) }}
+      </a></li>
+      {% endif %}
+      {% if d.drafts.journal_entries.count %}
+      <li><a class="lp-row-link" href="{{ url_for('accounting.journal_entries_list') }}" data-attention="draft-journals">
+        <span class="lp-stat-icon sm amber">{{ icon('document', 16) }}</span>
+        <span class="grow"><span class="name">Draft journal entr{{ 'ies' if d.drafts.journal_entries.count != 1 else 'y' }}</span><small>Waiting to be posted</small></span>
+        <span class="lp-count">{{ d.drafts.journal_entries.count }}</span>{{ icon('chevron', 16) }}
+      </a></li>
+      {% endif %}
+      {% if d.future_dated %}
+      <li><a class="lp-row-link" href="{{ url_for('accounting.journal_entries_list') }}" data-attention="future-dated">
+        <span class="lp-stat-icon sm blue">{{ icon('calendar', 16) }}</span>
+        <span class="grow"><span class="name">Posted entr{{ 'ies' if d.future_dated != 1 else 'y' }} dated after today</span><small>Left out of every figure until {{ 'their dates arrive' if d.future_dated != 1 else 'its date arrives' }}</small></span>
+        <span class="lp-count blue">{{ d.future_dated }}</span>{{ icon('chevron', 16) }}
+      </a></li>
+      {% endif %}
+    </ul>
+    {% else %}
+    <div class="lp-empty"><span class="lp-stat-icon sm green">{{ icon('check', 16) }}</span><span>Nothing is waiting to be posted.</span></div>
+    {% endif %}
+  </section>
+</div>
+
+{# =========== CASH ACCOUNTS  +  TAX LEDGERS  +  OPEN BALANCES =========== #}
+<div class="lp-grid">
+  <section class="lp-card" data-panel="cash-accounts">
+    <div class="lp-panel-head">
+      <div>
+        <h3 class="lp-panel-title">Cash and bank accounts</h3>
+        <p class="lp-panel-sub">Balances as at {{ d.as_at_label }}</p>
+      </div>
+      <a class="lp-panel-link" href="{{ url_for('accounting.chart_of_accounts_list') }}">Accounts</a>
+    </div>
+    {% if d.cash_accounts %}
+    <ul class="lp-rows">
+      {% for account in d.cash_accounts %}
+      <li data-cash-account="{{ account.code }}">
+        <span class="lp-code">{{ account.code }}</span>
+        <span class="grow"><span class="name">{{ account.name }}</span></span>
+        <span class="amount{{ ' negative' if account.balance < 0 }}">{{ money(account.balance) }}</span>
+      </li>
+      {% endfor %}
+      <li class="total"><span class="grow">Total</span><span class="amount{{ ' negative' if d.cards.cash.value < 0 }}">{{ money(d.cards.cash.value) }}</span></li>
+    </ul>
+    {% else %}
+    <div class="lp-empty">No account is marked Bank or Cash in the Chart of Accounts yet.</div>
+    {% endif %}
+    <p class="lp-footnote">Counts {{ d.cash_rule[0]|lower }}{{ d.cash_rule[1:] }}. To include another account, open it there with Edit and set its Kind to Bank or Cash.</p>
+  </section>
+
+  <section class="lp-card" data-panel="tax-ledgers">
+    <div class="lp-panel-head">
+      <div>
+        <h3 class="lp-panel-title">Tax ledgers</h3>
+        <p class="lp-panel-sub">Balances as at {{ d.as_at_label }}</p>
+      </div>
+      <a class="lp-panel-link" href="{{ url_for('wht.tax_rates_list') }}">WHT rates</a>
+    </div>
+    {% for group in d.tax_groups %}
+    <div class="lp-group-title" title="{{ group.hint }}">{{ group.title }}</div>
+    <ul class="lp-rows">
+      {% for account in group.accounts %}
+      <li data-tax-account="{{ account.code }}" data-value="{{ plain(account.balance) }}">
+        <span class="lp-code">{{ account.code }}</span>
+        <span class="grow"><span class="name">{{ account.name }}</span></span>
+        <span class="amount{{ ' negative' if account.balance < 0 }}">{{ money(account.balance) }}</span>
+      </li>
+      {% else %}
+      <li><span class="grow"><small>No account for this in the Chart of Accounts.</small></span></li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+  </section>
+
+  <section class="lp-card" data-panel="open-balances">
+    <div class="lp-panel-head">
+      <div>
+        <h3 class="lp-panel-title">Largest open balances</h3>
+        <p class="lp-panel-sub">By partner name on posted entries, as at {{ d.as_at_label }}</p>
+      </div>
+    </div>
+    <div class="lp-group-title">Customers owe you</div>
+    {% if d.partners.receivable.rows %}
+    <ul class="lp-rows">
+      {% for partner in d.partners.receivable.rows %}
+      <li data-partner="receivable" data-value="{{ plain(partner.balance) }}">
+        <span class="grow"><span class="name">{{ partner.name }}</span><span class="lp-meter"><span style="width: {{ partner.share }}%"></span></span></span>
+        <span class="amount">{{ money(partner.balance) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if d.partners.receivable.count > d.partners.receivable.rows|length %}<p class="lp-footnote">The {{ d.partners.receivable.rows|length }} largest of {{ d.partners.receivable.count }} customers with an open balance.</p>{% endif %}
+    {% else %}
+    <div class="lp-empty">No customer owes you anything.</div>
+    {% endif %}
+    <div class="lp-group-title">You owe vendors</div>
+    {% if d.partners.payable.rows %}
+    <ul class="lp-rows">
+      {% for partner in d.partners.payable.rows %}
+      <li data-partner="payable" data-value="{{ plain(partner.balance) }}">
+        <span class="grow"><span class="name">{{ partner.name }}</span><span class="lp-meter payable"><span style="width: {{ partner.share }}%"></span></span></span>
+        <span class="amount">{{ money(partner.balance) }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if d.partners.payable.count > d.partners.payable.rows|length %}<p class="lp-footnote">The {{ d.partners.payable.rows|length }} largest of {{ d.partners.payable.count }} vendors with an open balance.</p>{% endif %}
+    {% else %}
+    <div class="lp-empty">You do not owe any vendor.</div>
+    {% endif %}
+  </section>
+</div>
+
+{# ====================== RECENT JOURNAL ENTRIES ====================== #}
+<section class="lp-card" data-panel="recent">
+  <div class="lp-panel-head">
+    <div>
+      <h3 class="lp-panel-title">Recent journal entries</h3>
+      <p class="lp-panel-sub">The newest entries by accounting date, drafts included</p>
+    </div>
+    <a class="lp-panel-link" href="{{ url_for('accounting.journal_entries_list') }}">View all</a>
+  </div>
+  {% if d.recent %}
+  <div class="lp-table-scroll">
+  <table class="lp-table">
+    <thead>
+      <tr><th>Date</th><th>Reference</th><th>Journal</th><th>Source</th><th class="amount">Amount</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      {% for entry in d.recent %}
+      <tr>
+        <td class="lp-nowrap">{{ entry.date.strftime('%d %b %Y') }}</td>
+        <td><a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=entry.journal_header_id) }}" style="font-weight:600;">{{ entry.reference or '(no reference)' }}</a></td>
+        <td>{{ entry.journal or '—' }}</td>
+        <td class="lp-nowrap">{{ entry.source }}</td>
+        <td class="amount">{{ money(entry.total) }}</td>
+        <td>
+          {% if entry.status == 'Posted' %}<span class="lp-pill posted">Posted</span>
+          {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
+          {% if entry.status == 'Posted' and entry.date > d.today %}<span class="lp-pill pending" title="Dated after today, so it is not part of any figure yet">Future-dated</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <div class="lp-empty">No journal entries yet. Every invoice, bill, payment and receipt you record will appear here.</div>
+  {% endif %}
+</section>
+
+{# ==================== THE ACCOUNTING EQUATION ==================== #}
+<section class="lp-card" data-panel="position">
+  <div class="lp-panel-head">
+    <div>
+      <h3 class="lp-panel-title">Financial position</h3>
+      <p class="lp-panel-sub">As at {{ d.as_at_label }}. Profit not yet closed into Retained Earnings is counted inside equity.</p>
+    </div>
+  </div>
+  <div class="lp-equation">
+    <div class="term" data-figure="assets" data-value="{{ plain(d.position.assets) }}"><span>Assets</span><strong>{{ money(d.position.assets) }}</strong></div>
+    <div class="operator">=</div>
+    <div class="term" data-figure="liabilities" data-value="{{ plain(d.position.liabilities) }}"><span>Liabilities</span><strong>{{ money(d.position.liabilities) }}</strong></div>
+    <div class="operator">+</div>
+    <div class="term" data-figure="equity" data-value="{{ plain(d.position.equity) }}"><span>Equity</span><strong>{{ money(d.position.equity) }}</strong>
+      <small>{{ money(d.position.equity_accounts) }} in equity accounts + {{ money(d.position.profit_to_date) }} profit to date</small></div>
+    <div class="verdict">
+      {% if d.position.balanced %}
+      <span class="lp-chip ok" data-ledger="balanced">{{ icon('check', 15) }}Books balance</span>
+      {% else %}
+      <span class="lp-chip alarm" data-ledger="out-of-balance">{{ icon('alert', 15) }}Out of balance by {{ money(d.position.difference|abs) }}</span>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<p class="lp-footnote" style="margin-top: 0;">
+  Every balance and total on this page is worked out from <strong>posted</strong> journal entries of {{ d.organization.name }} dated up to {{ d.as_at_label }}.
+  Drafts are never part of them; they appear only under “Needs attention” and in the list of recent entries.
+</p>
 {% endblock %}

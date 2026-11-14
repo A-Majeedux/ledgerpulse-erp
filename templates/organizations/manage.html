@@ -35,6 +35,7 @@
         <td style="white-space: nowrap;">
           <a href="{{ url_for('organizations.edit_organization', organization_id=org[0]) }}" class="lp-btn">Edit</a>
           <form method="POST" action="{{ url_for('organizations.switch_organization', organization_id=org[0]) }}" style="display:inline;">
+            {{ csrf_field() }}
             <button type="submit" class="lp-btn">Switch</button>
           </form>
         </td>

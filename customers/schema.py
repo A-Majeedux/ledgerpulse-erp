@@ -13,6 +13,30 @@ architecture yet - that link gets added when Sales is rebuilt.
 """
 
 
+def seed_organization(cursor, organization_id):
+    """
+    Make sure ONE organization has the two WHT Receivable accounts - the
+    asset-side mirror of the WHT Payable accounts seeded in
+    vendors/schema.py. Adds only what is missing. Called at startup for
+    every organization, and again the moment a new organization is created
+    (core.db.seed_new_organization).
+    """
+    for code, name in [
+        ("1150", "WHT Receivable - Supplies"),
+        ("1160", "WHT Receivable - Services"),
+    ]:
+        cursor.execute(
+            "SELECT 1 FROM chart_of_accounts WHERE organization_id = %s AND code = %s",
+            (organization_id, code)
+        )
+        if cursor.fetchone() is None:
+            cursor.execute("""
+                INSERT INTO chart_of_accounts
+                    (organization_id, code, name, account_type, allow_reconciliation)
+                VALUES (%s, %s, %s, 'Asset', FALSE)
+            """, (organization_id, code, name))
+
+
 def ensure_schema(cursor):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS customers (
@@ -56,17 +80,4 @@ def ensure_schema(cursor):
     # accounts seeded in vendors/schema.py.
     cursor.execute("SELECT DISTINCT organization_id FROM organizations")
     for (org_id,) in cursor.fetchall():
-        for code, name in [
-            ("1150", "WHT Receivable - Supplies"),
-            ("1160", "WHT Receivable - Services"),
-        ]:
-            cursor.execute(
-                "SELECT 1 FROM chart_of_accounts WHERE organization_id = %s AND code = %s",
-                (org_id, code)
-            )
-            if cursor.fetchone() is None:
-                cursor.execute("""
-                    INSERT INTO chart_of_accounts
-                        (organization_id, code, name, account_type, allow_reconciliation)
-                    VALUES (%s, %s, %s, 'Asset', FALSE)
-                """, (org_id, code, name))
+        seed_organization(cursor, org_id)

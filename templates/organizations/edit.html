@@ -4,11 +4,12 @@
 <div class="lp-card" style="max-width: 640px;">
   <h2 style="margin-top:0;">Edit Organization</h2>
   <form method="POST" enctype="multipart/form-data">
+    {{ csrf_field() }}
 
     <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--lp-text-muted); margin: 20px 0 8px;">Identity</p>
 
     <label style="font-size: 13px; font-weight: 600;">Organization name</label>
-    <input type="text" name="name" value="{{ org[1] }}" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+    <input type="text" name="name" value="{{ org[1] }}" required maxlength="150" pattern=".*\S.*" title="Enter the organization name (spaces alone are not a name)" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
 
     <label style="font-size: 13px; font-weight: 600;">Nature of business</label>
     <select name="nature_of_business" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
@@ -21,7 +22,7 @@
       <img src="/{{ org[8] }}" alt="Current logo" style="height: 48px; display:block; margin-bottom: 8px;">
     {% endif %}
     <label style="font-size: 13px; font-weight: 600;">Logo {% if org[8] %}(upload a new one to replace it){% endif %}</label>
-    <input type="file" name="logo" accept="image/*" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+    <input type="file" name="logo" accept=".png,.jpg,.jpeg,.gif,.webp" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
 
     <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--lp-text-muted); margin: 20px 0 8px;">Registration</p>
 

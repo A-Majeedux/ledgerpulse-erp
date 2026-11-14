@@ -20,6 +20,7 @@
         <td>{% if r[3] %}<span class="lp-pill posted">Active</span>{% else %}<span class="lp-pill draft">Retired</span>{% endif %}</td>
         <td>
           <form method="POST" action="{{ url_for('wht.toggle_tax_rate', tax_rate_id=r[0]) }}">
+            {{ csrf_field() }}
             <button type="submit" class="lp-btn">{{ 'Retire' if r[3] else 'Reactivate' }}</button>
           </form>
         </td>

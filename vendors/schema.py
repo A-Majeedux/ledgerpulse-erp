@@ -9,6 +9,29 @@ recurring bills, subscriptions, maintenance, services.
 """
 
 
+def seed_organization(cursor, organization_id):
+    """
+    Make sure ONE organization has the two WHT Payable control accounts
+    that Vendor Payments post withheld tax into. Adds only what is missing.
+    Called at startup for every organization, and again the moment a new
+    organization is created (core.db.seed_new_organization).
+    """
+    for code, name in [
+        ("2100", "WHT Payable - Supplies"),
+        ("2110", "WHT Payable - Services"),
+    ]:
+        cursor.execute(
+            "SELECT 1 FROM chart_of_accounts WHERE organization_id = %s AND code = %s",
+            (organization_id, code)
+        )
+        if cursor.fetchone() is None:
+            cursor.execute("""
+                INSERT INTO chart_of_accounts
+                    (organization_id, code, name, account_type, allow_reconciliation)
+                VALUES (%s, %s, %s, 'Liability', FALSE)
+            """, (organization_id, code, name))
+
+
 def ensure_schema(cursor):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS vendors (
@@ -84,17 +107,4 @@ def ensure_schema(cursor):
 
     cursor.execute("SELECT DISTINCT organization_id FROM organizations")
     for (org_id,) in cursor.fetchall():
-        for code, name in [
-            ("2100", "WHT Payable - Supplies"),
-            ("2110", "WHT Payable - Services"),
-        ]:
-            cursor.execute(
-                "SELECT 1 FROM chart_of_accounts WHERE organization_id = %s AND code = %s",
-                (org_id, code)
-            )
-            if cursor.fetchone() is None:
-                cursor.execute("""
-                    INSERT INTO chart_of_accounts
-                        (organization_id, code, name, account_type, allow_reconciliation)
-                    VALUES (%s, %s, %s, 'Liability', FALSE)
-                """, (org_id, code, name))
+        seed_organization(cursor, org_id)

@@ -17,6 +17,7 @@
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
       <form method="POST" action="{{ url_for('sales.post_sales_invoice', sales_invoice_id=invoice[0]) }}" style="display:inline;">
+        {{ csrf_field() }}
         <button type="submit" class="lp-btn primary">Post Invoice</button>
       </form>
     {% endif %}

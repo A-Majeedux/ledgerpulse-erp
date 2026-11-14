@@ -7,8 +7,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='tokens.css') }}">
 </head>
-<body>
-  {% block active_nav %}{% endblock %}
+{# The active_nav block only NAMES the current sidebar item (e.g. "vendors") for
+   the 'active' highlighting below. It lives in an attribute so that name is not
+   printed as stray text at the top of every page. #}
+<body data-active-nav="{% block active_nav %}{% endblock %}">
   <div class="lp-shell">
     <nav class="lp-sidebar">
       <div class="lp-sidebar-brand"><span class="lp-dot"></span> LedgerPulse</div>
@@ -39,6 +41,7 @@
     <div class="lp-main">
       <div class="lp-topbar">
         <form class="lp-org-switcher" method="POST" onsubmit="this.action = '/organizations/switch/' + this.org_id.value; return true;">
+          {{ csrf_field() }}
           <select name="org_id" onchange="this.form.requestSubmit()">
             {% for org in organizations %}
               <option value="{{ org[0] }}" {{ 'selected' if org[0] == active_organization_id }}>{{ org[1] }}</option>

@@ -3,7 +3,8 @@ from decimal import Decimal
 from flask import Blueprint, render_template, request, redirect, url_for, abort
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
-from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
+from accounting.services import create_journal_entry, post_journal_entry, JournalEntryError
+from core.validation import ValidationError, parse_amount, parse_date, parse_percent, require_text
 from sales.schema import UOM_CHOICES
 from core.money import to_decimal, money_round
 
@@ -164,6 +165,14 @@ def sales_tax_rates_list():
 def new_sales_tax_rate():
     org_id = current_organization_id()
     if request.method == "POST":
+        # The form's own number box (0 to 100) stops these in the browser;
+        # this is the check that holds if the browser is bypassed.
+        try:
+            label = require_text(request.form.get("label"), "Label", max_length=100)
+            rate_percent = parse_percent(request.form.get("rate_percent"), "Rate (%)")
+        except ValidationError as error:
+            abort(400, description=str(error))
+
         conn = get_conn()
         cursor = conn.cursor()
         cursor.execute("""
@@ -171,8 +180,8 @@ def new_sales_tax_rate():
             VALUES (%s, %s, %s)
         """, (
             org_id,
-            request.form["label"].strip(),
-            to_decimal(request.form["rate_percent"]),
+            label,
+            rate_percent,
         ))
         conn.commit()
         cursor.close()
@@ -281,6 +290,41 @@ def new_sales_invoice():
                     conn.close()
                     abort(400)
 
+        # Check what was typed BEFORE anything is written, so a mistake comes
+        # back as a message on the form instead of a half-saved invoice.
+        try:
+            invoice_date = parse_date(request.form.get("invoice_date"), "Invoice Date")
+            line_count = 0
+            for i in range(len(product_ids)):
+                if not product_ids[i]:
+                    continue
+                line_count += 1
+                if i >= len(account_ids) or not account_ids[i]:
+                    raise ValidationError(f"Line {line_count}: select the revenue account.")
+                for column, values in (("quantity", quantities), ("rate", rates)):
+                    typed = values[i].strip() if i < len(values) else ""
+                    if typed:
+                        parse_amount(typed, f"Line {line_count}: {column}", allow_zero=True)
+                typed = discount_percents[i].strip() if i < len(discount_percents) else ""
+                if typed:
+                    parse_percent(typed, f"Line {line_count}: discount %")
+            if line_count == 0:
+                raise ValidationError("Add at least one line (with a product) before saving the invoice.")
+        except ValidationError as error:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return render_template(
+                "sales/new_sales_invoice.html",
+                customers=_get_active_customers(org_id),
+                products=_get_active_products(org_id),
+                accounts=_get_revenue_accounts(org_id),
+                tax_rates=_get_active_sales_tax_rates(org_id),
+                uom_choices=UOM_CHOICES,
+                error=str(error),
+                today=date.today().isoformat(),
+            )
+
         cursor.execute("""
             INSERT INTO sales_invoices
                 (organization_id, customer_id, invoice_date, due_date, payment_terms, journal_name)
@@ -289,7 +333,7 @@ def new_sales_invoice():
         """, (
             org_id,
             customer_id,
-            request.form["invoice_date"],
+            invoice_date,
             request.form.get("due_date") or None,
             request.form.get("payment_terms", "").strip() or None,
             request.form.get("journal_name", "Customer Invoices").strip(),
@@ -379,7 +423,7 @@ def new_sales_invoice():
                 cursor,
                 organization_id=org_id,
                 reference=f"Invoice - {customer_name}",
-                accounting_date=request.form["invoice_date"],
+                accounting_date=invoice_date,
                 journal_name=request.form.get("journal_name", "Customer Invoices").strip(),
                 lines=je_lines,
                 source_type="SalesInvoice",
@@ -391,7 +435,7 @@ def new_sales_invoice():
                 (journal_header_id, sales_invoice_id)
             )
             conn.commit()
-        except UnbalancedEntryError as error:
+        except JournalEntryError as error:
             conn.rollback()
             cursor.close()
             conn.close()
@@ -489,7 +533,7 @@ def post_sales_invoice(sales_invoice_id):
         post_journal_entry(cursor, journal_header_id)
         cursor.execute("UPDATE sales_invoices SET status = 'Posted' WHERE sales_invoice_id = %s", (sales_invoice_id,))
         conn.commit()
-    except UnbalancedEntryError:
+    except JournalEntryError:
         conn.rollback()
     cursor.close()
     conn.close()

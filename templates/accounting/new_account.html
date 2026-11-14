@@ -2,25 +2,57 @@
 {% block title %}New Account{% endblock %}
 {% block active_nav %}chart{% endblock %}
 {% block content %}
-<div class="lp-card" style="max-width: 480px;">
+<div class="lp-card" style="max-width: 520px;">
   <h2 style="margin-top:0;">New Account</h2>
+
+  {% if error %}
+    <div style="background: var(--lp-coral-bg); color: var(--lp-coral-text); padding: 12px; border-radius: 8px; margin-bottom: 16px;">{{ error }}</div>
+  {% endif %}
+
   <form method="POST">
+    {{ csrf_field() }}
     <label style="font-size: 13px; font-weight: 600;">Code</label>
-    <input type="text" name="code" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+    <input type="text" name="code" value="{{ form.code if form else '' }}" maxlength="20" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
 
     <label style="font-size: 13px; font-weight: 600;">Name</label>
-    <input type="text" name="name" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+    <input type="text" name="name" value="{{ form.name if form else '' }}" maxlength="150" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
 
     <label style="font-size: 13px; font-weight: 600;">Type</label>
-    <select name="account_type" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
-      {% for t in account_types %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+    <select name="account_type" id="account_type" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      {% for t in account_types %}<option value="{{ t }}" {{ 'selected' if form and form.account_type == t }}>{{ t }}</option>{% endfor %}
     </select>
 
+    {% include "accounting/_account_kind_field.html" %}
+
     <label style="font-size: 13px; display:flex; align-items:center; gap:8px; margin-bottom:16px;">
-      <input type="checkbox" name="allow_reconciliation"> Allow reconciliation (for Receivable/Payable control accounts)
+      <input type="checkbox" name="allow_reconciliation" {{ 'checked' if form and form.allow_reconciliation }}> Allow reconciliation (for Receivable/Payable control accounts)
     </label>
 
     <button type="submit" class="lp-btn primary">Create Account</button>
+    <a href="{{ url_for('accounting.chart_of_accounts_list') }}" class="lp-btn">Cancel</a>
   </form>
 </div>
+
+{# Which kinds each type allows - the Kind box follows the Type box. #}
+<script type="application/json" id="kinds-for-type">{{ kinds_for_type|tojson }}</script>
+<script>
+(function () {
+  const KINDS_FOR_TYPE = JSON.parse(document.getElementById('kinds-for-type').textContent);
+  const type = document.getElementById('account_type');
+  const kind = document.getElementById('account_kind');
+
+  function offerKindsOfType() {
+    const allowed = KINDS_FOR_TYPE[type.value] || ['General'];
+    Array.from(kind.options).forEach(option => {
+      const fits = allowed.includes(option.value);
+      option.hidden = !fits;
+      option.disabled = !fits;
+    });
+    if (!allowed.includes(kind.value)) kind.value = allowed[0];
+    kind.dispatchEvent(new Event('change'));
+  }
+  type.addEventListener('change', offerKindsOfType);
+  offerKindsOfType();
+})();
+</script>
 {% endblock %}

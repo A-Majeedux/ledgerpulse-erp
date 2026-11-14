@@ -29,6 +29,7 @@
         </td>
         <td>
           <form method="POST" action="{{ url_for('sales.toggle_sales_tax_rate', tax_rate_id=r[0]) }}">
+            {{ csrf_field() }}
             <button type="submit" class="lp-btn">{{ 'Retire' if r[3] else 'Reactivate' }}</button>
           </form>
         </td>

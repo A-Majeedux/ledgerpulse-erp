@@ -1,24 +1,54 @@
-from flask import Blueprint, render_template
-from core.context import require_organization, current_organization_id
+from datetime import date
+
+from flask import Blueprint, redirect, render_template, request, session, url_for
+
+from core.context import current_organization_id, require_organization
 from core.db import get_conn
+from dashboard.services import build_dashboard, format_money, format_percent, plain_amount
 
 bp = Blueprint("dashboard", __name__)
+
+
+def _today():
+    """
+    The date the dashboard treats as "today" - the server's date, the same
+    one every voucher form uses for its default date. It is a function of
+    its own so the automated checks can pin it to a fixed day.
+    """
+    return date.today()
 
 
 @bp.route("/")
 @require_organization
 def home():
     """
-    This is intentionally minimal for now - it just proves the foundation
-    (organizations, templates, design tokens, db connection) all work
-    together. Real stats (Cash Balance, Receivable, Payable) get added
-    once the Accounting segment exists to calculate them from.
+    The Financial Control Center. Every figure is worked out from POSTED
+    journal entries of the active organization - see dashboard/services.py
+    for the exact rules. This route only reads; it changes nothing.
+
+    ?period=month | last_month | quarter | fiscal_year   (default: month)
     """
-    org_id = current_organization_id()
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("SELECT name FROM organizations WHERE organization_id = %s", (org_id,))
-    org_name = cursor.fetchone()[0]
-    cursor.close()
-    conn.close()
-    return render_template("dashboard/home.html", org_name=org_name)
+    try:
+        dashboard = build_dashboard(
+            cursor, current_organization_id(), _today(), request.args.get("period")
+        )
+    finally:
+        cursor.close()
+        conn.close()
+
+    if dashboard is None:
+        # The organization remembered in the session no longer exists.
+        # Forget it and let the user pick one, instead of an error page.
+        session.pop("organization_id", None)
+        return redirect(url_for("organizations.pick_organization"))
+
+    return render_template(
+        "dashboard/home.html",
+        d=dashboard,
+        user_name=session.get("user_name"),
+        money=format_money,
+        plain=plain_amount,
+        percent=format_percent,
+    )
