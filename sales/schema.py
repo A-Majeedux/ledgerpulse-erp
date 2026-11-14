@@ -12,51 +12,6 @@ Includes:
 
 UOM_CHOICES = ["Units", "Kg", "Gm", "Ltr", "ML", "Bag", "Carton", "Box"]
 
-# Common Pakistan Sales Tax rates used as a starting list.
-STARTER_SALES_TAX_RATES = [
-    ("Sales Tax 18%", 18.0),
-    ("Sales Tax 15%", 15.0),
-    ("Reduced Rate 10%", 10.0),
-    ("Zero Rated 0%", 0.0),
-    ("Exempt", 0.0),
-]
-
-
-def seed_sales_tax_rates(cursor, organization_id):
-    """Starter Sales Tax rate list for ONE organization - only if its list is empty."""
-    cursor.execute("SELECT COUNT(*) FROM sales_tax_rates WHERE organization_id = %s", (organization_id,))
-    if cursor.fetchone()[0] == 0:
-        for label, rate in STARTER_SALES_TAX_RATES:
-            cursor.execute("""
-                INSERT INTO sales_tax_rates (organization_id, label, rate_percent)
-                VALUES (%s, %s, %s)
-            """, (organization_id, label, rate))
-
-
-def seed_output_tax_account(cursor, organization_id):
-    """Account 2200 'Output Tax Payable' for ONE organization - only if missing."""
-    cursor.execute(
-        "SELECT 1 FROM chart_of_accounts WHERE organization_id = %s AND code = %s",
-        (organization_id, "2200")
-    )
-    if cursor.fetchone() is None:
-        cursor.execute("""
-            INSERT INTO chart_of_accounts
-                (organization_id, code, name, account_type, allow_reconciliation)
-            VALUES (%s, '2200', 'Output Tax Payable', 'Liability', FALSE)
-        """, (organization_id,))
-
-
-def seed_organization(cursor, organization_id):
-    """
-    Everything the Sales segment needs ONE organization to have before it
-    can raise an invoice. Called the moment a new organization is created
-    (core.db.seed_new_organization); ensure_schema() below runs the same
-    two steps at startup for every organization.
-    """
-    seed_sales_tax_rates(cursor, organization_id)
-    seed_output_tax_account(cursor, organization_id)
-
 
 def ensure_schema(cursor):
     # -----------------------------------------------------------------
@@ -91,7 +46,19 @@ def ensure_schema(cursor):
     # Seed common Pakistan Sales Tax rates if empty
     cursor.execute("SELECT DISTINCT organization_id FROM organizations")
     for (org_id,) in cursor.fetchall():
-        seed_sales_tax_rates(cursor, org_id)
+        cursor.execute("SELECT COUNT(*) FROM sales_tax_rates WHERE organization_id = %s", (org_id,))
+        if cursor.fetchone()[0] == 0:
+            for label, rate in [
+                ("Sales Tax 18%", 18.0),
+                ("Sales Tax 15%", 15.0),
+                ("Reduced Rate 10%", 10.0),
+                ("Zero Rated 0%", 0.0),
+                ("Exempt", 0.0),
+            ]:
+                cursor.execute("""
+                    INSERT INTO sales_tax_rates (organization_id, label, rate_percent)
+                    VALUES (%s, %s, %s)
+                """, (org_id, label, rate))
 
     # -----------------------------------------------------------------
     # 3. Sales Invoices
@@ -138,4 +105,13 @@ def ensure_schema(cursor):
     # -----------------------------------------------------------------
     cursor.execute("SELECT DISTINCT organization_id FROM organizations")
     for (org_id,) in cursor.fetchall():
-        seed_output_tax_account(cursor, org_id)
+        cursor.execute(
+            "SELECT 1 FROM chart_of_accounts WHERE organization_id = %s AND code = %s",
+            (org_id, "2200")
+        )
+        if cursor.fetchone() is None:
+            cursor.execute("""
+                INSERT INTO chart_of_accounts
+                    (organization_id, code, name, account_type, allow_reconciliation)
+                VALUES (%s, '2200', 'Output Tax Payable', 'Liability', FALSE)
+            """, (org_id,))

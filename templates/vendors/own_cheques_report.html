@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Own Cheques Report{% endblock %}
+{% block active_nav %}vendors{% endblock %}
+{% block content %}
+<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
+  <h2 style="margin:0;">Own Cheques Issued</h2>
+</div>
+
+<form method="GET" class="lp-card" style="margin-bottom: 16px; display:flex; gap:16px; align-items:end;">
+  <div>
+    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Start Date</label>
+    <input type="date" name="start_date" value="{{ start_date }}" style="padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+  </div>
+  <div>
+    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">End Date</label>
+    <input type="date" name="end_date" value="{{ end_date }}" style="padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+  </div>
+  <div>
+    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">Vendor</label>
+    <select name="vendor_id" style="padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+      <option value="">All Vendors</option>
+      {% for v in vendors %}
+      <option value="{{ v[0] }}" {% if selected_vendor == v[0] %}selected{% endif %}>{{ v[1] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <button type="submit" class="lp-btn primary" style="padding:7px 16px;">Filter</button>
+  </div>
+</form>
+
+<div class="lp-card">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Cheque Number</th>
+        <th>Bank Account</th>
+        <th>Vendor</th>
+        <th class="amount">Amount</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for chq in cheques %}
+      <tr>
+        <td>{{ chq[0]|fmt_date }}</td>
+        <td><strong>{{ chq[1] }}</strong></td>
+        <td>{{ chq[2] }}</td>
+        <td>{{ chq[3] }}</td>
+        <td class="amount">{{ "%.2f"|format(chq[4]) }}</td>
+        <td><span class="lp-pill posted">{{ chq[5] }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" style="text-align:center; color: var(--lp-text-muted);">No cheques found for the selected period.</td></tr>
+      {% endfor %}
+      {% if cheques %}
+      <tr style="font-weight:700;"><td colspan="4">Total Cheques Amount</td><td class="amount">{{ "%.2f"|format(total_amount) }}</td><td></td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

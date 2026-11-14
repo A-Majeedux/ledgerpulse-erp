@@ -33,10 +33,12 @@
         <td>{{ month_names[org[9]-1] if org[9] else '—' }}</td>
         <td>{{ org[10].strftime('%d %b %Y') if org[10] else '—' }}</td>
         <td style="white-space: nowrap;">
-          <a href="{{ url_for('organizations.edit_organization', organization_id=org[0]) }}" class="lp-btn">Edit</a>
+          <a href="{{ url_for('organizations.users_list', organization_id=org[0]) }}" class="lp-btn primary sm">Users</a>
+          <a href="{{ url_for('organizations.roles_list', organization_id=org[0]) }}" class="lp-btn sm">Roles</a>
+          <a href="{{ url_for('organizations.edit_organization', organization_id=org[0]) }}" class="lp-btn sm">Edit</a>
           <form method="POST" action="{{ url_for('organizations.switch_organization', organization_id=org[0]) }}" style="display:inline;">
             {{ csrf_field() }}
-            <button type="submit" class="lp-btn">Switch</button>
+            <button type="submit" class="lp-btn sm">Switch</button>
           </form>
         </td>
       </tr>

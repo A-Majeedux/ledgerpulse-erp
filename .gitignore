@@ -45,6 +45,4 @@ coverage.xml
 *.cover
 *.py,cover
 .hypothesis/
-
-# Files uploaded through the app while it runs (organization logos) - data, not source code
 static/uploads/

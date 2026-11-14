@@ -7,14 +7,20 @@ organization_id column pointing here, so one login can hold many
 completely separate companies with no data crossing between them.
 """
 
-# Name of the placeholder company created on the very first start (see the
-# bottom of ensure_schema). auth/routes.py::setup() uses this same constant
-# to recognise that placeholder and rename it to the company name the first
-# administrator actually typed.
-DEFAULT_ORGANIZATION_NAME = "My Organization"
-
 
 def ensure_schema(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            client_id SERIAL PRIMARY KEY,
+            name VARCHAR(150) NOT NULL,
+            email VARCHAR(255),
+            phone VARCHAR(50),
+            address TEXT,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS organizations (
             organization_id SERIAL PRIMARY KEY,
@@ -33,13 +39,23 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS warehouse_address TEXT")
     cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS logo_path VARCHAR(255)")
     cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS fiscal_year_start_month INTEGER DEFAULT 7")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(client_id) ON DELETE SET NULL")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS is_zyro BOOLEAN DEFAULT FALSE")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS address TEXT")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS city VARCHAR(100)")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS country VARCHAR(100)")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS accent_colour VARCHAR(20) DEFAULT '#6b4fa3'")
+    cursor.execute("ALTER TABLE organizations ADD COLUMN IF NOT EXISTS default_bill_terms TEXT")
 
-    # If no organization exists yet (very first run), create one default
-    # one so the app is usable immediately instead of showing an empty
-    # picker screen.
-    cursor.execute("SELECT COUNT(*) FROM organizations")
-    if cursor.fetchone()[0] == 0:
-        cursor.execute(
-            "INSERT INTO organizations (name) VALUES (%s)",
-            (DEFAULT_ORGANIZATION_NAME,)
-        )
+    # Ensure ZYRO organization exists
+    cursor.execute("SELECT organization_id FROM organizations WHERE is_zyro = TRUE LIMIT 1")
+    if not cursor.fetchone():
+        cursor.execute("SELECT organization_id FROM organizations ORDER BY organization_id LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("UPDATE organizations SET is_zyro = TRUE WHERE organization_id = %s", (row[0],))
+        else:
+            cursor.execute(
+                "INSERT INTO organizations (name, is_zyro) VALUES (%s, TRUE)",
+                ("ZYRO Head Office",)
+            )

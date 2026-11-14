@@ -1,0 +1,57 @@
+{% extends "vendors/print/_print_base.html" %}
+{% set is_draft = false %}
+{% block title %}Batch Payment Sheet {{ batch[1] | safe_str }}{% endblock %}
+{% block toolbar_title %}Batch Payment Sheet — {{ batch[1] | safe_str }}{% endblock %}
+{% block back_url %}{{ url_for('vendors.batch_vendor_payment_detail', batch_payment_id=batch[0]) }}{% endblock %}
+
+{% block content %}
+<div class="title-block">
+  <div class="doc-main-title">Batch Payment Sheet</div>
+  <div class="doc-sub-number">{{ batch[1] | safe_str }}</div>
+</div>
+
+<table class="info-table">
+  <tr>
+    <th>Batch Reference</th>
+    <td><strong>{{ batch[1] | safe_str }}</strong></td>
+    <th>Payment Date</th>
+    <td>{{ batch[2] | fmt_date_print }}</td>
+  </tr>
+  <tr>
+    <th>Paid From Account</th>
+    <td>{{ batch[3] | safe_str }}</td>
+    <th>Total Amount</th>
+    <td>{{ batch[4] | fmt_money_print }}</td>
+  </tr>
+</table>
+
+<div style="font-weight: bold; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; color: #333;">Batch Payment Items</div>
+<table class="lines-table">
+  <thead>
+    <tr>
+      <th style="width: 8%;">No.</th>
+      <th style="width: 30%; text-align: left;">Vendor</th>
+      <th style="width: 32%; text-align: left;">Memo</th>
+      <th style="width: 15%;">Voucher</th>
+      <th style="width: 15%; text-align: right;">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for l in lines %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td class="text-left"><strong>{{ l[0] | safe_str }}</strong></td>
+      <td class="text-left">{{ l[1] | safe_str }}</td>
+      <td>{{ l[2] | safe_str }}</td>
+      <td class="text-right">{{ l[3] | fmt_money_print }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <th colspan="4" style="text-align: right;">Total:</th>
+      <th class="text-right">{{ batch[4] | fmt_money_print }}</th>
+    </tr>
+  </tfoot>
+</table>
+{% endblock %}

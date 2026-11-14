@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Client Details — {{ client[1] }}{% endblock %}
+{% block content %}
+<div style="max-width: 1200px; margin: 0 auto; padding: 24px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div>
+      <a href="{{ url_for('auth.admin_clients') }}" style="font-size: 13px; color: var(--zyro-electric-teal); text-decoration: none; font-weight: 600;">← Back to Clients</a>
+      <h1 style="margin: 4px 0 0 0; font-size: 24px; font-weight: 700; color: var(--zyro-deep-navy);">Client: {{ client[1] }}</h1>
+    </div>
+    <div style="display: flex; gap: 10px;">
+      <a href="{{ url_for('auth.admin_client_new_business', client_id=client[0]) }}" class="lp-btn primary" style="background: var(--zyro-electric-teal); color: #fff; font-weight: 600; padding: 10px 20px; border-radius: 8px; text-decoration: none;">+ Add Business for Client</a>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 24px; margin-bottom: 32px;">
+    <!-- Client Info Card -->
+    <div class="lp-card" style="background: #fff; border: 1px solid var(--lp-border); border-radius: 12px; padding: 24px;">
+      <h2 style="font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy); margin-top: 0; margin-bottom: 16px;">Client Profile</h2>
+      <form method="POST">
+        {{ csrf_field() }}
+        <div style="margin-bottom: 14px;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Client Name</label>
+          <input type="text" name="name" value="{{ client[1] }}" required style="width: 100%; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: 6px;">
+        </div>
+        <div style="margin-bottom: 14px;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Email</label>
+          <input type="email" name="email" value="{{ client[2] or '' }}" style="width: 100%; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: 6px;">
+        </div>
+        <div style="margin-bottom: 14px;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Phone</label>
+          <input type="text" name="phone" value="{{ client[3] or '' }}" style="width: 100%; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: 6px;">
+        </div>
+        <div style="margin-bottom: 16px;">
+          <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Address</label>
+          <textarea name="address" rows="3" style="width: 100%; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: 6px;">{{ client[4] or '' }}</textarea>
+        </div>
+        <button type="submit" class="lp-btn primary" style="background: var(--zyro-deep-navy); color: #fff; font-weight: 600; width: 100%; padding: 10px;">Update Client Details</button>
+      </form>
+    </div>
+
+    <!-- Associated Businesses List -->
+    <div>
+      <h2 style="font-size: 18px; font-weight: 700; color: var(--zyro-deep-navy); margin-top: 0; margin-bottom: 16px;">Associated Businesses ({{ businesses|length }})</h2>
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        {% for b in businesses %}
+        <div class="lp-card" style="background: #fff; border: 1px solid var(--lp-border); border-radius: 12px; padding: 20px; display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <h3 style="margin: 0 0 4px 0; font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy);">{{ b[1] }}</h3>
+            <p style="margin: 0; font-size: 13px; color: var(--zyro-slate-blue);">Currency: <strong>{{ b[2] }}</strong> | NTN: {{ b[4] or '—' }} | Status: <span style="font-weight: 700; color: var(--zyro-electric-teal);">{{ b[7] or 'TRIAL' }}</span></p>
+          </div>
+          <div>
+            <form action="{{ url_for('auth.admin_support_org', organization_id=b[0]) }}" method="POST" style="display:inline;">
+              {{ csrf_field() }}
+              <button type="submit" class="lp-btn primary sm" style="background: var(--zyro-electric-teal); color: #fff; font-weight: 600; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer;">Enter Support Workspace</button>
+            </form>
+          </div>
+        </div>
+        {% else %}
+        <div class="lp-card" style="background: #fff; border: 1px solid var(--lp-border); border-radius: 12px; padding: 30px; text-align: center; color: var(--zyro-slate-blue);">
+          No businesses registered for this client yet.
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

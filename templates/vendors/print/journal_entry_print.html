@@ -1,0 +1,60 @@
+{% extends "vendors/print/_print_base.html" %}
+{% set is_draft = false %}
+{% block title %}Journal Entry {{ je[1] | safe_str }}{% endblock %}
+{% block toolbar_title %}Journal Entry — {{ je[1] | safe_str }}{% endblock %}
+{% block back_url %}{{ back_url }}{% endblock %}
+
+{% block content %}
+<div class="title-block">
+  <div class="doc-main-title">Journal Entry</div>
+  <div class="doc-sub-number">{{ je[1] | safe_str }}</div>
+</div>
+
+<table class="info-table">
+  <tr>
+    <th>Voucher Number</th>
+    <td><strong>{{ je[1] | safe_str }}</strong></td>
+    <th>Date</th>
+    <td>{{ je[2] | fmt_date_print }}</td>
+  </tr>
+  <tr>
+    <th>Journal</th>
+    <td>{{ je[3] | safe_str }}</td>
+    <th>Memo</th>
+    <td>{{ je[4] | safe_str }}</td>
+  </tr>
+</table>
+
+<div style="font-weight: bold; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; color: #333;">Journal Lines</div>
+<table class="lines-table">
+  <thead>
+    <tr>
+      <th style="width: 28%; text-align: left;">Account</th>
+      <th style="width: 18%; text-align: left;">Partner</th>
+      <th style="width: 14%; text-align: left;">Analytic</th>
+      <th style="width: 20%; text-align: left;">Label</th>
+      <th style="width: 10%; text-align: right;">Debit</th>
+      <th style="width: 10%; text-align: right;">Credit</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for l in lines %}
+    <tr>
+      <td class="text-left"><strong>{{ l[0] | safe_str }}</strong> — {{ l[1] | safe_str }}</td>
+      <td class="text-left">{{ l[2] | safe_str }}</td>
+      <td class="text-left">{{ l[3] | safe_str }}</td>
+      <td class="text-left">{{ l[4] | safe_str }}</td>
+      <td class="text-right">{{ l[5] | fmt_money_print }}</td>
+      <td class="text-right">{{ l[6] | fmt_money_print }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <th colspan="4" style="text-align: right;">Total:</th>
+      <th class="text-right">{{ total_debit | fmt_money_print }}</th>
+      <th class="text-right">{{ total_credit | fmt_money_print }}</th>
+    </tr>
+  </tfoot>
+</table>
+{% endblock %}

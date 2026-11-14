@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Add Organization User{% endblock %}
+{% block active_nav %}organizations{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 520px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h2 style="margin: 0;">Add User to Organization</h2>
+    <a href="{{ url_for('organizations.users_list', organization_id=organization_id) }}" class="lp-btn secondary" style="font-size: 13px;">Back to Users</a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="alert {{ category }}" style="padding: 10px; margin-bottom: 16px; border-radius: 6px; background: {% if category == 'error' %}#fde8e8{% else %}#def7ec{% endif %}; color: {% if category == 'error' %}#9b1c1c{% else %}#03543f{% endif %};">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <form method="POST">
+    {{ csrf_field() }}
+
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Full Name</label>
+      <input type="text" name="name" required style="width: 100%; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: 6px;" placeholder="e.g. Jane Doe">
+    </div>
+
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Email Address / Username</label>
+      <input type="email" name="email" required style="width: 100%; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: 6px;" placeholder="e.g. jane@company.com">
+    </div>
+
+    <div style="margin-bottom: 16px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Temporary Password (for new users)</label>
+      <input type="password" name="password" style="width: 100%; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: 6px;" placeholder="Leave blank if user already exists">
+    </div>
+
+    <div style="margin-bottom: 24px;">
+      <label style="font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px;">Organization Role</label>
+      <select name="role_id" required style="width: 100%; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: 6px;">
+        {% for r in roles %}
+        <option value="{{ r[0] }}">{{ r[1] }} - {{ r[2] or 'No description' }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div style="display: flex; gap: 12px;">
+      <button type="submit" class="lp-btn primary">Add User</button>
+      <a href="{{ url_for('organizations.users_list', organization_id=organization_id) }}" class="lp-btn secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

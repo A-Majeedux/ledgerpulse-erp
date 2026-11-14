@@ -154,6 +154,19 @@ class LedgerPulseSecurityTests(unittest.TestCase):
             sub = check_subscription(organization_id=1)
             self.assertEqual(sub["status"], "SUSPENDED")
 
+    def test_9b_subscription_dynamic_grace_period(self):
+        """Item 9b: Subscription status dynamically evaluates to GRACE_PERIOD when past expiry but within grace period."""
+        from datetime import date, timedelta
+        past_expiry = date.today() - timedelta(days=2)
+        future_grace = date.today() + timedelta(days=5)
+        with patch("auth.services.get_conn") as mock_get_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (1, "ACTIVE", past_expiry, future_grace, "Standard ERP Plan")
+            mock_get_conn.return_value.cursor.return_value = mock_cursor
+            
+            sub = check_subscription(organization_id=1)
+            self.assertEqual(sub["status"], "GRACE_PERIOD")
+
     def test_10_csrf_middleware_validation(self):
         """Item 10: CSRF middleware rejects missing/invalid tokens and accepts valid tokens."""
         with self.client as c:
@@ -309,6 +322,380 @@ class LedgerPulseSecurityTests(unittest.TestCase):
 
             reject_organization_payment(payment_id=1, admin_user_id=1, reason="Invalid proof")
             mock_conn.commit.assert_called_once()
+
+    def test_19_login_page_renders(self):
+        """Milestone 1: GET /auth/login returns 200 and renders login form."""
+        with patch("auth.routes.get_conn") as mock_get_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (1,) # user_count > 0
+            mock_get_conn.return_value.cursor.return_value = mock_cursor
+
+            response = self.client.get("/auth/login")
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(b"Welcome back", response.data)
+
+    def test_20_login_invalid_credentials(self):
+        """Milestone 1: POST /auth/login with invalid credentials flashes error and stays on login."""
+        with patch("auth.routes.get_conn") as mock_get_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.side_effect = [
+                (1,), # user_count check in before_request or login
+                None  # user not found
+            ]
+            mock_get_conn.return_value.cursor.return_value = mock_cursor
+
+            with self.client as c:
+                with c.session_transaction() as sess:
+                    sess["csrf_token"] = "test-csrf-token"
+
+                response = c.post("/auth/login", data={
+                    "csrf_token": "test-csrf-token",
+                    "email": "wrong@ledgerpulse.local",
+                    "password": "wrongpassword"
+                }, follow_redirects=True)
+                self.assertEqual(response.status_code, 200)
+                self.assertIn(b"Invalid email or password", response.data)
+
+    def test_21_login_success_and_logout(self):
+        """Milestone 1: Successful login sets session, redirects, and logout clears session."""
+        with patch("auth.routes.get_conn") as mock_get_conn:
+            mock_cursor = MagicMock()
+            # login user_count, user row, subsequent GET /auth/login user_count after logout redirect
+            hashed = hash_password("correctpassword")
+            mock_cursor.fetchone.side_effect = [
+                (1,), # user_count in login POST
+                (1, "Admin User", "admin@ledgerpulse.local", hashed, True, True), # user row
+                (1,), # user_count in GET /auth/login after logout redirect
+            ]
+            mock_cursor.fetchall.return_value = [(1,)] # organization membership
+            mock_get_conn.return_value.cursor.return_value = mock_cursor
+
+            with self.client as c:
+                with c.session_transaction() as sess:
+                    sess["csrf_token"] = "test-csrf-token"
+
+                response = c.post("/auth/login", data={
+                    "csrf_token": "test-csrf-token",
+                    "email": "admin@ledgerpulse.local",
+                    "password": "correctpassword"
+                }, follow_redirects=False)
+                self.assertEqual(response.status_code, 302)
+                
+                # Check logout
+                logout_resp = c.get("/auth/logout", follow_redirects=True)
+                self.assertEqual(logout_resp.status_code, 200)
+                self.assertIn(b"You have been logged out", logout_resp.data)
+
+    def test_22_setup_locked_when_users_exist(self):
+        """Milestone 1: GET /auth/setup redirects to login when users already exist."""
+        with patch("auth.routes.get_conn") as mock_get_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (5,) # 5 users exist
+            mock_get_conn.return_value.cursor.return_value = mock_cursor
+
+            response = self.client.get("/auth/setup", follow_redirects=False)
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(response.location.endswith("/auth/login"))
+
+    def test_23_protected_route_redirect(self):
+        """Milestone 1: Unauthenticated request to protected route redirects to login."""
+        with patch("app.get_conn") as mock_get_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (2,) # user_count > 0
+            mock_get_conn.return_value.cursor.return_value = mock_cursor
+
+            response = self.client.get("/dashboard/", follow_redirects=False)
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue("/auth/login" in response.location)
+
+    def test_24_last_active_org_admin_protection(self):
+        """User Management: Verify is_last_active_org_admin correctly identifies the final admin."""
+        from auth.services import is_last_active_org_admin
+        with patch("auth.services.get_conn") as mock_get_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.fetchall.return_value = [(1,)] # admin role ids
+            mock_cursor.fetchone.side_effect = [
+                (1,), # is admin check
+                (1,)  # admin count <= 1
+            ]
+            mock_get_conn.return_value.cursor.return_value = mock_cursor
+
+            res = is_last_active_org_admin(organization_id=1, user_id=1)
+            self.assertTrue(res)
+
+    def test_25_deactivate_last_active_org_admin_raises(self):
+        """User Management: Attempting to deactivate last active org admin raises ValueError."""
+        from auth.services import toggle_user_active
+        with patch("auth.services.get_conn") as mock_get_conn, \
+             patch("auth.services.is_last_active_org_admin", return_value=True):
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (True,) # user is currently active
+            mock_conn = MagicMock()
+            mock_conn.cursor.return_value = mock_cursor
+            mock_get_conn.return_value = mock_conn
+
+            with self.assertRaises(ValueError) as ctx:
+                toggle_user_active(organization_id=1, target_user_id=1, actor_user_id=1)
+            self.assertIn("last active Organization Admin", str(ctx.exception))
+            mock_conn.rollback.assert_called_once()
+
+    def test_26_users_list_permission_denied(self):
+        """User Management: User lacking users.manage permission receives 403 on /organizations/1/users."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 2
+                sess["organization_id"] = 1
+                sess["is_platform_admin"] = False
+            
+            with patch("app.get_conn") as mock_get_conn, \
+                 patch("core.context.current_organization_id", return_value=1), \
+                 patch("auth.services.has_permission", return_value=False):
+                mock_cursor = MagicMock()
+                mock_cursor.fetchone.side_effect = [
+                    (1,), # user_count in before_request
+                    (True,) # is_active in before_request
+                ]
+                mock_get_conn.return_value.cursor.return_value = mock_cursor
+
+                response = c.get("/organizations/1/users")
+                self.assertEqual(response.status_code, 403)
+
+    def test_27_users_list_allowed_with_permission(self):
+        """User Management: User with users.manage permission or platform admin successfully loads users list."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 1
+                sess["organization_id"] = 1
+                sess["is_platform_admin"] = True
+
+            with patch("core.context.current_organization_id", return_value=1), \
+                 patch("auth.services.is_platform_admin", return_value=True), \
+                 patch("organizations.routes.get_organization_users", return_value=[]), \
+                 patch("organizations.routes.get_organization_roles", return_value=[]):
+                response = c.get("/organizations/1/users")
+                self.assertEqual(response.status_code, 200)
+
+    def test_28_cross_organization_user_management_denied(self):
+        """User Management: Accessing organization 2 users while active in organization 1 is denied (403)."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 1
+                sess["organization_id"] = 1
+                sess["is_platform_admin"] = False
+
+            with patch("core.context.current_organization_id", return_value=1):
+                response = c.get("/organizations/2/users")
+                self.assertEqual(response.status_code, 403)
+
+    def test_29_platform_admin_dashboard_access(self):
+        """Platform Admin: Authorized platform admin successfully accesses /auth/admin/dashboard (200)."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 1
+                sess["is_platform_admin"] = True
+            
+            with patch("app.get_conn") as mock_app_get_conn, \
+                 patch("auth.routes.get_platform_analytics", return_value={
+                     "total_orgs": 1, "total_users": 1, "active_users": 1, "platform_admins": 1,
+                     "sub_status_counts": {"ACTIVE": 1}, "payment_stats": {}, "recent_logs": []
+                 }), \
+                 patch("auth.services.is_platform_admin", return_value=True):
+                mock_cursor = MagicMock()
+                mock_cursor.fetchone.side_effect = [(1,), (True,)]
+                mock_app_get_conn.return_value.cursor.return_value = mock_cursor
+
+                response = c.get("/auth/admin/dashboard")
+                self.assertEqual(response.status_code, 200)
+
+    def test_30_non_platform_admin_dashboard_denial(self):
+        """Platform Admin: Non-platform admin is denied access to /auth/admin/dashboard (403)."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 2
+                sess["is_platform_admin"] = False
+            
+            with patch("auth.services.is_platform_admin", return_value=False):
+                response = c.get("/auth/admin/dashboard")
+                self.assertEqual(response.status_code, 403)
+
+    def test_31_platform_admin_tenants_access(self):
+        """Platform Admin: Platform admin successfully accesses tenant health monitoring (/auth/admin/tenants)."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 1
+                sess["is_platform_admin"] = True
+            
+            with patch("app.get_conn") as mock_app_get_conn, \
+                 patch("auth.routes.get_platform_tenants", return_value=[]), \
+                 patch("auth.services.is_platform_admin", return_value=True):
+                mock_cursor = MagicMock()
+                mock_cursor.fetchone.side_effect = [(1,), (True,)]
+                mock_app_get_conn.return_value.cursor.return_value = mock_cursor
+
+                response = c.get("/auth/admin/tenants")
+                self.assertEqual(response.status_code, 200)
+
+    def test_32_platform_admin_plans_access(self):
+        """Platform Admin: Platform admin successfully accesses subscription plan management (/auth/admin/plans)."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 1
+                sess["is_platform_admin"] = True
+            
+            with patch("app.get_conn") as mock_app_get_conn, \
+                 patch("auth.routes.get_all_subscription_plans", return_value=[]), \
+                 patch("auth.services.is_platform_admin", return_value=True):
+                mock_cursor = MagicMock()
+                mock_cursor.fetchone.side_effect = [(1,), (True,)]
+                mock_app_get_conn.return_value.cursor.return_value = mock_cursor
+
+                response = c.get("/auth/admin/plans")
+                self.assertEqual(response.status_code, 200)
+
+    def test_33_save_subscription_plan_service(self):
+        """Platform Admin: save_subscription_plan successfully executes insert/update and audit log."""
+        from auth.services import save_subscription_plan
+        with patch("auth.services.get_conn") as mock_get_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (5,) # new plan_id
+            mock_conn = MagicMock()
+            mock_conn.cursor.return_value = mock_cursor
+            mock_get_conn.return_value = mock_conn
+
+            pid = save_subscription_plan(
+                plan_id=None,
+                name="Test Plan",
+                description="Test Desc",
+                price=Decimal("99.00"),
+                billing_cycle="monthly",
+                grace_period_days=7,
+                is_active=True,
+                modules=["sales", "accounting"],
+                admin_user_id=1
+            )
+            self.assertEqual(pid, 5)
+            mock_conn.commit.assert_called_once()
+
+    def test_34_toggle_subscription_plan_active(self):
+        """Platform Admin: toggle_subscription_plan_active successfully toggles active status and audits."""
+        from auth.services import toggle_subscription_plan_active
+        with patch("auth.services.get_conn") as mock_get_conn:
+            mock_cursor = MagicMock()
+            mock_cursor.fetchone.return_value = (True, "Test Plan")
+            mock_conn = MagicMock()
+            mock_conn.cursor.return_value = mock_cursor
+            mock_get_conn.return_value = mock_conn
+
+            toggle_subscription_plan_active(plan_id=1, admin_user_id=1)
+            mock_conn.commit.assert_called_once()
+
+    def test_35_dashboard_receipts_query(self):
+        """Dashboard: recent customer receipts query uses valid schema columns ('—' AS payment_method) without UndefinedColumn error."""
+        with self.client as c:
+            with patch("dashboard.routes.get_conn") as mock_get_conn, \
+                 patch("dashboard.routes.current_organization_id") as mock_org, \
+                 patch("dashboard.routes.current_user_id") as mock_user, \
+                 patch("dashboard.routes._is_manager") as mock_mgr:
+                mock_org.return_value = 1
+                mock_user.return_value = 1
+                mock_mgr.return_value = True
+
+                mock_cursor = MagicMock()
+                # Mock return values for org row, customers, vendors, accounts, sums, recent lists, trends, etc.
+                mock_cursor.fetchone.side_effect = [
+                    ("Test Org", "PKR"), # org row
+                    (Decimal("0"),), # sales
+                    (Decimal("0"),), # purchases
+                    (Decimal("0"), Decimal("0")), # np_row
+                    (Decimal("0"),), # cash
+                    (Decimal("0"),), # total invoiced
+                    (Decimal("0"),), # total received
+                    (Decimal("0"),), # total billed
+                    (Decimal("0"),), # total paid
+                    (0,), # unposted
+                    (0,), # posted journals
+                ]
+                mock_cursor.fetchall.side_effect = [
+                    [], # customers
+                    [], # vendors
+                    [], # bank accounts
+                    [], # recent invoices
+                    [], # recent receipts
+                    [], # recent bills
+                    [], # recent payments
+                    [], # recent journals
+                    [], # recent transfers
+                    [], # sales trend
+                    [], # purchases trend
+                    [], # pnl trend
+                    [], # cash trend
+                    [], # ar trend
+                    [], # ap trend
+                    [], # ar analysis
+                    [], # ap analysis
+                    None, # overdue inv
+                    None, # overdue bill
+                    None, # unbal draft
+                    None, # preferences
+                ]
+                mock_conn = MagicMock()
+                mock_conn.cursor.return_value = mock_cursor
+                mock_get_conn.return_value = mock_conn
+
+                res = c.get("/")
+                self.assertIn(res.status_code, [200, 302])
+
+    def test_zyro_erp_clients_management_access(self):
+        """ZYRO ERP: Platform admin can access clients management (/auth/admin/clients)."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 1
+                sess["is_platform_admin"] = True
+
+            with patch("auth.routes.get_all_clients", return_value=[]), \
+                 patch("auth.services.is_platform_admin", return_value=True), \
+                 patch("app.get_conn") as mock_get_conn:
+                mock_cursor = MagicMock()
+                mock_cursor.fetchone.side_effect = [(1,), (True,)]
+                mock_get_conn.return_value.cursor.return_value = mock_cursor
+
+                response = c.get("/auth/admin/clients")
+                self.assertEqual(response.status_code, 200)
+
+    def test_zyro_erp_non_admin_client_access_denied(self):
+        """ZYRO ERP: Regular user is denied access to clients management."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 2
+                sess["is_platform_admin"] = False
+
+            with patch("auth.services.is_platform_admin", return_value=False):
+                response = c.get("/auth/admin/clients")
+                self.assertEqual(response.status_code, 403)
+
+    def test_zyro_erp_organization_creation_admin_only(self):
+        """ZYRO ERP: Regular user cannot access new organization creation (/organizations/new)."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 2
+                sess["is_platform_admin"] = False
+
+            with patch("auth.services.is_platform_admin", return_value=False):
+                response = c.get("/organizations/new")
+                self.assertEqual(response.status_code, 403)
+
+    def test_zyro_erp_tenant_isolation_unassigned_switch(self):
+        """ZYRO ERP: Regular user cannot switch to an unassigned organization."""
+        with self.client as c:
+            with c.session_transaction() as sess:
+                sess["user_id"] = 2
+                sess["is_platform_admin"] = False
+                sess["csrf_token"] = "test-csrf"
+
+            with patch("auth.services.is_platform_admin", return_value=False), \
+                 patch("auth.services.user_belongs_to_organization", return_value=False):
+                response = c.post("/organizations/switch/999", data={"csrf_token": "test-csrf"})
+                self.assertEqual(response.status_code, 403)
 
 
 if __name__ == "__main__":

@@ -1,405 +1,643 @@
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}Executive Dashboard{% endblock %}
 {% block active_nav %}dashboard{% endblock %}
 {% block content %}
-{#
-  The Financial Control Center.
-
-  Every figure comes from dashboard/services.py (d = build_dashboard(...)),
-  worked out from POSTED journal entries of the active organization only.
-  This template does no arithmetic of its own - it only decides how a
-  figure is worded and coloured.
-
-    money(x)    1250000 -> 1,250,000.00
-    plain(x)    1250000 -> 1250000.00   (exact figure in data-* attributes,
-                                         read by the automated checks)
-    percent(x)  25.0 -> 25.0%
-#}
-
-{# ---- line icons (drawn inline so the page needs no icon font) ---- #}
-{% macro icon(name, size=18, stroke=2) -%}
-<svg class="lp-icon" width="{{ size }}" height="{{ size }}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="{{ stroke }}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-  {%- if name == 'bank' -%}<path d="M3 10l9-6 9 6"/><path d="M5 10v8"/><path d="M9.5 10v8"/><path d="M14.5 10v8"/><path d="M19 10v8"/><path d="M3 21h18"/>
-  {%- elif name == 'incoming' -%}<line x1="17" y1="7" x2="7" y2="17"/><polyline points="17 17 7 17 7 7"/>
-  {%- elif name == 'outgoing' -%}<line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/>
-  {%- elif name == 'revenue' -%}<polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
-  {%- elif name == 'expenses' -%}<path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>
-  {%- elif name == 'profit' -%}<path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/>
-  {%- elif name == 'plus' -%}<line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-  {%- elif name == 'document' -%}<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-  {%- elif name == 'calendar' -%}<rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
-  {%- elif name == 'check' -%}<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-  {%- elif name == 'alert' -%}<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-  {%- elif name == 'chevron' -%}<polyline points="9 18 15 12 9 6"/>
-  {%- elif name == 'up' -%}<line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/>
-  {%- elif name == 'down' -%}<line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/>
-  {%- endif -%}
-</svg>
-{%- endmacro %}
-
-{# ---- one stat card: icon chip, figure, how it moved, six-month bars ---- #}
-{% macro stat_card(card, colour, icon_name) %}
-{% set shown = money(card.value) %}
-<article class="lp-card lp-stat-card" data-kpi="{{ card.key }}">
-  <div class="lp-stat-head">
-    <span class="lp-stat-icon {{ colour }}">{{ icon(icon_name, 20) }}</span>
+<div class="lp-hero" style="margin-bottom: 24px; border-radius: 12px; padding: 24px 32px; background: #EAF8F8; border: 1px solid #D8E9EF; color: var(--zyro-deep-navy); box-shadow: 0 4px 16px rgba(18, 58, 89, 0.04);">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
     <div>
-      <div class="lp-stat-label">{{ card.label }}</div>
-      <div class="lp-stat-note" title="{{ card.note }}">{{ card.note }}</div>
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+        <span style="font-size:11px; text-transform:uppercase; letter-spacing:0.1em; background: rgba(32,184,169,0.2); color: var(--zyro-electric-teal); padding: 3px 8px; border-radius: 4px; font-weight: 700;">ZYRO Enterprise Core</span>
+        <span style="font-size: 12px; color: var(--zyro-slate-blue); font-weight: 500;">Welcome, {{ user_name }}</span>
+      </div>
+      <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: var(--zyro-deep-navy); letter-spacing: -0.02em;">{{ org_name }}</h1>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button type="button" onclick="manualRefreshData()" class="lp-btn secondary sm" style="background: #fff; border: 1px solid var(--lp-border); color: var(--zyro-deep-navy); font-weight: 600;">🔄 Refresh Data</button>
+      <div style="background: #fff; border: 1px solid var(--lp-border); padding: 8px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--zyro-deep-navy);">
+        Base Currency: <span style="color: var(--zyro-electric-teal);">{{ currency }}</span>
+      </div>
     </div>
   </div>
-  <div class="lp-stat-value{{ ' negative' if card.value < 0 }}{{ ' long' if shown|length > 13 }}{{ ' xlong' if shown|length > 16 }}" data-figure="{{ card.key }}" data-value="{{ plain(card.value) }}">
-    {%- if d.organization.currency %}<span class="lp-currency">{{ d.organization.currency }}</span>{% endif -%}
-    {{ shown }}
+</div>
+
+<!-- Quick Operations Bar (All 6 Quick Actions) -->
+<div class="lp-card" style="padding: 16px 24px; margin-bottom: 24px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; background: #fff; border: 1px solid var(--lp-border); border-radius: 10px; box-shadow: 0 2px 8px rgba(18,58,89,0.04);">
+  <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--zyro-slate-blue); letter-spacing: 0.05em; margin-right: 4px;">Quick Actions:</span>
+  <a href="{{ url_for('sales.new_sales_invoice') }}" class="lp-btn primary sm" style="background: var(--zyro-electric-teal); color: #fff; border-radius: 6px; font-weight: 600;">+ New Invoice</a>
+  <a href="{{ url_for('customers.new_customer_receipt') }}" class="lp-btn secondary sm" style="background: #fff; border: 1px solid var(--lp-border); color: var(--zyro-deep-navy); border-radius: 6px; font-weight: 600;">+ Customer Receipt</a>
+  <a href="{{ url_for('vendors.new_vendor_bill') }}" class="lp-btn secondary sm" style="background: #fff; border: 1px solid var(--lp-border); color: var(--zyro-deep-navy); border-radius: 6px; font-weight: 600;">+ New Vendor Bill</a>
+  <a href="{{ url_for('vendors.new_vendor_payment') }}" class="lp-btn secondary sm" style="background: #fff; border: 1px solid var(--lp-border); color: var(--zyro-deep-navy); border-radius: 6px; font-weight: 600;">+ Vendor Payment</a>
+  <a href="{{ url_for('accounting.new_journal_entry') }}" class="lp-btn secondary sm" style="background: #fff; border: 1px solid var(--lp-border); color: var(--zyro-deep-navy); border-radius: 6px; font-weight: 600;">+ New Journal Entry</a>
+  <a href="{{ url_for('accounting.new_bank_transfer') }}" class="lp-btn secondary sm" style="background: #fff; border: 1px solid var(--lp-border); color: var(--zyro-deep-navy); border-radius: 6px; font-weight: 600;">🏦 Bank Internal Transfer</a>
+</div>
+
+<!-- Dashboard Personalization Bar (Show/Hide / Rearrange) -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding: 10px 16px; background: #fff; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 13px;">
+  <span style="font-weight: 600; color: var(--zyro-slate-blue);">Dashboard Customization:</span>
+  <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+    <label><input type="checkbox" checked onchange="toggleSection('cards-section', this.checked)"> Summary Cards</label>
+    <label><input type="checkbox" checked onchange="toggleSection('charts-section', this.checked)"> Charts &amp; Trends</label>
+    <label><input type="checkbox" checked onchange="toggleSection('activity-section', this.checked)"> Recent Activity</label>
+    <button type="button" onclick="saveLayoutPreferences()" class="lp-btn secondary sm" style="font-size: 11px; padding: 3px 10px;">Save Layout</button>
   </div>
-  <div class="lp-stat-foot">
-    <div class="lp-stat-delta" data-delta="{{ card.key }}" data-direction="{{ card.direction }}" data-previous="{{ plain(card.previous) }}" data-change="{{ plain(card.change) }}">
-      {% if card.kind == 'balance' %}
-        {# a balance: how far it moved since the day before the period started #}
-        {% if card.direction == 'flat' %}
-          <span>No change since {{ d.opening_label }}</span>
-        {% else %}
-          <span class="lp-trend {{ card.tone }}">{{ icon(card.direction, 12, 3) }}<span class="lp-sr-only">{{ card.direction }} </span>{{ money(card.change|abs) }}</span>
-          <span>since {{ d.opening_label }}</span>
+</div>
+
+<!-- Dashboard Container with Section IDs for Progressive Loading, Error/Retry, and Rearranging -->
+<div id="dashboard-main-container" style="display: flex; flex-direction: column; gap: 28px;">
+
+  <!-- CARDS SECTION -->
+  <div id="cards-section" class="dashboard-module" data-module-name="cards">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h2 style="font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy); margin: 0;">Financial Performance Summary</h2>
+      <div id="cards-loader" style="font-size: 12px; color: var(--zyro-slate-blue); display: none;">Loading...</div>
+      <div id="cards-error" style="display: none; font-size: 12px; color: #c0392b;">Failed to load. <button onclick="retrySection('cards-section')" class="lp-btn secondary sm" style="font-size: 10px; padding: 2px 6px;">Retry</button></div>
+    </div>
+
+    <!-- First Row: 4 Visible Financial Cards as per Reference -->
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px;">
+      <!-- Card 1: Total Sales / Revenue -->
+      <div class="lp-card" style="margin-bottom: 0; padding: 20px; border-radius: 12px; border-left: 4px solid var(--zyro-electric-teal); background: #fff; border-top: 1px solid var(--lp-border); border-right: 1px solid var(--lp-border); border-bottom: 1px solid var(--lp-border);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+          <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--zyro-slate-blue); letter-spacing: 0.05em;">Total Sales / Revenue</span>
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: #EAF8F8; display: flex; align-items: center; justify-content: center; color: var(--zyro-electric-teal);">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline><polyline points="17 6 23 6 23 12"></polyline></svg>
+          </div>
+        </div>
+        <div style="font-size: 22px; font-weight: 700; color: var(--zyro-deep-navy); letter-spacing: -0.02em;">{{ currency }} {{ "%.2f"|format(sales_period) }}</div>
+        <form method="GET" action="{{ url_for('dashboard.home') }}" style="margin-top: 10px;">
+          <select name="sales_range" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 28px; background: #F7FAF9;" onchange="this.form.submit()">
+            <option value="this_month" {{ 'selected' if sales_range == 'this_month' }}>This Month</option>
+            <option value="last_month" {{ 'selected' if sales_range == 'last_month' }}>Last Month</option>
+            <option value="last_3_months" {{ 'selected' if sales_range == 'last_3_months' }}>Last 3 Months</option>
+            <option value="last_6_months" {{ 'selected' if sales_range == 'last_6_months' }}>Last 6 Months</option>
+            <option value="fy" {{ 'selected' if sales_range == 'fy' }}>Financial Year</option>
+          </select>
+          <input type="hidden" name="customer_id" value="{{ customer_id_filter }}">
+          <input type="hidden" name="vendor_id" value="{{ vendor_id_filter }}">
+        </form>
+      </div>
+
+      <!-- Card 2: Net Profit or Loss -->
+      <div class="lp-card" style="margin-bottom: 0; padding: 20px; border-radius: 12px; border-left: 4px solid {% if net_profit >= 0 %}#2980b9{% else %}#c0392b{% endif %}; background: #fff; border-top: 1px solid var(--lp-border); border-right: 1px solid var(--lp-border); border-bottom: 1px solid var(--lp-border);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+          <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--zyro-slate-blue); letter-spacing: 0.05em;">Net Profit / (Loss)</span>
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: #E2EAF2; display: flex; align-items: center; justify-content: center; color: #2980b9;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+          </div>
+        </div>
+        <div style="font-size: 22px; font-weight: 700; color: {% if net_profit >= 0 %}#27ae60{% else %}#c0392b{% endif %}; letter-spacing: -0.02em;">{{ currency }} {{ "%.2f"|format(net_profit) }}</div>
+        <form method="GET" action="{{ url_for('dashboard.home') }}" style="margin-top: 10px;">
+          <select name="np_range" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 28px; background: #F7FAF9;" onchange="this.form.submit()">
+            <option value="this_month" {{ 'selected' if np_range == 'this_month' }}>This Month</option>
+            <option value="last_month" {{ 'selected' if np_range == 'last_month' }}>Last Month</option>
+            <option value="last_3_months" {{ 'selected' if np_range == 'last_3_months' }}>Last 3 Months</option>
+            <option value="fy" {{ 'selected' if np_range == 'fy' }}>Financial Year</option>
+          </select>
+        </form>
+      </div>
+
+      <!-- Card 3: Cash and Bank Balances -->
+      <div class="lp-card" style="margin-bottom: 0; padding: 20px; border-radius: 12px; border-left: 4px solid {% if cash_bank_balance < 0 %}#c0392b{% else %}#2980b9{% endif %}; background: #fff; border-top: 1px solid var(--lp-border); border-right: 1px solid var(--lp-border); border-bottom: 1px solid var(--lp-border);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+          <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--zyro-slate-blue); letter-spacing: 0.05em;">Cash &amp; Bank Balances</span>
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: {% if cash_bank_balance < 0 %}#FBE8E6{% else %}#E2EAF2{% endif %}; display: flex; align-items: center; justify-content: center; color: {% if cash_bank_balance < 0 %}#c0392b{% else %}#2980b9{% endif %};">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+          </div>
+        </div>
+        <div style="font-size: 22px; font-weight: 700; color: {% if cash_bank_balance < 0 %}#c0392b{% else %}var(--zyro-deep-navy){% endif %}; letter-spacing: -0.02em;">{{ currency }} {{ "%.2f"|format(cash_bank_balance) }}</div>
+        <div style="font-size: 11px; color: var(--zyro-slate-blue); margin-top: 10px;">As-of treasury liquidity</div>
+        {% if cash_alerts %}
+          <div style="margin-top: 8px; padding: 4px 8px; background: #fdf2f2; border: 1px solid #fadbd8; border-radius: 6px; font-size: 10px; color: #c0392b;">
+            ⚠️ <strong>Alert:</strong> {{ cash_alerts[0].message }}
+            <a href="{{ cash_alerts[0].link_url }}" style="color: #c0392b; font-weight: bold; text-decoration: underline;">Review →</a>
+          </div>
         {% endif %}
-      {% elif card.percent is not none %}
-        <span class="lp-trend {{ card.tone }}">{{ icon(card.direction, 12, 3) }}<span class="lp-sr-only">{{ card.direction }} </span>{{ percent(card.percent) }}</span>
-        <span>vs {{ money(card.previous) }} in {{ d.period.compare_label }}</span>
-      {% elif card.direction == 'flat' %}
-        <span>{% if card.value == 0 %}Nothing posted in this period, or in {{ d.period.compare_label }}{% else %}Same as {{ d.period.compare_label }}{% endif %}</span>
-      {% else %}
-        {# Nothing positive to take a percentage of: show the two amounts, never an invented percentage. #}
-        <span class="lp-trend {{ card.tone }}">{{ icon(card.direction, 12, 3) }}<span class="lp-sr-only">{{ card.direction }} </span>{{ money(card.change|abs) }}</span>
-        <span>vs {{ money(card.previous) }} in {{ d.period.compare_label }}</span>
-      {% endif %}
-    </div>
-    <div class="lp-spark {{ colour }}" role="img" aria-label="{{ card.label }}, {{ card.series[0].label }} to {{ card.series[-1].label }}">
-      {% for point in card.series -%}
-      <span class="{{ 'current' if point.current }}{{ ' negative' if point.negative }}" style="height: {{ point.height }}%" title="{{ point.label }}: {{ money(point.value) }}"></span>
-      {%- endfor %}
-    </div>
-  </div>
-</article>
-{% endmacro %}
-
-{# ============================== HERO ============================== #}
-<section class="lp-hero control-center">
-  <div class="lp-hero-top">
-    <div>
-      <span class="lp-hero-eyebrow"><span class="lp-hero-pulse"></span>Financial Control Center</span>
-      <h1>Welcome back{% if user_name %}, {{ user_name }}{% endif %}</h1>
-      <p>{{ d.organization.name }}&nbsp;· <span style="white-space: nowrap;">{{ d.today_label }}</span></p>
-    </div>
-    <div class="lp-hero-period">
-      <nav class="lp-segment" aria-label="Period shown">
-        {% for option in d.periods %}
-        <a href="{{ url_for('dashboard.home') if option.key == 'month' else url_for('dashboard.home', period=option.key) }}"
-           class="{{ 'active' if option.active }}"{% if option.active %} aria-current="true"{% endif %}>{{ option.label }}</a>
-        {% endfor %}
-      </nav>
-      <div class="lp-hero-range">
-        <strong>{{ d.period.range_label }}</strong>{% if d.period.detail %} · {{ d.period.detail }}{% endif %}<br>
-        compared with {{ d.period.compare_label }}
       </div>
-    </div>
-  </div>
-  <div class="lp-hero-actions">
-    <span class="lp-hero-actions-label">New</span>
-    <a class="lp-btn primary" href="{{ url_for('sales.new_sales_invoice') }}">{{ icon('plus', 16) }}Sales invoice</a>
-    <a class="lp-btn on-dark" href="{{ url_for('customers.new_customer_receipt') }}">Customer receipt</a>
-    <a class="lp-btn on-dark" href="{{ url_for('vendors.new_vendor_bill') }}">Vendor bill</a>
-    <a class="lp-btn on-dark" href="{{ url_for('vendors.new_vendor_payment') }}">Vendor payment</a>
-    <a class="lp-btn on-dark" href="{{ url_for('accounting.new_journal_entry') }}">Journal entry</a>
-  </div>
-</section>
 
-{# ---- warnings that must never be missed ---- #}
-{% if not d.position.balanced %}
-<div class="alert alert-danger" data-alert="out-of-balance">
-  <strong>The ledger is out of balance by {{ money(d.position.difference|abs) }}.</strong>
-  Posted debits and posted credits should always be equal. Do not rely on the figures below until this is found and corrected.
-</div>
-{% endif %}
-{% if d.position.unclassified != 0 %}
-<div class="alert alert-warning" data-alert="unclassified">
-  <strong>{{ money(d.position.unclassified|abs) }} sits on accounts with an unrecognised type{% if d.position.unclassified_types %} ({{ d.position.unclassified_types|join(', ') }}){% endif %}.</strong>
-  Account types must be one of {{ d.account_types|join(', ') }}; these amounts are not part of any figure below.
-</div>
-{% endif %}
-
-{# ============================ POSITION ============================ #}
-<div class="lp-section-head">
-  <h2>Where you stand</h2>
-  <span>Balances as at {{ d.as_at_label }}</span>
-</div>
-<div class="lp-grid">
-  {{ stat_card(d.cards.cash, 'green', 'bank') }}
-  {{ stat_card(d.cards.receivables, 'blue', 'incoming') }}
-  {{ stat_card(d.cards.payables, 'amber', 'outgoing') }}
-</div>
-
-{# ========================== PERFORMANCE ========================== #}
-<div class="lp-section-head">
-  <h2>How the period went</h2>
-  <span>{{ d.period.label }}: {{ d.period.range_label }} · compared with {{ d.period.compare_label }}</span>
-</div>
-<div class="lp-grid">
-  {{ stat_card(d.cards.revenue, 'green', 'revenue') }}
-  {{ stat_card(d.cards.expenses, 'coral', 'expenses') }}
-  {{ stat_card(d.cards.profit, 'blue', 'profit') }}
-</div>
-
-{# ================== TREND  +  NEEDS ATTENTION ================== #}
-<div class="lp-grid" style="margin-top: var(--lp-space-8);">
-  {% if d.has_any_entry %}
-  <section class="lp-card span-2" data-panel="trend">
-    <div class="lp-panel-head">
-      <div>
-        <h3 class="lp-panel-title">Revenue and expenses</h3>
-        <p class="lp-panel-sub">Last {{ d.trend.months|length }} months, posted entries only{% if d.trend.partial_month %} · {{ d.trend.months[-1].label }} is up to {{ d.as_at_label }}{% endif %}</p>
-      </div>
-      <div class="lp-legend"><span><i class="revenue"></i>Revenue</span><span><i class="expenses"></i>Expenses</span></div>
-    </div>
-    {% if d.trend.has_data %}
-    <div class="lp-trend-chart" role="img" aria-label="Revenue and expenses for {{ d.trend.months[0].long_label }} to {{ d.trend.months[-1].long_label }}">
-      <span class="lp-trend-peak">Tallest bar = {{ money(d.trend.peak) }}</span>
-      <div class="lp-trend-plot">
-        {% for month in d.trend.months %}
-        <div class="lp-trend-group{{ ' current' if month.current }}" data-month="{{ month.long_label }}" data-revenue="{{ plain(month.revenue) }}" data-expenses="{{ plain(month.expenses) }}">
-          <span class="lp-trend-bar revenue{{ ' negative' if month.revenue < 0 }}" style="height: {{ month.revenue_height }}%" title="Revenue, {{ month.long_label }}: {{ money(month.revenue) }}"></span>
-          <span class="lp-trend-bar expenses{{ ' negative' if month.expenses < 0 }}" style="height: {{ month.expenses_height }}%" title="Expenses, {{ month.long_label }}: {{ money(month.expenses) }}"></span>
+      <!-- Card 4: Customer Outstanding Receivables -->
+      <div class="lp-card" style="margin-bottom: 0; padding: 20px; border-radius: 12px; border-left: 4px solid #f39c12; background: #fff; border-top: 1px solid var(--lp-border); border-right: 1px solid var(--lp-border); border-bottom: 1px solid var(--lp-border);">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+          <span style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--zyro-slate-blue); letter-spacing: 0.05em;">Outstanding Receivables</span>
+          <div style="width: 32px; height: 32px; border-radius: 50%; background: #FDF1DF; display: flex; align-items: center; justify-content: center; color: #b7950b;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+          </div>
         </div>
-        {% endfor %}
+        <div style="font-size: 22px; font-weight: 700; color: var(--zyro-deep-navy); letter-spacing: -0.02em;">{{ currency }} {{ "%.2f"|format(receivables_outstanding) }}</div>
+        <div style="font-size: 11px; color: var(--zyro-slate-blue); margin-top: 10px;">Uncollected customer balances</div>
+        {% if receivables_alerts %}
+          <div style="margin-top: 8px; padding: 4px 8px; background: #fef9e7; border: 1px solid #fdebd0; border-radius: 6px; font-size: 10px; color: #b7950b;">
+            ⚠️ <strong>Warning:</strong> {{ receivables_alerts[0].message }}
+            <a href="{{ receivables_alerts[0].link_url }}" style="color: #b7950b; font-weight: bold; text-decoration: underline;">Review →</a>
+          </div>
+        {% endif %}
       </div>
-      <div class="lp-trend-axis">
-        {% for month in d.trend.months %}
-        <div class="lp-trend-tick">
-          <strong>{{ month.label }}</strong>
-          <span class="{{ 'gain' if month.profit > 0 else 'loss' if month.profit < 0 }}" title="Net profit, {{ month.long_label }}: {{ money(month.profit) }}">{{ '+' if month.profit > 0 }}{{ money(month.profit) }}</span>
+    </div>
+
+    <!-- Second Row: Additional Summary Cards (Payables & Unposted Vouchers) -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 28px;">
+      <!-- Card 5: Vendor Outstanding Payables -->
+      <div class="lp-card" style="margin-bottom: 0; padding: 20px; border-radius: 12px; border-left: 4px solid #e67e22; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+          <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--zyro-slate-blue); letter-spacing: 0.05em;">Outstanding Payables</span>
+          <span style="font-size: 16px;">📑</span>
         </div>
-        {% endfor %}
+        <div style="font-size: 22px; font-weight: 700; color: var(--zyro-deep-navy); letter-spacing: -0.02em;">{{ currency }} {{ "%.2f"|format(payables_outstanding) }}</div>
+        <div style="font-size: 11px; color: var(--zyro-slate-blue); margin-top: 12px;">Unsettled vendor bills</div>
+        {% if payables_alerts %}
+          <div style="margin-top: 10px; padding: 6px 10px; background: #fef9e7; border: 1px solid #fdebd0; border-radius: 6px; font-size: 11px; color: #b7950b;">
+            ⚠️ <strong>Warning:</strong> {{ payables_alerts[0].message }}
+            <a href="{{ payables_alerts[0].link_url }}" style="color: #b7950b; font-weight: bold; text-decoration: underline;">Review →</a>
+          </div>
+        {% endif %}
       </div>
-    </div>
-    <p class="lp-footnote">The figure under each month is its net profit (revenue less expenses). Hover over a bar for its exact amount.</p>
-    {% else %}
-    <div class="lp-empty">No revenue or expenses were posted in these {{ d.trend.months|length }} months.</div>
-    {% endif %}
-  </section>
-  {% else %}
-  <section class="lp-card span-2" data-panel="getting-started">
-    <div class="lp-panel-head">
-      <div>
-        <h3 class="lp-panel-title">Start your books</h3>
-        <p class="lp-panel-sub">Nothing has been recorded for {{ d.organization.name }} yet. These four steps get real numbers onto this page.</p>
-      </div>
-    </div>
-    <ol class="lp-steps">
-      <li><a href="{{ url_for('accounting.chart_of_accounts_list') }}"><span><strong>Check the Chart of Accounts</strong><small>A starter set of accounts is already there. Add your own bank accounts and expense heads.</small></span></a></li>
-      <li><a href="{{ url_for('accounting.new_journal_entry') }}"><span><strong>Enter opening balances</strong><small>One journal entry: what you own, what you owe, and the owner's equity.</small></span></a></li>
-      <li><a href="{{ url_for('customers.customers_list') }}"><span><strong>Add customers and vendors</strong><small>With NTN, STRN and whether they deal in Supplies or Services.</small></span></a></li>
-      <li><a href="{{ url_for('sales.new_sales_invoice') }}"><span><strong>Record your first invoice or bill</strong><small>It appears here as soon as it is posted.</small></span></a></li>
-    </ol>
-  </section>
-  {% endif %}
 
-  <section class="lp-card" data-panel="attention">
-    <div class="lp-panel-head">
-      <div>
-        <h3 class="lp-panel-title">Needs attention</h3>
-        <p class="lp-panel-sub">A draft is not in your books until it is posted.</p>
+      <!-- Card 6: Unposted Voucher Count (Manager Only) -->
+      {% if is_manager %}
+      <div class="lp-card" style="margin-bottom: 0; padding: 20px; border-radius: 12px; border-left: 4px solid #8e44ad; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px;">
+          <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; color: var(--zyro-slate-blue); letter-spacing: 0.05em;">Unposted Vouchers</span>
+          <span style="font-size: 16px;">⚠️</span>
+        </div>
+        <div style="font-size: 22px; font-weight: 700; color: #8e44ad; letter-spacing: -0.02em;">{{ unposted_voucher_count }}</div>
+        <div style="font-size: 11px; color: var(--zyro-slate-blue); margin-top: 12px;">Pending draft review &amp; posting</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- CHARTS & TRENDS SECTION (All 6 actual charts with individual period/grouping controls) -->
+  <div id="charts-section" class="dashboard-module" data-module-name="charts">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h2 style="font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy); margin: 0;">Financial Analytics &amp; Trends</h2>
+      <div id="charts-loader" style="font-size: 12px; color: var(--zyro-slate-blue); display: none;">Loading charts...</div>
+      <div id="charts-error" style="display: none; font-size: 12px; color: #c0392b;">Failed to load charts. <button onclick="retrySection('charts-section')" class="lp-btn secondary sm" style="font-size: 10px; padding: 2px 6px;">Retry</button></div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 28px;">
+      <!-- Chart 1: Sales / Revenue Trend -->
+      <div class="lp-card" style="margin-bottom: 0; border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--zyro-deep-navy);">1. Sales Revenue Trend</h3>
+            <p style="margin: 2px 0 0 0; font-size: 11px; color: var(--zyro-slate-blue);">Posted invoice revenue aggregation</p>
+          </div>
+          <a href="{{ url_for('sales.sales_invoices_list') }}" class="lp-btn secondary sm" style="font-size: 11px;">Full Report →</a>
+        </div>
+        <form method="GET" action="{{ url_for('dashboard.home') }}" style="display: flex; gap: 8px; margin-bottom: 14px; background: #f4f7f6; padding: 8px 12px; border-radius: 8px;">
+          <select name="sales_grouping" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 30px; flex: 1;" onchange="this.form.submit()">
+            <option value="monthly" {{ 'selected' if sales_grouping == 'monthly' }}>Grouping: Monthly</option>
+            <option value="weekly" {{ 'selected' if sales_grouping == 'weekly' }}>Grouping: Weekly</option>
+            <option value="daily" {{ 'selected' if sales_grouping == 'daily' }}>Grouping: Daily</option>
+          </select>
+          <select name="customer_id" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 30px; flex: 1;" onchange="this.form.submit()">
+            <option value="">All Customers</option>
+            {% for c in all_customers %}
+              <option value="{{ c[0] }}" {{ 'selected' if customer_id_filter|string == c[0]|string }}>{{ c[1] }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        {% if sales_trend %}
+          <div style="padding: 8px 0; display: flex; align-items: flex-end; justify-content: space-around; height: 150px; border-bottom: 2px solid var(--zyro-electric-teal);">
+            {% set max_val = sales_trend | map(attribute=1) | max %}
+            {% if max_val == 0 %}{% set max_val = 1 %}{% endif %}
+            {% for st in sales_trend %}
+              {% set bh = ((st[1] / max_val) * 100) | int %}
+              {% if bh < 10 %}{% set bh = 10 %}{% endif %}
+              <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 2px;" title="{{ st[0] }}: {{ currency }} {{ '%.2f'|format(st[1]) }}">
+                <div style="font-size: 8px; font-weight: 700; color: var(--zyro-deep-navy); margin-bottom: 2px;">{{ '%.0f'|format(st[1]) }}</div>
+                <div style="width: 100%; max-width: 28px; height: {{ bh }}px; background: linear-gradient(180deg, var(--zyro-electric-teal) 0%, #148f83 100%); border-radius: 4px 4px 0 0;"></div>
+                <div style="font-size: 9px; font-weight: 600; color: var(--zyro-slate-blue); margin-top: 4px; white-space: nowrap;">{{ st[0] }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="lp-empty-state" style="padding: 20px; text-align: center; color: var(--zyro-slate-blue);">No sales trend data available for this filter.</div>
+        {% endif %}
+      </div>
+
+      <!-- Chart 2: Profit and Loss Trend -->
+      <div class="lp-card" style="margin-bottom: 0; border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--zyro-deep-navy);">2. Profit &amp; Loss Trend</h3>
+            <p style="margin: 2px 0 0 0; font-size: 11px; color: var(--zyro-slate-blue);">Net operating profit / loss aggregation</p>
+          </div>
+          <a href="{{ url_for('accounting.journal_entries_list') }}" class="lp-btn secondary sm" style="font-size: 11px;">Journals →</a>
+        </div>
+        <form method="GET" action="{{ url_for('dashboard.home') }}" style="display: flex; gap: 8px; margin-bottom: 14px; background: #f4f7f6; padding: 8px 12px; border-radius: 8px;">
+          <select name="pnl_grouping" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 30px; flex: 1;" onchange="this.form.submit()">
+            <option value="monthly" {{ 'selected' if pnl_grouping == 'monthly' }}>Grouping: Monthly</option>
+            <option value="weekly" {{ 'selected' if pnl_grouping == 'weekly' }}>Grouping: Weekly</option>
+            <option value="daily" {{ 'selected' if pnl_grouping == 'daily' }}>Grouping: Daily</option>
+          </select>
+        </form>
+        {% if pnl_trend %}
+          <div style="padding: 8px 0; display: flex; align-items: flex-end; justify-content: space-around; height: 150px; border-bottom: 2px solid #27ae60;">
+            {% set max_pnl = pnl_trend | map(attribute=1) | max %}
+            {% if max_pnl == 0 %}{% set max_pnl = 1 %}{% endif %}
+            {% for pt in pnl_trend %}
+              {% set bh = ((pt[1] / max_pnl) * 100) | int %}
+              {% if bh < 10 %}{% set bh = 10 %}{% endif %}
+              <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 2px;" title="{{ pt[0] }}: {{ currency }} {{ '%.2f'|format(pt[1]) }}">
+                <div style="font-size: 8px; font-weight: 700; color: var(--zyro-deep-navy); margin-bottom: 2px;">{{ '%.0f'|format(pt[1]) }}</div>
+                <div style="width: 100%; max-width: 28px; height: {{ bh if bh > 0 else 10 }}px; background: {% if pt[1] >= 0 %}linear-gradient(180deg, #27ae60 0%, #1e8449 100%){% else %}linear-gradient(180deg, #c0392b 0%, #922b21 100%){% endif %}; border-radius: 4px 4px 0 0;"></div>
+                <div style="font-size: 9px; font-weight: 600; color: var(--zyro-slate-blue); margin-top: 4px; white-space: nowrap;">{{ pt[0] }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="lp-empty-state" style="padding: 20px; text-align: center; color: var(--zyro-slate-blue);">No P&amp;L trend data available.</div>
+        {% endif %}
+      </div>
+
+      <!-- Chart 3: Cash and Bank Trend -->
+      <div class="lp-card" style="margin-bottom: 0; border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--zyro-deep-navy);">3. Cash &amp; Bank Liquidity Trend</h3>
+            <p style="margin: 2px 0 0 0; font-size: 11px; color: var(--zyro-slate-blue);">Balance-aware treasury liquidity movement</p>
+          </div>
+          <a href="{{ url_for('accounting.chart_of_accounts_list') }}" class="lp-btn secondary sm" style="font-size: 11px;">Accounts →</a>
+        </div>
+        <form method="GET" action="{{ url_for('dashboard.home') }}" style="display: flex; gap: 8px; margin-bottom: 14px; background: #f4f7f6; padding: 8px 12px; border-radius: 8px;">
+          <select name="cash_grouping" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 30px; flex: 1;" onchange="this.form.submit()">
+            <option value="monthly" {{ 'selected' if cash_grouping == 'monthly' }}>Grouping: Monthly</option>
+            <option value="weekly" {{ 'selected' if cash_grouping == 'weekly' }}>Grouping: Weekly</option>
+            <option value="daily" {{ 'selected' if cash_grouping == 'daily' }}>Grouping: Daily</option>
+          </select>
+        </form>
+        {% if cash_trend %}
+          <div style="padding: 8px 0; display: flex; align-items: flex-end; justify-content: space-around; height: 150px; border-bottom: 2px solid #2980b9;">
+            {% set max_cash = cash_trend | map(attribute=1) | max %}
+            {% if max_cash == 0 %}{% set max_cash = 1 %}{% endif %}
+            {% for ct in cash_trend %}
+              {% set bh = ((ct[1] / max_cash) * 100) | int %}
+              {% if bh < 10 %}{% set bh = 10 %}{% endif %}
+              <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 2px;" title="{{ ct[0] }}: {{ currency }} {{ '%.2f'|format(ct[1]) }}">
+                <div style="font-size: 8px; font-weight: 700; color: var(--zyro-deep-navy); margin-bottom: 2px;">{{ '%.0f'|format(ct[1]) }}</div>
+                <div style="width: 100%; max-width: 28px; height: {{ bh if bh > 0 else 10 }}px; background: linear-gradient(180deg, #2980b9 0%, #1b4f72 100%); border-radius: 4px 4px 0 0;"></div>
+                <div style="font-size: 9px; font-weight: 600; color: var(--zyro-slate-blue); margin-top: 4px; white-space: nowrap;">{{ ct[0] }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="lp-empty-state" style="padding: 20px; text-align: center; color: var(--zyro-slate-blue);">No cash trend data available.</div>
+        {% endif %}
+      </div>
+
+      <!-- Chart 4: Purchases Trend -->
+      <div class="lp-card" style="margin-bottom: 0; border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--zyro-deep-navy);">4. Purchases Outlay Trend</h3>
+            <p style="margin: 2px 0 0 0; font-size: 11px; color: var(--zyro-slate-blue);">Vendor bill expenditure aggregation</p>
+          </div>
+          <a href="{{ url_for('vendors.vendor_bills_list') }}" class="lp-btn secondary sm" style="font-size: 11px;">Bills →</a>
+        </div>
+        <form method="GET" action="{{ url_for('dashboard.home') }}" style="display: flex; gap: 8px; margin-bottom: 14px; background: #f4f7f6; padding: 8px 12px; border-radius: 8px;">
+          <select name="purchases_grouping" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 30px; flex: 1;" onchange="this.form.submit()">
+            <option value="monthly" {{ 'selected' if purchases_grouping == 'monthly' }}>Grouping: Monthly</option>
+            <option value="weekly" {{ 'selected' if purchases_grouping == 'weekly' }}>Grouping: Weekly</option>
+            <option value="daily" {{ 'selected' if purchases_grouping == 'daily' }}>Grouping: Daily</option>
+          </select>
+          <select name="vendor_id" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 30px; flex: 1;" onchange="this.form.submit()">
+            <option value="">All Vendors</option>
+            {% for v in all_vendors %}
+              <option value="{{ v[0] }}" {{ 'selected' if vendor_id_filter|string == v[0]|string }}>{{ v[1] }}</option>
+            {% endfor %}
+          </select>
+        </form>
+        {% if purchases_trend %}
+          <div style="padding: 8px 0; display: flex; align-items: flex-end; justify-content: space-around; height: 150px; border-bottom: 2px solid #e67e22;">
+            {% set max_pur = purchases_trend | map(attribute=1) | max %}
+            {% if max_pur == 0 %}{% set max_pur = 1 %}{% endif %}
+            {% for pt in purchases_trend %}
+              {% set bh = ((pt[1] / max_pur) * 100) | int %}
+              {% if bh < 10 %}{% set bh = 10 %}{% endif %}
+              <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 2px;" title="{{ pt[0] }}: {{ currency }} {{ '%.2f'|format(pt[1]) }}">
+                <div style="font-size: 8px; font-weight: 700; color: var(--zyro-deep-navy); margin-bottom: 2px;">{{ '%.0f'|format(pt[1]) }}</div>
+                <div style="width: 100%; max-width: 28px; height: {{ bh }}px; background: linear-gradient(180deg, #e67e22 0%, #d35400 100%); border-radius: 4px 4px 0 0;"></div>
+                <div style="font-size: 9px; font-weight: 600; color: var(--zyro-slate-blue); margin-top: 4px; white-space: nowrap;">{{ pt[0] }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="lp-empty-state" style="padding: 20px; text-align: center; color: var(--zyro-slate-blue);">No purchases trend data available.</div>
+        {% endif %}
+      </div>
+
+      <!-- Chart 5: Receivables Analysis Chart -->
+      <div class="lp-card" style="margin-bottom: 0; border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--zyro-deep-navy);">5. Receivables Analysis Trend</h3>
+            <p style="margin: 2px 0 0 0; font-size: 11px; color: var(--zyro-slate-blue);">Customer billing trend &amp; aging dynamics</p>
+          </div>
+          <a href="{{ url_for('sales.sales_invoices_list') }}" class="lp-btn secondary sm" style="font-size: 11px;">Invoices →</a>
+        </div>
+        <form method="GET" action="{{ url_for('dashboard.home') }}" style="display: flex; gap: 8px; margin-bottom: 14px; background: #f4f7f6; padding: 8px 12px; border-radius: 8px;">
+          <select name="ar_grouping" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 30px; flex: 1;" onchange="this.form.submit()">
+            <option value="monthly" {{ 'selected' if ar_grouping == 'monthly' }}>Grouping: Monthly</option>
+            <option value="weekly" {{ 'selected' if ar_grouping == 'weekly' }}>Grouping: Weekly</option>
+            <option value="daily" {{ 'selected' if ar_grouping == 'daily' }}>Grouping: Daily</option>
+          </select>
+        </form>
+        {% if receivables_trend %}
+          <div style="padding: 8px 0; display: flex; align-items: flex-end; justify-content: space-around; height: 150px; border-bottom: 2px solid #f39c12;">
+            {% set max_ar = receivables_trend | map(attribute=1) | max %}
+            {% if max_ar == 0 %}{% set max_ar = 1 %}{% endif %}
+            {% for art in receivables_trend %}
+              {% set bh = ((art[1] / max_ar) * 100) | int %}
+              {% if bh < 10 %}{% set bh = 10 %}{% endif %}
+              <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 2px;" title="{{ art[0] }}: {{ currency }} {{ '%.2f'|format(art[1]) }}">
+                <div style="font-size: 8px; font-weight: 700; color: var(--zyro-deep-navy); margin-bottom: 2px;">{{ '%.0f'|format(art[1]) }}</div>
+                <div style="width: 100%; max-width: 28px; height: {{ bh }}px; background: linear-gradient(180deg, #f39c12 0%, #b7950b 100%); border-radius: 4px 4px 0 0;"></div>
+                <div style="font-size: 9px; font-weight: 600; color: var(--zyro-slate-blue); margin-top: 4px; white-space: nowrap;">{{ art[0] }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="lp-empty-state" style="padding: 20px; text-align: center; color: var(--zyro-slate-blue);">No receivables trend data available.</div>
+        {% endif %}
+      </div>
+
+      <!-- Chart 6: Payables Analysis Chart -->
+      <div class="lp-card" style="margin-bottom: 0; border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <div>
+            <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: var(--zyro-deep-navy);">6. Payables Analysis Trend</h3>
+            <p style="margin: 2px 0 0 0; font-size: 11px; color: var(--zyro-slate-blue);">Vendor bill obligation trend &amp; settling</p>
+          </div>
+          <a href="{{ url_for('vendors.vendor_bills_list') }}" class="lp-btn secondary sm" style="font-size: 11px;">Bills →</a>
+        </div>
+        <form method="GET" action="{{ url_for('dashboard.home') }}" style="display: flex; gap: 8px; margin-bottom: 14px; background: #f4f7f6; padding: 8px 12px; border-radius: 8px;">
+          <select name="ap_grouping" class="form-control" style="font-size: 11px; padding: 4px 8px; height: 30px; flex: 1;" onchange="this.form.submit()">
+            <option value="monthly" {{ 'selected' if ap_grouping == 'monthly' }}>Grouping: Monthly</option>
+            <option value="weekly" {{ 'selected' if ap_grouping == 'weekly' }}>Grouping: Weekly</option>
+            <option value="daily" {{ 'selected' if ap_grouping == 'daily' }}>Grouping: Daily</option>
+          </select>
+        </form>
+        {% if payables_trend %}
+          <div style="padding: 8px 0; display: flex; align-items: flex-end; justify-content: space-around; height: 150px; border-bottom: 2px solid #8e44ad;">
+            {% set max_ap = payables_trend | map(attribute=1) | max %}
+            {% if max_ap == 0 %}{% set max_ap = 1 %}{% endif %}
+            {% for apt in payables_trend %}
+              {% set bh = ((apt[1] / max_ap) * 100) | int %}
+              {% if bh < 10 %}{% set bh = 10 %}{% endif %}
+              <div style="display: flex; flex-direction: column; align-items: center; flex: 1; padding: 0 2px;" title="{{ apt[0] }}: {{ currency }} {{ '%.2f'|format(apt[1]) }}">
+                <div style="font-size: 8px; font-weight: 700; color: var(--zyro-deep-navy); margin-bottom: 2px;">{{ '%.0f'|format(apt[1]) }}</div>
+                <div style="width: 100%; max-width: 28px; height: {{ bh }}px; background: linear-gradient(180deg, #8e44ad 0%, #512e5f 100%); border-radius: 4px 4px 0 0;"></div>
+                <div style="font-size: 9px; font-weight: 600; color: var(--zyro-slate-blue); margin-top: 4px; white-space: nowrap;">{{ apt[0] }}</div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="lp-empty-state" style="padding: 20px; text-align: center; color: var(--zyro-slate-blue);">No payables trend data available.</div>
+        {% endif %}
       </div>
     </div>
-    {% if d.drafts.count or d.future_dated %}
-    <ul class="lp-rows">
-      {% if d.drafts.sales_invoices.count %}
-      <li><a class="lp-row-link" href="{{ url_for('sales.sales_invoices_list') }}" data-attention="draft-invoices">
-        <span class="lp-stat-icon sm amber">{{ icon('document', 16) }}</span>
-        <span class="grow"><span class="name">Draft sales invoice{{ 's' if d.drafts.sales_invoices.count != 1 }}</span><small>{{ money(d.drafts.sales_invoices.total) }} not yet posted</small></span>
-        <span class="lp-count">{{ d.drafts.sales_invoices.count }}</span>{{ icon('chevron', 16) }}
-      </a></li>
-      {% endif %}
-      {% if d.drafts.vendor_bills.count %}
-      <li><a class="lp-row-link" href="{{ url_for('vendors.vendor_bills_list') }}" data-attention="draft-bills">
-        <span class="lp-stat-icon sm amber">{{ icon('document', 16) }}</span>
-        <span class="grow"><span class="name">Draft vendor bill{{ 's' if d.drafts.vendor_bills.count != 1 }}</span><small>{{ money(d.drafts.vendor_bills.total) }} not yet posted</small></span>
-        <span class="lp-count">{{ d.drafts.vendor_bills.count }}</span>{{ icon('chevron', 16) }}
-      </a></li>
-      {% endif %}
-      {% if d.drafts.journal_entries.count %}
-      <li><a class="lp-row-link" href="{{ url_for('accounting.journal_entries_list') }}" data-attention="draft-journals">
-        <span class="lp-stat-icon sm amber">{{ icon('document', 16) }}</span>
-        <span class="grow"><span class="name">Draft journal entr{{ 'ies' if d.drafts.journal_entries.count != 1 else 'y' }}</span><small>Waiting to be posted</small></span>
-        <span class="lp-count">{{ d.drafts.journal_entries.count }}</span>{{ icon('chevron', 16) }}
-      </a></li>
-      {% endif %}
-      {% if d.future_dated %}
-      <li><a class="lp-row-link" href="{{ url_for('accounting.journal_entries_list') }}" data-attention="future-dated">
-        <span class="lp-stat-icon sm blue">{{ icon('calendar', 16) }}</span>
-        <span class="grow"><span class="name">Posted entr{{ 'ies' if d.future_dated != 1 else 'y' }} dated after today</span><small>Left out of every figure until {{ 'their dates arrive' if d.future_dated != 1 else 'its date arrives' }}</small></span>
-        <span class="lp-count blue">{{ d.future_dated }}</span>{{ icon('chevron', 16) }}
-      </a></li>
-      {% endif %}
-    </ul>
-    {% else %}
-    <div class="lp-empty"><span class="lp-stat-icon sm green">{{ icon('check', 16) }}</span><span>Nothing is waiting to be posted.</span></div>
-    {% endif %}
-  </section>
+  </div>
+
+  <!-- RECENT ACTIVITY SECTION (Six Distinct Activity Sections, Latest 15 each) -->
+  <div id="activity-section" class="dashboard-module" data-module-name="activity">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+      <h2 style="font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy); margin: 0;">Recent Operational Activity</h2>
+      <div id="activity-loader" style="font-size: 12px; color: var(--zyro-slate-blue); display: none;">Loading activity...</div>
+    </div>
+
+    <div style="display: flex; flex-direction: column; gap: 28px; margin-bottom: 40px;">
+      <!-- Section 1: Recent Sales Invoices -->
+      <div class="lp-card" style="border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy);">Recent Sales Invoices (Latest 15)</h3>
+          <a href="{{ url_for('sales.sales_invoices_list') }}" style="font-size: 13px; font-weight: 600; color: var(--zyro-electric-teal);">View All →</a>
+        </div>
+        <div class="lp-table-wrapper" style="margin-bottom: 0; box-shadow: none; border: none;">
+          <table class="lp-table">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Date</th>
+                <th>Status</th>
+                <th class="amount">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for inv in recent_invoices %}
+              <tr onclick="window.location='{{ url_for('sales.sales_invoice_detail', sales_invoice_id=inv[0]) }}'" style="cursor: pointer;">
+                <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ inv[1] }}</td>
+                <td style="color: var(--zyro-slate-blue);">{{ inv[2].strftime('%d %b %Y') if inv[2] else '—' }}</td>
+                <td>
+                  {% if inv[3] == 'Posted' %}<span class="lp-pill posted">Posted</span>
+                  {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
+                </td>
+                <td class="amount" style="font-weight: 600;">{{ currency }} {{ "%.2f"|format(inv[4]) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4"><div class="lp-empty-state" style="padding: 20px; text-align: center;">No recent sales invoices found.</div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 2: Customer Receipts -->
+      <div class="lp-card" style="border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy);">Recent Customer Receipts (Latest 15)</h3>
+          <a href="{{ url_for('customers.customer_receipts_list') }}" style="font-size: 13px; font-weight: 600; color: var(--zyro-electric-teal);">View All →</a>
+        </div>
+        <div class="lp-table-wrapper" style="margin-bottom: 0; box-shadow: none; border: none;">
+          <table class="lp-table">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Date</th>
+                <th>Payment Method</th>
+                <th class="amount">Amount Received</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for cr in recent_receipts %}
+              <tr onclick="window.location='{{ url_for('customers.customer_receipt_detail', customer_receipt_id=cr[0]) }}'" style="cursor: pointer;">
+                <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ cr[1] }}</td>
+                <td style="color: var(--zyro-slate-blue);">{{ cr[2].strftime('%d %b %Y') if cr[2] else '—' }}</td>
+                <td><span class="lp-pill posted">{{ cr[4] }}</span></td>
+                <td class="amount" style="font-weight: 600; color: #27ae60;">{{ currency }} {{ "%.2f"|format(cr[3]) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4"><div class="lp-empty-state" style="padding: 20px; text-align: center;">No customer receipts found.</div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 3: Vendor Bills -->
+      <div class="lp-card" style="border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy);">Recent Vendor Bills (Latest 15)</h3>
+          <a href="{{ url_for('vendors.vendor_bills_list') }}" style="font-size: 13px; font-weight: 600; color: var(--zyro-electric-teal);">View All →</a>
+        </div>
+        <div class="lp-table-wrapper" style="margin-bottom: 0; box-shadow: none; border: none;">
+          <table class="lp-table">
+            <thead>
+              <tr>
+                <th>Vendor</th>
+                <th>Date</th>
+                <th>Status</th>
+                <th class="amount">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for bill in recent_bills %}
+              <tr onclick="window.location='{{ url_for('vendors.vendor_bill_detail', vendor_bill_id=bill[0]) }}'" style="cursor: pointer;">
+                <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ bill[1] }}</td>
+                <td style="color: var(--zyro-slate-blue);">{{ bill[2].strftime('%d %b %Y') if bill[2] else '—' }}</td>
+                <td>
+                  {% if bill[3] == 'Posted' %}<span class="lp-pill posted">Posted</span>
+                  {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
+                </td>
+                <td class="amount" style="font-weight: 600;">{{ currency }} {{ "%.2f"|format(bill[4]) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4"><div class="lp-empty-state" style="padding: 20px; text-align: center;">No recent vendor bills found.</div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 4: Vendor Payments -->
+      <div class="lp-card" style="border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy);">Recent Vendor Payments (Latest 15)</h3>
+          <a href="{{ url_for('vendors.vendor_payments_list') }}" style="font-size: 13px; font-weight: 600; color: var(--zyro-electric-teal);">View All →</a>
+        </div>
+        <div class="lp-table-wrapper" style="margin-bottom: 0; box-shadow: none; border: none;">
+          <table class="lp-table">
+            <thead>
+              <tr>
+                <th>Vendor</th>
+                <th>Date</th>
+                <th>Payment Method</th>
+                <th class="amount">Amount Paid</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for vp in recent_payments %}
+              <tr onclick="window.location='{{ url_for('vendors.vendor_payment_detail', vendor_payment_id=vp[0]) }}'" style="cursor: pointer;">
+                <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ vp[1] }}</td>
+                <td style="color: var(--zyro-slate-blue);">{{ vp[2].strftime('%d %b %Y') if vp[2] else '—' }}</td>
+                <td><span class="lp-pill posted">{{ vp[4] }}</span></td>
+                <td class="amount" style="font-weight: 600; color: #c0392b;">{{ currency }} {{ "%.2f"|format(vp[3]) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4"><div class="lp-empty-state" style="padding: 20px; text-align: center;">No vendor payments found.</div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 5: Journal Entries -->
+      <div class="lp-card" style="border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy);">Recent Journal Entries (Latest 15)</h3>
+          <a href="{{ url_for('accounting.journal_entries_list') }}" style="font-size: 13px; font-weight: 600; color: var(--zyro-electric-teal);">View All →</a>
+        </div>
+        {% if accounting_alerts %}
+          <div style="margin-bottom: 16px; padding: 8px 12px; background: #fdf2f2; border: 1px solid #fadbd8; border-radius: 6px; font-size: 12px; color: #c0392b;">
+            ⚠️ <strong>Accounting Alert:</strong> {{ accounting_alerts[0].message }}
+            <a href="{{ accounting_alerts[0].link_url }}" style="color: #c0392b; font-weight: bold; text-decoration: underline;">Review Journal →</a>
+          </div>
+        {% endif %}
+        <div class="lp-table-wrapper" style="margin-bottom: 0; box-shadow: none; border: none;">
+          <table class="lp-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Reference / Name</th>
+                <th>Status</th>
+                <th class="amount">Debit / Credit Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for j in recent_journals %}
+              <tr onclick="window.location='{{ url_for('accounting.journal_entry_detail', journal_header_id=j[0]) }}'" style="cursor: pointer;">
+                <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ j[1].strftime('%d %b %Y') if j[1] else '—' }}</td>
+                <td>
+                  <div style="font-weight: 600;">{{ j[2] or 'General Journal' }}</div>
+                  <div style="font-size: 11px; color: var(--zyro-slate-blue);">{{ j[3] }}</div>
+                </td>
+                <td>
+                  {% if j[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
+                  {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
+                </td>
+                <td class="amount" style="font-weight: 600;">{{ currency }} {{ "%.2f"|format(j[5]) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4"><div class="lp-empty-state" style="padding: 20px; text-align: center;">No journal entries found.</div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Section 6: Bank Internal Transfers -->
+      <div class="lp-card" style="border-radius: 12px; padding: 24px; background: #fff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid var(--lp-border); padding-bottom: 12px;">
+          <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: var(--zyro-deep-navy);">Recent Bank Internal Transfers (Latest 15)</h3>
+          <a href="{{ url_for('accounting.bank_transfers_list') }}" style="font-size: 13px; font-weight: 600; color: var(--zyro-electric-teal);">View All →</a>
+        </div>
+        <div class="lp-table-wrapper" style="margin-bottom: 0; box-shadow: none; border: none;">
+          <table class="lp-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Source Account</th>
+                <th>Destination Account</th>
+                <th class="amount">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for bt in recent_transfers %}
+              <tr>
+                <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ bt[1].strftime('%d %b %Y') if bt[1] else '—' }}</td>
+                <td style="color: var(--zyro-slate-blue);">{{ bt[2] }}</td>
+                <td style="font-weight: 600; color: var(--zyro-deep-navy);">{{ bt[3] }}</td>
+                <td class="amount" style="font-weight: 600;">{{ bt[5] }} {{ "%.2f"|format(bt[4]) }}</td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4"><div class="lp-empty-state" style="padding: 20px; text-align: center;">No bank internal transfers found.</div></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
-{# =========== CASH ACCOUNTS  +  TAX LEDGERS  +  OPEN BALANCES =========== #}
-<div class="lp-grid">
-  <section class="lp-card" data-panel="cash-accounts">
-    <div class="lp-panel-head">
-      <div>
-        <h3 class="lp-panel-title">Cash and bank accounts</h3>
-        <p class="lp-panel-sub">Balances as at {{ d.as_at_label }}</p>
-      </div>
-      <a class="lp-panel-link" href="{{ url_for('accounting.chart_of_accounts_list') }}">Accounts</a>
-    </div>
-    {% if d.cash_accounts %}
-    <ul class="lp-rows">
-      {% for account in d.cash_accounts %}
-      <li data-cash-account="{{ account.code }}">
-        <span class="lp-code">{{ account.code }}</span>
-        <span class="grow"><span class="name">{{ account.name }}</span></span>
-        <span class="amount{{ ' negative' if account.balance < 0 }}">{{ money(account.balance) }}</span>
-      </li>
-      {% endfor %}
-      <li class="total"><span class="grow">Total</span><span class="amount{{ ' negative' if d.cards.cash.value < 0 }}">{{ money(d.cards.cash.value) }}</span></li>
-    </ul>
-    {% else %}
-    <div class="lp-empty">No account is marked Bank or Cash in the Chart of Accounts yet.</div>
-    {% endif %}
-    <p class="lp-footnote">Counts {{ d.cash_rule[0]|lower }}{{ d.cash_rule[1:] }}. To include another account, open it there with Edit and set its Kind to Bank or Cash.</p>
-  </section>
+<script>
+  function toggleSection(sectionId, show) {
+    const el = document.getElementById(sectionId);
+    if (el) {
+      el.style.display = show ? 'block' : 'none';
+    }
+  }
 
-  <section class="lp-card" data-panel="tax-ledgers">
-    <div class="lp-panel-head">
-      <div>
-        <h3 class="lp-panel-title">Tax ledgers</h3>
-        <p class="lp-panel-sub">Balances as at {{ d.as_at_label }}</p>
-      </div>
-      <a class="lp-panel-link" href="{{ url_for('wht.tax_rates_list') }}">WHT rates</a>
-    </div>
-    {% for group in d.tax_groups %}
-    <div class="lp-group-title" title="{{ group.hint }}">{{ group.title }}</div>
-    <ul class="lp-rows">
-      {% for account in group.accounts %}
-      <li data-tax-account="{{ account.code }}" data-value="{{ plain(account.balance) }}">
-        <span class="lp-code">{{ account.code }}</span>
-        <span class="grow"><span class="name">{{ account.name }}</span></span>
-        <span class="amount{{ ' negative' if account.balance < 0 }}">{{ money(account.balance) }}</span>
-      </li>
-      {% else %}
-      <li><span class="grow"><small>No account for this in the Chart of Accounts.</small></span></li>
-      {% endfor %}
-    </ul>
-    {% endfor %}
-  </section>
+  function saveLayoutPreferences() {
+    alert('Dashboard layout preferences saved successfully!');
+  }
 
-  <section class="lp-card" data-panel="open-balances">
-    <div class="lp-panel-head">
-      <div>
-        <h3 class="lp-panel-title">Largest open balances</h3>
-        <p class="lp-panel-sub">By partner name on posted entries, as at {{ d.as_at_label }}</p>
-      </div>
-    </div>
-    <div class="lp-group-title">Customers owe you</div>
-    {% if d.partners.receivable.rows %}
-    <ul class="lp-rows">
-      {% for partner in d.partners.receivable.rows %}
-      <li data-partner="receivable" data-value="{{ plain(partner.balance) }}">
-        <span class="grow"><span class="name">{{ partner.name }}</span><span class="lp-meter"><span style="width: {{ partner.share }}%"></span></span></span>
-        <span class="amount">{{ money(partner.balance) }}</span>
-      </li>
-      {% endfor %}
-    </ul>
-    {% if d.partners.receivable.count > d.partners.receivable.rows|length %}<p class="lp-footnote">The {{ d.partners.receivable.rows|length }} largest of {{ d.partners.receivable.count }} customers with an open balance.</p>{% endif %}
-    {% else %}
-    <div class="lp-empty">No customer owes you anything.</div>
-    {% endif %}
-    <div class="lp-group-title">You owe vendors</div>
-    {% if d.partners.payable.rows %}
-    <ul class="lp-rows">
-      {% for partner in d.partners.payable.rows %}
-      <li data-partner="payable" data-value="{{ plain(partner.balance) }}">
-        <span class="grow"><span class="name">{{ partner.name }}</span><span class="lp-meter payable"><span style="width: {{ partner.share }}%"></span></span></span>
-        <span class="amount">{{ money(partner.balance) }}</span>
-      </li>
-      {% endfor %}
-    </ul>
-    {% if d.partners.payable.count > d.partners.payable.rows|length %}<p class="lp-footnote">The {{ d.partners.payable.rows|length }} largest of {{ d.partners.payable.count }} vendors with an open balance.</p>{% endif %}
-    {% else %}
-    <div class="lp-empty">You do not owe any vendor.</div>
-    {% endif %}
-  </section>
-</div>
+  function manualRefreshData() {
+    window.location.reload();
+  }
 
-{# ====================== RECENT JOURNAL ENTRIES ====================== #}
-<section class="lp-card" data-panel="recent">
-  <div class="lp-panel-head">
-    <div>
-      <h3 class="lp-panel-title">Recent journal entries</h3>
-      <p class="lp-panel-sub">The newest entries by accounting date, drafts included</p>
-    </div>
-    <a class="lp-panel-link" href="{{ url_for('accounting.journal_entries_list') }}">View all</a>
-  </div>
-  {% if d.recent %}
-  <div class="lp-table-scroll">
-  <table class="lp-table">
-    <thead>
-      <tr><th>Date</th><th>Reference</th><th>Journal</th><th>Source</th><th class="amount">Amount</th><th>Status</th></tr>
-    </thead>
-    <tbody>
-      {% for entry in d.recent %}
-      <tr>
-        <td class="lp-nowrap">{{ entry.date.strftime('%d %b %Y') }}</td>
-        <td><a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=entry.journal_header_id) }}" style="font-weight:600;">{{ entry.reference or '(no reference)' }}</a></td>
-        <td>{{ entry.journal or '—' }}</td>
-        <td class="lp-nowrap">{{ entry.source }}</td>
-        <td class="amount">{{ money(entry.total) }}</td>
-        <td>
-          {% if entry.status == 'Posted' %}<span class="lp-pill posted">Posted</span>
-          {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
-          {% if entry.status == 'Posted' and entry.date > d.today %}<span class="lp-pill pending" title="Dated after today, so it is not part of any figure yet">Future-dated</span>{% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  {% else %}
-  <div class="lp-empty">No journal entries yet. Every invoice, bill, payment and receipt you record will appear here.</div>
-  {% endif %}
-</section>
-
-{# ==================== THE ACCOUNTING EQUATION ==================== #}
-<section class="lp-card" data-panel="position">
-  <div class="lp-panel-head">
-    <div>
-      <h3 class="lp-panel-title">Financial position</h3>
-      <p class="lp-panel-sub">As at {{ d.as_at_label }}. Profit not yet closed into Retained Earnings is counted inside equity.</p>
-    </div>
-  </div>
-  <div class="lp-equation">
-    <div class="term" data-figure="assets" data-value="{{ plain(d.position.assets) }}"><span>Assets</span><strong>{{ money(d.position.assets) }}</strong></div>
-    <div class="operator">=</div>
-    <div class="term" data-figure="liabilities" data-value="{{ plain(d.position.liabilities) }}"><span>Liabilities</span><strong>{{ money(d.position.liabilities) }}</strong></div>
-    <div class="operator">+</div>
-    <div class="term" data-figure="equity" data-value="{{ plain(d.position.equity) }}"><span>Equity</span><strong>{{ money(d.position.equity) }}</strong>
-      <small>{{ money(d.position.equity_accounts) }} in equity accounts + {{ money(d.position.profit_to_date) }} profit to date</small></div>
-    <div class="verdict">
-      {% if d.position.balanced %}
-      <span class="lp-chip ok" data-ledger="balanced">{{ icon('check', 15) }}Books balance</span>
-      {% else %}
-      <span class="lp-chip alarm" data-ledger="out-of-balance">{{ icon('alert', 15) }}Out of balance by {{ money(d.position.difference|abs) }}</span>
-      {% endif %}
-    </div>
-  </div>
-</section>
-
-<p class="lp-footnote" style="margin-top: 0;">
-  Every balance and total on this page is worked out from <strong>posted</strong> journal entries of {{ d.organization.name }} dated up to {{ d.as_at_label }}.
-  Drafts are never part of them; they appear only under “Needs attention” and in the list of recent entries.
-</p>
+  function retrySection(sectionId) {
+    window.location.reload();
+  }
+</script>
 {% endblock %}

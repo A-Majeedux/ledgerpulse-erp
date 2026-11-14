@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Organization Users{% endblock %}
+{% block active_nav %}organizations{% endblock %}
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div>
+        <h2 style="margin: 0; font-size: 24px;">Organization Users & Roles</h2>
+        <p style="color: var(--lp-text-muted); margin: 4px 0 0 0; font-size: 14px;">Manage organization members, invite users, and assign access roles.</p>
+    </div>
+    <div style="display: flex; gap: 12px;">
+        <a href="{{ url_for('organizations.new_user', organization_id=organization_id) }}" class="lp-btn primary sm">Add / Invite User</a>
+        <a href="{{ url_for('organizations.roles_list', organization_id=organization_id) }}" class="lp-btn sm">Manage Roles</a>
+    </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert {{ category }}">{{ message }}</div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="lp-table-wrapper">
+    <table class="lp-table">
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Role Assignment</th>
+                <th>Joined</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td style="font-weight: 600;">{{ u[1] }}</td>
+                <td>{{ u[2] }}</td>
+                <td>
+                    {% if u[3] %}
+                        <span class="lp-pill posted">Active</span>
+                    {% else %}
+                        <span class="lp-pill draft">Inactive</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <form method="POST" action="{{ url_for('organizations.change_user_role', organization_id=organization_id, user_id=u[0]) }}" style="display:flex; gap:8px; align-items:center;">
+                        {{ csrf_field() }}
+                        <select name="role_id" class="form-select" style="width: auto; padding: 4px 8px; font-size: 13px;">
+                            {% for r in roles %}
+                            <option value="{{ r[0] }}" {% if r[0] == u[4] %}selected{% endif %}>{{ r[1] }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="lp-btn sm">Update</button>
+                    </form>
+                </td>
+                <td style="font-size: 12px; color: var(--lp-text-muted);">{{ u[7] }}</td>
+                <td>
+                    <form method="POST" action="{{ url_for('organizations.toggle_user', organization_id=organization_id, user_id=u[0]) }}" style="display:inline;" onsubmit="return confirm('Toggle user status?');">
+                        {{ csrf_field() }}
+                        <button type="submit" class="lp-btn sm">
+                            {% if u[3] %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                    </form>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" style="text-align: center; color: var(--lp-text-muted); padding: 30px;">No users found in this organization.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

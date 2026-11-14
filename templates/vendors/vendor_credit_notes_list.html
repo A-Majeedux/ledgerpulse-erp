@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Vendor Credit Notes{% endblock %}
+{% block active_nav %}vendors{% endblock %}
+{% block content %}
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Vendor Credit Notes</h1>
+    <p class="lp-page-subtitle">Refunds and adjustments against vendor bills.</p>
+  </div>
+  <a href="{{ url_for('vendors.new_vendor_credit_note') }}" class="lp-btn primary sm">+ New Credit Note</a>
+</div>
+
+<div class="lp-table-wrapper">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Credit Note #</th>
+        <th>Vendor</th>
+        <th>Date</th>
+        <th>Status</th>
+        <th class="amount">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cn in credit_notes %}
+      <tr onclick="window.location='{{ url_for('vendors.vendor_credit_note_detail', vendor_credit_note_id=cn[0]) }}'" style="cursor: pointer;">
+        <td style="font-weight: 600;">{{ cn[1] }}</td>
+        <td>{{ cn[2] }}</td>
+        <td>{{ cn[3] }}</td>
+        <td><span class="lp-badge {{ 'success' if cn[4] == 'Posted' else 'warning' }}">{{ cn[4] }}</span></td>
+        <td class="amount">Rs. {{ "%.2f"|format(cn[5]) }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5">
+          <div class="lp-empty-state">No vendor credit notes recorded yet.</div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

@@ -2,138 +2,42 @@
 {% block title %}Customers{% endblock %}
 {% block active_nav %}customers{% endblock %}
 {% block content %}
-{# customers  one entry per customer: customer_id, is_active, cells {column key: text}
-   columns    the columns in the order they are shown (customers/services.py LIST_COLUMNS)
-   search     what is in the search box
-   total      how many customers this organization has in all #}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Customers</h2>
-  <a href="{{ url_for('customers.new_customer') }}" class="lp-btn primary">+ New Customer</a>
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Customers</h1>
+    <p class="lp-page-subtitle">Customer directory for sales invoicing, receipts, and receivables.</p>
+  </div>
+  <a href="{{ url_for('customers.new_customer') }}" class="lp-btn primary sm">+ New Customer</a>
 </div>
 
-<div class="lp-card">
-  <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom: 16px;">
-    <form method="GET" action="{{ url_for('customers.customers_list') }}" style="display:flex; gap:8px; flex: 1 1 320px; max-width: 520px;">
-      <input type="search" name="q" value="{{ search }}" maxlength="100" placeholder="Search name, ID, region, territory..." aria-label="Search customers"
-             style="flex:1; min-width:0; padding:8px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit; font-size:14px;">
-      <button type="submit" class="lp-btn sm">Search</button>
-      {% if search %}<a href="{{ url_for('customers.customers_list') }}" class="lp-btn sm">Clear</a>{% endif %}
-    </form>
-    <span id="customer-count" style="font-size:13px; color: var(--lp-text-soft); margin-left:auto;">
-      {% if search %}{{ customers|length }} of {{ total }} customer{{ '' if total == 1 else 's' }}{% else %}{{ total }} customer{{ '' if total == 1 else 's' }}{% endif %}
-    </span>
-
-    {# The tick-box menu: tick a box to show that column, untick it to hide it. #}
-    <div class="lp-colmenu" id="customer-columns">
-      <button type="button" class="lp-btn sm" aria-haspopup="true" aria-expanded="false" aria-controls="customer-columns-panel" title="Show or hide columns">
-        <svg class="lp-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
-          <path d="M2 4.5h6M12 4.5h2M2 11.5h2M8 11.5h6"/><circle cx="10" cy="4.5" r="1.9"/><circle cx="6" cy="11.5" r="1.9"/>
-        </svg>
-        Columns
-      </button>
-      <div class="lp-colmenu-panel" id="customer-columns-panel" hidden>
-        {% for column in columns if not column.fixed %}
-          <label><input type="checkbox" data-col="{{ column.key }}" {{ 'checked' if column.shown }}> {{ column.label }}</label>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-
-  {% if customers %}
-  <div class="lp-table-scroll">
-    <table class="lp-table lp-list" id="customers-table">
-      <thead>
-        <tr>
-          {% for column in columns %}
-            <th class="{{ 'amount' if column.kind in ('number', 'amount') }}"
-                {% if not column.fixed %}data-col="{{ column.key }}"{% if not column.shown %} hidden{% endif %}{% endif %}>{{ column.label }}</th>
-          {% endfor %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for customer in customers %}
-        <tr>
-          {% for column in columns %}
-            {% set text = customer.cells[column.key] %}
-            {% if column.kind == 'name' %}
-              <td>
-                <a href="{{ url_for('customers.edit_customer', customer_id=customer.customer_id) }}" class="lp-clip" style="font-weight:600;" title="{{ text }}">{{ text or '(no name)' }}</a>
-                {% if not customer.is_active %}<span class="lp-pill draft" style="margin-top:4px;">Inactive</span>{% endif %}
-              </td>
-            {% elif column.kind in ('number', 'amount') %}
-              <td class="amount lp-nowrap" data-col="{{ column.key }}"{% if not column.shown %} hidden{% endif %}>{{ text }}</td>
-            {% elif column.kind == 'date' %}
-              <td class="lp-nowrap" data-col="{{ column.key }}"{% if not column.shown %} hidden{% endif %}>{{ text }}</td>
-            {% else %}
-              <td data-col="{{ column.key }}"{% if not column.shown %} hidden{% endif %}>{% if text %}<span class="lp-clip" title="{{ text }}">{{ text }}</span>{% endif %}</td>
-            {% endif %}
-          {% endfor %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% elif search %}
-    <div class="lp-empty">No customer matches &ldquo;{{ search }}&rdquo;.</div>
-  {% else %}
-    <div class="lp-empty">No customers yet. Click &ldquo;+ New Customer&rdquo; to add the first one.</div>
-  {% endif %}
+<div class="lp-table-wrapper">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Customer Name</th>
+        <th>Nature of Supply</th>
+        <th>NTN</th>
+        <th>STRN</th>
+        <th class="amount">Credit Limit</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in customers %}
+      <tr>
+        <td style="font-weight: 600;">{{ c[1] }}</td>
+        <td>{{ c[2] }}</td>
+        <td style="font-family: monospace; font-size: 13px;">{{ c[3] or '—' }}</td>
+        <td style="font-family: monospace; font-size: 13px;">{{ c[4] or '—' }}</td>
+        <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(c[5]) }}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5">
+          <div class="lp-empty-state">No customers added yet. Click "+ New Customer" to create one.</div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>
-
-<script>
-// The tick-box menu. Each tick-box shows or hides one column of the list.
-// The choice is remembered in this browser (and nowhere else), so the list
-// looks the same the next time it is opened.
-(function () {
-  var menu = document.getElementById("customer-columns");
-  if (!menu) { return; }
-  var button = menu.querySelector("button");
-  var panel = menu.querySelector(".lp-colmenu-panel");
-  var boxes = panel.querySelectorAll("input[type=checkbox]");
-  var table = document.getElementById("customers-table");
-  var KEY = "lp.columns.customers";
-
-  function remembered() {
-    try { return JSON.parse(window.localStorage.getItem(KEY) || "{}") || {}; } catch (error) { return {}; }
-  }
-  function remember(choice) {
-    try { window.localStorage.setItem(KEY, JSON.stringify(choice)); } catch (error) { /* private window: not remembered */ }
-  }
-  function show(column, visible) {
-    if (!table) { return; }
-    var cells = table.querySelectorAll('[data-col="' + column + '"]');
-    for (var i = 0; i < cells.length; i++) { cells[i].hidden = !visible; }
-  }
-
-  var choice = remembered();
-  for (var b = 0; b < boxes.length; b++) {
-    (function (box) {
-      var column = box.getAttribute("data-col");
-      if (typeof choice[column] === "boolean") { box.checked = choice[column]; }
-      show(column, box.checked);
-      box.addEventListener("change", function () {
-        var latest = remembered();
-        latest[column] = box.checked;
-        remember(latest);
-        show(column, box.checked);
-      });
-    })(boxes[b]);
-  }
-
-  function close() {
-    panel.hidden = true;
-    button.setAttribute("aria-expanded", "false");
-  }
-  button.addEventListener("click", function () {
-    panel.hidden = !panel.hidden;
-    button.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
-  });
-  document.addEventListener("click", function (event) {
-    if (!menu.contains(event.target)) { close(); }
-  });
-  document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") { close(); }
-  });
-})();
-</script>
 {% endblock %}

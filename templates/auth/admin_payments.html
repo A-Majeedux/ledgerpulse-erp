@@ -1,15 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Platform Admin - Payment Verifications{% endblock %}
-{% block active_nav %}admin{% endblock %}
+{% block active_nav %}admin_payments_list{% endblock %}
 {% block content %}
-<div class="lp-card">
-  <h2>Platform Administration — Tenant Payment Verifications</h2>
-  <table class="lp-table" style="margin-top: 20px;">
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+  <div>
+    <h2 style="margin: 0; font-size: 24px;">Tenant Payment Verifications</h2>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0 0; font-size: 14px;">Review and verify subscription payment slips submitted by tenants.</p>
+  </div>
+</div>
+
+<div class="lp-table-wrapper">
+  <table class="lp-table">
     <thead>
       <tr>
         <th>ID</th>
         <th>Organization</th>
-        <th>Amount</th>
+        <th class="amount">Amount</th>
         <th>Method</th>
         <th>Reference</th>
         <th>Status</th>
@@ -21,32 +27,36 @@
       {% for pay in payments %}
       <tr>
         <td>{{ pay[0] }}</td>
-        <td>{{ pay[2] }}</td>
-        <td>{{ pay[3] }}</td>
+        <td style="font-weight: 600;">{{ pay[2] }}</td>
+        <td class="amount">${{ "%.2f"|format(pay[3]) }}</td>
         <td>{{ pay[6] }}</td>
-        <td>{{ pay[7] }}</td>
-        <td><span style="font-weight: 600; color: {% if pay[5] == 'VERIFIED' %}var(--success){% elif pay[5] == 'REJECTED' %}var(--danger){% else %}var(--warning){% endif %};">{{ pay[5] }}</span></td>
-        <td>{{ pay[9] }}</td>
+        <td style="font-family: monospace; font-size: 13px;">{{ pay[7] }}</td>
+        <td>
+          {% if pay[5] == 'VERIFIED' %}<span class="lp-pill posted">VERIFIED</span>
+          {% elif pay[5] == 'REJECTED' %}<span class="lp-pill overdue">REJECTED</span>
+          {% else %}<span class="lp-pill pending">PENDING</span>{% endif %}
+        </td>
+        <td style="font-size: 12px; color: var(--lp-text-muted);">{{ pay[9] }}</td>
         <td>
           {% if pay[5] == 'PENDING' %}
           <div style="display: flex; gap: 8px;">
             <form method="POST" action="{{ url_for('auth.admin_verify_payment', payment_id=pay[0]) }}">
               {{ csrf_field() }}
-              <button type="submit" class="lp-btn lp-btn-primary" style="padding: 4px 8px; font-size: 12px;">Verify & Activate</button>
+              <button type="submit" class="lp-btn primary sm">Verify & Activate</button>
             </form>
             <form method="POST" action="{{ url_for('auth.admin_reject_payment', payment_id=pay[0]) }}" onsubmit="return confirm('Reject this payment?');">
               {{ csrf_field() }}
               <input type="hidden" name="reason" value="Admin rejected">
-              <button type="submit" class="lp-btn" style="padding: 4px 8px; font-size: 12px; background: var(--danger); color: white;">Reject</button>
+              <button type="submit" class="lp-btn sm" style="background: var(--lp-coral-bg); color: var(--lp-coral-text); border-color: #f2c7c2;">Reject</button>
             </form>
           </div>
           {% else %}
-          <span style="color: var(--text-muted); font-size: 12px;">Processed by User #{{ pay[10] or 'N/A' }}</span>
+          <span style="color: var(--lp-text-muted); font-size: 12px;">Processed</span>
           {% endif %}
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No payment records found.</td></tr>
+      <tr><td colspan="8" style="text-align: center; color: var(--lp-text-muted); padding: 30px;">No payment records found.</td></tr>
       {% endfor %}
     </tbody>
   </table>

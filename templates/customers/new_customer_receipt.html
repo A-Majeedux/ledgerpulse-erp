@@ -18,7 +18,7 @@
     </select>
 
     <label style="font-size: 13px; font-weight: 600;">Amount (gross, before any WHT deducted by the customer)</label>
-    <input type="number" step="0.01" min="0.01" name="amount" id="amount" required oninput="recalcWht()" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+    <input type="number" step="0.01" name="amount" id="amount" required oninput="recalcWht()" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
 
     <label style="font-size: 13px; font-weight: 600;">Date</label>
     <input type="date" name="receipt_date" value="{{ today }}" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
@@ -38,23 +38,11 @@
       <p style="font-size: 13px; margin: 0;">WHT amount (recoverable): <strong id="wht-amount-display">0.00</strong> · Net received: <strong id="net-amount-display">0.00</strong></p>
     </div>
 
-    <label style="font-size: 13px; font-weight: 600;">Deposit to account (bank or cash)</label>
-    <select name="deposit_to_account_id" required style="width:100%; padding:8px; margin: 6px 0 6px; border:1px solid var(--lp-border); border-radius:6px;">
-      <option value="">Select bank or cash account…</option>
-      {% for kind, heading in [('Bank', 'Bank accounts'), ('Cash', 'Cash accounts')] %}
-        {% set of_kind = accounts|selectattr(3, 'equalto', kind)|list %}
-        {% if of_kind %}
-        <optgroup label="{{ heading }}">
-          {% for a in of_kind %}<option value="{{ a[0] }}">{{ a[1] }} - {{ a[2] }}</option>{% endfor %}
-        </optgroup>
-        {% endif %}
-      {% endfor %}
+    <label style="font-size: 13px; font-weight: 600;">Deposit to account</label>
+    <select name="deposit_to_account_id" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      <option value="">Select account…</option>
+      {% for a in accounts %}<option value="{{ a[0] }}">{{ a[1] }} - {{ a[2] }}</option>{% endfor %}
     </select>
-    {% if accounts %}
-    <p style="font-size: 12px; color: var(--lp-text-muted); margin: 0 0 16px;">Only your active bank and cash accounts are listed. A bank account that is missing here needs its Kind set to Bank on the <a href="{{ url_for('accounting.chart_of_accounts_list') }}">Chart of Accounts</a>.</p>
-    {% else %}
-    <p data-notice="no-cash-or-bank-account" style="background: var(--lp-amber-bg); color: var(--lp-amber-text); padding: 10px 12px; border-radius: 8px; margin: 0 0 16px; font-size: 13px;">This company has no active bank or cash account yet. Open the <a href="{{ url_for('accounting.chart_of_accounts_list') }}">Chart of Accounts</a>, then either add your bank account with Kind = Bank, or use Edit on an existing account to mark it as Bank or Cash.</p>
-    {% endif %}
 
     <button type="submit" class="lp-btn primary">Record Receipt</button>
   </form>
@@ -62,10 +50,8 @@
 
 <script>
 function toggleWht() {
-  const ticked = document.getElementById('has_wht').checked;
-  document.getElementById('wht-panel').style.display = ticked ? 'block' : 'none';
-  // Once WHT is ticked, a rate must be picked before the form can be sent.
-  document.getElementById('wht_rate').required = ticked;
+  document.getElementById('wht-panel').style.display =
+    document.getElementById('has_wht').checked ? 'block' : 'none';
   recalcWht();
 }
 function recalcWht() {

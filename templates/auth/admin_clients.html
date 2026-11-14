@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Clients Management{% endblock %}
+{% block content %}
+<div style="max-width: 1200px; margin: 0 auto; padding: 24px;">
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <div>
+      <h1 style="margin: 0; font-size: 24px; font-weight: 700; color: var(--zyro-deep-navy);">Clients Management</h1>
+      <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--zyro-slate-blue);">Manage ZYRO ERP client accounts and their associated businesses</p>
+    </div>
+    <a href="{{ url_for('auth.admin_new_client') }}" class="lp-btn primary" style="background: var(--zyro-electric-teal); color: #fff; font-weight: 600; padding: 10px 20px; border-radius: 8px; text-decoration: none;">+ Register New Client</a>
+  </div>
+
+  <form method="GET" style="margin-bottom: 20px; display: flex; gap: 10px;">
+    <input type="text" name="search" value="{{ search }}" placeholder="Search client name or email..." style="flex: 1; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+    <button type="submit" class="lp-btn secondary" style="padding: 10px 20px; font-weight: 600;">Search</button>
+  </form>
+
+  <div class="lp-card" style="background: #fff; border: 1px solid var(--lp-border); border-radius: 12px; overflow: hidden;">
+    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 14px;">
+      <thead>
+        <tr style="background: #f7faf9; border-bottom: 1px solid var(--lp-border); color: var(--zyro-slate-blue); font-size: 12px; text-transform: uppercase;">
+          <th style="padding: 12px 16px;">Client Name</th>
+          <th style="padding: 12px 16px;">Email / Phone</th>
+          <th style="padding: 12px 16px;">Businesses</th>
+          <th style="padding: 12px 16px;">Status</th>
+          <th style="padding: 12px 16px; text-align: right;">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in clients %}
+        <tr style="border-bottom: 1px solid var(--lp-border);">
+          <td style="padding: 14px 16px; font-weight: 600; color: var(--zyro-deep-navy);">{{ c[1] }}</td>
+          <td style="padding: 14px 16px; color: var(--zyro-slate-blue);">{{ c[2] or '—' }}<br><span style="font-size: 12px;">{{ c[3] or '' }}</span></td>
+          <td style="padding: 14px 16px; font-weight: 600;">{{ c[7] }} business(es)</td>
+          <td style="padding: 14px 16px;">
+            {% if c[5] %}
+              <span style="background: #EAF8F8; color: var(--zyro-electric-teal); padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 700;">Active</span>
+            {% else %}
+              <span style="background: #fbeaea; color: #c0392b; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 700;">Inactive</span>
+            {% endif %}
+          </td>
+          <td style="padding: 14px 16px; text-align: right;">
+            <a href="{{ url_for('auth.admin_client_detail', client_id=c[0]) }}" class="lp-btn secondary sm" style="font-weight: 600; text-decoration: none;">View Details</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" style="padding: 40px; text-align: center; color: var(--zyro-slate-blue);">No clients registered yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

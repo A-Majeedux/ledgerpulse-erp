@@ -2,46 +2,42 @@
 {% block title %}Chart of Accounts{% endblock %}
 {% block active_nav %}chart{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Chart of Accounts</h2>
-  <a href="{{ url_for('accounting.new_account') }}" class="lp-btn primary">+ New Account</a>
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Chart of Accounts</h1>
+    <p class="lp-page-subtitle">Master list of ledger accounts for organization financial posting.</p>
+  </div>
+  <a href="{{ url_for('accounting.new_account') }}" class="lp-btn primary sm">+ New Account</a>
 </div>
 
-<div class="lp-card lp-kind-guide">
-  <strong>Kind</strong> decides where an account can be picked:
-  <ul>
-    <li><span class="lp-pill kind-money">Bank</span> <span class="lp-pill kind-money">Cash</span> the only accounts offered as &ldquo;Paid from&rdquo; on a vendor payment and &ldquo;Deposit to&rdquo; on a customer receipt. On a journal entry they are picked in the General account column.</li>
-    <li><span class="lp-pill kind-partner">Trade receivable</span> <span class="lp-pill kind-partner">Trade payable</span> the two accounts all customers and all vendors share. On a journal entry you pick the customer or vendor by name, and the line lands here.</li>
-    <li><span class="lp-pill kind-partner">Non-trading receivable</span> <span class="lp-pill kind-partner">Non-trading payable</span> one account per person outside normal trade, such as a director or an employee. Picked in the Partner account column of a journal entry.</li>
-    <li><span class="lp-pill kind-general">General</span> everything else: revenue, expenses, tax, equity, other assets and liabilities. Picked in the General account column of a journal entry.</li>
-  </ul>
-</div>
-
-<div class="lp-card">
-  <div class="lp-table-scroll">
+<div class="lp-table-wrapper">
   <table class="lp-table">
     <thead>
-      <tr><th>Code</th><th>Name</th><th>Type</th><th>Kind</th><th>Reconciliation</th><th>Status</th><th></th></tr>
+      <tr>
+        <th style="width: 120px;">Code</th>
+        <th>Account Name</th>
+        <th>Type</th>
+        <th>Reconciliation</th>
+        <th>Status</th>
+      </tr>
     </thead>
     <tbody>
-      {# acc = (account_id, code, name, type, allow_reconciliation, is_active, kind) #}
       {% for acc in accounts %}
-      <tr data-account="{{ acc[1] }}" data-kind="{{ acc[6] }}">
-        <td>{{ acc[1] }}</td>
-        <td>{{ acc[2] }}</td>
-        <td>{{ acc[3] }}</td>
-        <td>
-          {% if acc[6] in cash_and_bank_kinds %}<span class="lp-pill kind-money">{{ acc[6] }}</span>
-          {% elif acc[6] == general_kind %}<span class="lp-pill kind-general">{{ acc[6] }}</span>
-          {% else %}<span class="lp-pill kind-partner">{{ acc[6] }}</span>{% endif %}
-        </td>
-        <td>{% if acc[4] %}<span class="lp-pill posted">Allowed</span>{% else %}—{% endif %}</td>
+      <tr>
+        <td style="font-family: monospace; font-weight: 600;">{{ acc[1] }}</td>
+        <td style="font-weight: 600;">{{ acc[2] }}</td>
+        <td><span class="lp-pill pending" style="font-size: 11px;">{{ acc[3] }}</span></td>
+        <td>{% if acc[4] %}<span class="lp-pill posted">Allowed</span>{% else %}<span class="lp-pill draft">No</span>{% endif %}</td>
         <td>{% if acc[5] %}<span class="lp-pill posted">Active</span>{% else %}<span class="lp-pill draft">Inactive</span>{% endif %}</td>
-        <td style="text-align:right;"><a href="{{ url_for('accounting.edit_account', account_id=acc[0]) }}" class="lp-btn sm">Edit</a></td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5">
+          <div class="lp-empty-state">No accounts found in chart of accounts.</div>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
-  </div>
 </div>
 {% endblock %}

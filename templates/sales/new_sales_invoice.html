@@ -2,65 +2,74 @@
 {% block title %}New Sales Invoice{% endblock %}
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
-<div class="lp-card" style="max-width: 1100px;">
-  <h2 style="margin-top:0;">New Sales Invoice</h2>
-  {% if error %}
-    <div style="background: var(--lp-coral-bg); color: var(--lp-coral-text); padding: 12px; border-radius: 8px; margin-bottom: 16px;">{{ error }}</div>
-  {% endif %}
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">New Sales Invoice</h1>
+    <p class="lp-page-subtitle">Create a customer billing invoice with line items, tax, and discount rules.</p>
+  </div>
+  <a href="{{ url_for('sales.sales_invoices_list') }}" class="lp-btn secondary sm">Back to Invoices</a>
+</div>
 
-  <form method="POST" id="invoice-form">
-    {{ csrf_field() }}
-    <div style="display:flex; gap:16px; margin-bottom: 20px;">
-      <div style="flex:1;">
-        <label style="font-size: 13px; font-weight: 600;">Customer</label>
-        <select name="customer_id" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
-          <option value="">Select customer </option>
+{% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form method="POST" id="invoice-form">
+  {{ csrf_field() }}
+  <div class="lp-form-section">
+    <div class="lp-form-grid">
+      <div class="lp-form-group">
+        <label class="form-label">Customer</label>
+        <select name="customer_id" class="form-select" required>
+          <option value="">Select customer…</option>
           {% for c in customers %}
             <option value="{{ c[0] }}">{{ c[1] }} ({{ c[2] }})</option>
           {% endfor %}
         </select>
       </div>
-      <div style="flex:1;">
-        <label style="font-size: 13px; font-weight: 600;">Invoice Date</label>
-        <input type="date" name="invoice_date" value="{{ today }}" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      <div class="lp-form-group">
+        <label class="form-label">Invoice Date</label>
+        <input type="date" name="invoice_date" value="{{ today }}" class="form-control" required>
       </div>
-      <div style="flex:1;">
-        <label style="font-size: 13px; font-weight: 600;">Due Date</label>
-        <input type="date" name="due_date" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      <div class="lp-form-group">
+        <label class="form-label">Due Date</label>
+        <input type="date" name="due_date" class="form-control">
       </div>
-      <div style="flex:1;">
-        <label style="font-size: 13px; font-weight: 600;">Payment Terms</label>
-        <input type="text" name="payment_terms" placeholder="e.g. 30 days" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
+      <div class="lp-form-group">
+        <label class="form-label">Payment Terms</label>
+        <input type="text" name="payment_terms" placeholder="e.g. 30 days" class="form-control">
       </div>
     </div>
+  </div>
 
-    <!-- Hidden templates for options used by JavaScript -->
-    <select id="source-product-options" style="display:none;">
-      <option value="">Select product </option>
-      {% for p in products %}
-        <option value="{{ p[0] }}" data-unit="{{ p[2] }}" data-account-id="{{ p[3] or '' }}">{{ p[1] }}</option>
-      {% endfor %}
-    </select>
+  <!-- Hidden templates for options used by JavaScript -->
+  <select id="source-product-options" style="display:none;">
+    <option value="">Select product…</option>
+    {% for p in products %}
+      <option value="{{ p[0] }}" data-unit="{{ p[2] }}" data-account-id="{{ p[3] or '' }}">{{ p[1] }}</option>
+    {% endfor %}
+  </select>
 
-    <select id="source-account-options" style="display:none;">
-      {% for a in accounts %}
-        <option value="{{ a[0] }}">{{ a[1] }} - {{ a[2] }}</option>
-      {% endfor %}
-    </select>
+  <select id="source-account-options" style="display:none;">
+    {% for a in accounts %}
+      <option value="{{ a[0] }}">{{ a[1] }} - {{ a[2] }}</option>
+    {% endfor %}
+  </select>
 
-    <select id="source-tax-options" style="display:none;">
-      <option value="" data-rate="0">None (0%)</option>
-      {% for r in tax_rates %}
-        <option value="{{ r[0] }}" data-rate="{{ r[2] }}">{{ r[1] }} ({{ r[2] }}%)</option>
-      {% endfor %}
-    </select>
+  <select id="source-tax-options" style="display:none;">
+    <option value="" data-rate="0">None (0%)</option>
+    {% for r in tax_rates %}
+      <option value="{{ r[0] }}" data-rate="{{ r[2] }}">{{ r[1] }} ({{ r[2] }}%)</option>
+    {% endfor %}
+  </select>
 
-    <select id="source-uom-options" style="display:none;">
-      {% for u in uom_choices %}
-        <option value="{{ u }}">{{ u }}</option>
-      {% endfor %}
-    </select>
+  <select id="source-uom-options" style="display:none;">
+    {% for u in uom_choices %}
+      <option value="{{ u }}">{{ u }}</option>
+    {% endfor %}
+  </select>
 
+  <div class="lp-table-wrapper" style="margin-bottom: 20px;">
     <table class="lp-table" id="lines-table">
       <thead>
         <tr>
@@ -69,28 +78,31 @@
           <th style="width:12%;">Account</th>
           <th style="width:8%;">UoM</th>
           <th style="width:8%;" class="amount">Qty</th>
-          <th style="width:10%;" class="amount">Rate</th>
+          <th style="width:10%;" class="amount">Rate ({{ active_currency|default('PKR') }})</th>
           <th style="width:8%;" class="amount">Disc %</th>
           <th style="width:12%;">Tax</th>
           <th style="width:10%;" class="amount">Total</th>
-          <th></th>
+          <th style="width:40px;"></th>
         </tr>
       </thead>
       <tbody id="lines-body"></tbody>
     </table>
+  </div>
 
-    <button type="button" onclick="addLine()" class="lp-btn" style="margin-top:12px;">+ Add line</button>
-
-    <div style="display:flex; justify-content:flex-end; margin-top:16px; padding-top:12px; border-top:1px solid var(--lp-border); gap: 32px;">
-      <div>Subtotal (Gross): <strong id="summary-gross">0.00</strong></div>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+    <button type="button" onclick="addLine()" class="lp-btn secondary sm">+ Add line</button>
+    <div style="display: flex; gap: 24px; background: var(--lp-white); padding: 16px 20px; border-radius: var(--lp-radius-md); border: 1px solid var(--lp-border); font-size: 14px;">
+      <div>Subtotal: <strong id="summary-gross">0.00</strong></div>
       <div>Discount: <strong id="summary-discount" style="color:var(--lp-coral-text);">0.00</strong></div>
-      <div>Sales Tax: <strong id="summary-tax" style="color:var(--lp-blue-text);">0.00</strong></div>
+      <div>Tax: <strong id="summary-tax" style="color:var(--lp-blue-text);">0.00</strong></div>
       <div style="font-size: 16px;">Grand Total: <strong id="summary-total" style="color:var(--lp-teal);">0.00</strong></div>
     </div>
+  </div>
 
-    <button type="submit" class="lp-btn primary" style="margin-top: 20px;">Save Draft Invoice</button>
-  </form>
-</div>
+  <div>
+    <button type="submit" class="lp-btn primary">Save Draft Invoice</button>
+  </div>
+</form>
 
 <script>
 function onProductChange(selectEl) {
@@ -170,16 +182,16 @@ function addLine() {
   const tbody = document.getElementById('lines-body');
   const row = document.createElement('tr');
   row.innerHTML = `
-    <td><select name="product_id[]" required onchange="onProductChange(this)" style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;">${prodOptions}</select></td>
-    <td><input type="text" name="label[]" style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;"></td>
-    <td><select name="account_id[]" required style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;">${accOptions}</select></td>
-    <td><select name="unit[]" style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;">${uomOptions}</select></td>
-    <td><input type="number" step="0.01" name="quantity[]" value="1" oninput="recalcRow(this.closest('tr'))" style="width:100%; padding:6px; text-align:right; border:1px solid var(--lp-border); border-radius:4px;"></td>
-    <td><input type="number" step="0.01" name="rate[]" value="0" oninput="recalcRow(this.closest('tr'))" style="width:100%; padding:6px; text-align:right; border:1px solid var(--lp-border); border-radius:4px;"></td>
-    <td><input type="number" step="0.01" name="discount_percent[]" value="0" oninput="recalcRow(this.closest('tr'))" style="width:100%; padding:6px; text-align:right; border:1px solid var(--lp-border); border-radius:4px;"></td>
-    <td><select name="sales_tax_rate_id[]" onchange="recalcRow(this.closest('tr'))" style="width:100%; padding:6px; border:1px solid var(--lp-border); border-radius:4px;">${taxOptions}</select></td>
+    <td><select name="product_id[]" class="form-select" required onchange="onProductChange(this)">${prodOptions}</select></td>
+    <td><input type="text" name="label[]" class="form-control" placeholder="Optional label"></td>
+    <td><select name="account_id[]" class="form-select" required>${accOptions}</select></td>
+    <td><select name="unit[]" class="form-select">${uomOptions}</select></td>
+    <td><input type="number" step="0.01" name="quantity[]" value="1" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
+    <td><input type="number" step="0.01" name="rate[]" value="0" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
+    <td><input type="number" step="0.01" name="discount_percent[]" value="0" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
+    <td><select name="sales_tax_rate_id[]" class="form-select" onchange="recalcRow(this.closest('tr'))">${taxOptions}</select></td>
     <td class="amount row-total-display" style="font-weight:600;">0.00</td>
-    <td><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotals();" class="lp-btn" style="padding:4px 8px;">✕</button></td>
+    <td><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotals();" class="lp-btn danger sm" title="Remove line">✕</button></td>
   `;
   tbody.appendChild(row);
 }

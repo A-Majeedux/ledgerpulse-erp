@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Trial Balance{% endblock %}
+{% block active_nav %}reports{% endblock %}
+{% block content %}
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Trial Balance</h1>
+    <p class="lp-page-subtitle">
+      Every account's balance as at {{ as_at.strftime('%d %b %Y') }}.
+      {% if include_drafts %}Includes Draft entries (preview).{% else %}Posted entries only.{% endif %}
+    </p>
+  </div>
+</div>
+
+<form method="GET" class="lp-card" style="margin-bottom: 16px; display:flex; gap:16px; align-items:end; flex-wrap:wrap;">
+  <div>
+    <label style="display:block; font-size:12px; font-weight:600; margin-bottom:4px;">As at date</label>
+    <input type="date" name="as_at" value="{{ as_at.isoformat() }}" style="padding:6px; border:1px solid #d1d5db; border-radius:4px;">
+  </div>
+  <div style="padding-bottom:6px;">
+    <label style="font-size:13px;">
+      <input type="checkbox" name="include_drafts" value="1" {% if include_drafts %}checked{% endif %}>
+      Include Draft entries
+    </label>
+  </div>
+  <div>
+    <button type="submit" class="lp-btn primary" style="padding:7px 16px;">Show</button>
+  </div>
+</form>
+
+{# ---- Health check banner ---- #}
+{% if tb.is_balanced %}
+<div class="lp-card" style="margin-bottom:16px; border-left:4px solid #16a34a; background:#f0fdf4;">
+  <strong style="color:#166534;">Balanced.</strong>
+  Total debits equal total credits ({{ "{:,.2f}".format(tb.debit_balance) }}).
+</div>
+{% else %}
+<div class="lp-card" style="margin-bottom:16px; border-left:4px solid #dc2626; background:#fef2f2;">
+  <strong style="color:#991b1b;">OUT OF BALANCE by {{ "{:,.2f}".format(tb.difference|abs) }}.</strong>
+  Debits and credits do not match. Something was posted incorrectly. See the list below.
+</div>
+{% endif %}
+
+{% if unbalanced %}
+<div class="lp-card" style="margin-bottom:16px;">
+  <h3 style="margin:0 0 8px 0; color:#991b1b;">Unbalanced journal entries ({{ unbalanced|length }})</h3>
+  <p style="margin:0 0 12px 0; font-size:13px;">Each of these entries has different debit and credit totals. They are the cause of the problem.</p>
+  <div class="lp-table-wrapper">
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th style="width:130px;">Date</th>
+          <th>Reference</th>
+          <th>Journal</th>
+          <th style="width:90px;">Status</th>
+          <th class="amount">Debit</th>
+          <th class="amount">Credit</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in unbalanced %}
+        <tr onclick="window.location='{{ url_for('accounting.journal_entry_detail', journal_header_id=e[0]) }}'" style="cursor:pointer;">
+          <td>{{ e[2].strftime('%d %b %Y') if e[2] else '—' }}</td>
+          <td style="font-family:monospace; font-weight:600;">{{ e[1] or '(no reference)' }}</td>
+          <td>{{ e[3] }}</td>
+          <td>{{ e[4] }}</td>
+          <td class="amount">{{ "{:,.2f}".format(e[5]) }}</td>
+          <td class="amount">{{ "{:,.2f}".format(e[6]) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="lp-table-wrapper">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th style="width:90px;">Code</th>
+        <th>Account</th>
+        <th style="width:110px;">Type</th>
+        <th class="amount">Debit</th>
+        <th class="amount">Credit</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in tb.lines %}
+      <tr>
+        <td style="font-family:monospace;">{{ l.code }}</td>
+        <td><a href="{{ url_for('reports.general_ledger', account_id=l.account_id, to=as_at.isoformat(), include_drafts=('1' if include_drafts else None)) }}">{{ l.name }}</a></td>
+        <td>{{ l.account_type }}</td>
+        <td class="amount">{% if l.debit_balance %}{{ "{:,.2f}".format(l.debit_balance) }}{% endif %}</td>
+        <td class="amount">{% if l.credit_balance %}{{ "{:,.2f}".format(l.credit_balance) }}{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="5"><div class="lp-empty-state">No posted transactions up to this date.</div></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    {% if tb.lines %}
+    <tfoot>
+      <tr style="font-weight:700; border-top:2px solid #142B3A;">
+        <td colspan="3" style="padding:10px 12px;">Total</td>
+        <td class="amount" style="padding:10px 12px;">{{ "{:,.2f}".format(tb.debit_balance) }}</td>
+        <td class="amount" style="padding:10px 12px;">{{ "{:,.2f}".format(tb.credit_balance) }}</td>
+      </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</div>
+{% endblock %}

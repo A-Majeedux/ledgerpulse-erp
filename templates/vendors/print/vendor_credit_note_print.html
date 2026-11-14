@@ -1,0 +1,56 @@
+{% extends "vendors/print/_print_base.html" %}
+{% set is_draft = (cn[4] == 'Draft') %}
+{% block title %}Vendor Credit Note {{ cn[1] | safe_str }}{% endblock %}
+{% block toolbar_title %}Vendor Credit Note — {{ cn[1] | safe_str }}{% endblock %}
+{% block back_url %}{{ url_for('vendors.vendor_credit_note_detail', vendor_credit_note_id=cn[0]) }}{% endblock %}
+
+{% block content %}
+<div class="title-block">
+  <div class="doc-main-title">Vendor Credit Note</div>
+  <div class="doc-sub-number">{{ cn[1] | safe_str }}</div>
+</div>
+
+<table class="info-table">
+  <tr>
+    <th>Vendor Name</th>
+    <td><strong>{{ cn[2] | safe_str }}</strong>{% if cn[3] %}<br>{{ cn[3] | safe_str }}{% endif %}</td>
+    <th>Credit Date</th>
+    <td>{{ cn[5] | fmt_date_print }}</td>
+  </tr>
+  <tr>
+    <th>Status</th>
+    <td>{{ cn[4] | safe_str }}</td>
+    <th>Against Bill</th>
+    <td>{{ cn[6] | safe_str if cn[6] else '—' }}</td>
+  </tr>
+</table>
+
+<div style="font-weight: bold; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; color: #333;">Credit Note Lines</div>
+<table class="lines-table">
+  <thead>
+    <tr>
+      <th style="width: 8%;">No.</th>
+      <th style="width: 52%; text-align: left;">Description</th>
+      <th style="width: 20%; text-align: right;">Account</th>
+      <th style="width: 20%; text-align: right;">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for l in lines %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td class="text-left"><strong>{{ l[0] | safe_str }}</strong></td>
+      <td style="text-align: right;">{{ l[1] | safe_str }} — {{ l[2] | safe_str }}</td>
+      <td class="text-right">{{ l[3] | fmt_money_print }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="totals-box">
+  <div class="totals-row">
+    <span>Total Credit:</span>
+    <span>{{ total | fmt_money_print }}</span>
+  </div>
+</div>
+{% endblock %}

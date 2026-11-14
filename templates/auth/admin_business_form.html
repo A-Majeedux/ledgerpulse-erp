@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Create Business for Client — {{ client[1] }}{% endblock %}
+{% block content %}
+<div style="max-width: 700px; margin: 40px auto; padding: 24px;" class="lp-card">
+  <a href="{{ url_for('auth.admin_client_detail', client_id=client[0]) }}" style="font-size: 13px; color: var(--zyro-electric-teal); text-decoration: none; font-weight: 600;">← Back to Client Details</a>
+  <h1 style="margin: 8px 0 4px 0; font-size: 24px; font-weight: 700; color: var(--zyro-deep-navy);">Create Business for Client</h1>
+  <p style="margin: 0 0 24px 0; font-size: 13px; color: var(--zyro-slate-blue);">Client: <strong>{{ client[1] }}</strong>. This creates an independent business entity with its own isolated accounting books.</p>
+
+  <form method="POST">
+    {{ csrf_field() }}
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Business Name *</label>
+      <input type="text" name="name" required style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+      <div>
+        <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Currency</label>
+        <input type="text" name="currency" value="PKR" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+      </div>
+      <div>
+        <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Fiscal Year Start Month</label>
+        <select name="fiscal_year_start_month" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+          {% for i in range(1, 13) %}
+            <option value="{{ i }}" {{ 'selected' if i == 7 }}>{{ month_names[i-1] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Nature of Business</label>
+      <input type="text" name="nature_of_business" placeholder="e.g. Technology Services, Manufacturing" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+    </div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+      <div>
+        <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">NTN (National Tax Number)</label>
+        <input type="text" name="ntn" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+      </div>
+      <div>
+        <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">STRN (Sales Tax Reg Number)</label>
+        <input type="text" name="strn" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;">
+      </div>
+    </div>
+    <div style="margin-bottom: 16px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Head Office Address</label>
+      <textarea name="head_office_address" rows="2" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;"></textarea>
+    </div>
+    <div style="margin-bottom: 24px;">
+      <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--zyro-deep-navy);">Warehouse / Branch Address</label>
+      <textarea name="warehouse_address" rows="2" style="width: 100%; padding: 10px 14px; border: 1px solid var(--lp-border); border-radius: 8px; font-size: 14px;"></textarea>
+    </div>
+    <div style="display: flex; gap: 12px;">
+      <button type="submit" class="lp-btn primary" style="background: var(--zyro-electric-teal); color: #fff; font-weight: 600; padding: 12px 24px; border-radius: 8px; border: none; cursor: pointer;">Create Business Books</button>
+      <a href="{{ url_for('auth.admin_client_detail', client_id=client[0]) }}" class="lp-btn secondary" style="padding: 12px 24px; border-radius: 8px; text-decoration: none; color: var(--zyro-deep-navy); border: 1px solid var(--lp-border);">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
