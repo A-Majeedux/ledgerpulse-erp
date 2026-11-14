@@ -25,6 +25,15 @@
     <small>{{ totals.posted_invoices }} in the books (posted)</small>
   </div>
   <div class="lp-total">
+    <span class="lp-total-label">Purchases</span>
+    <strong class="lp-total-value">{{ active_currency }} {{ totals.purchases_text }}</strong>
+    {% if linked_vendor %}
+      <small>{{ totals.bills }} bill{{ '' if totals.bills == 1 else 's' }} from {{ linked_vendor[1] }}</small>
+    {% else %}
+      <small>Link a vendor on the Sales &amp; Purchase tab to see what you buy from him</small>
+    {% endif %}
+  </div>
+  <div class="lp-total">
     <span class="lp-total-label">Due</span>
     <strong class="lp-total-value{{ ' negative' if totals.due < 0 }}">{{ active_currency }} {{ totals.due_text }}</strong>
     <small>Invoiced less receipts received{% if totals.received > 0 %} ({{ active_currency }} {{ totals.received_text }} received){% endif %}</small>

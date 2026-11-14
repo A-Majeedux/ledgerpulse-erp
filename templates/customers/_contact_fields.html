@@ -15,6 +15,14 @@
     <input type="text" id="{{ p }}-name" name="name" value="{{ cvalues.name }}" maxlength="150" required class="form-control">
   </div>
   <div class="lp-form-group">
+    <label for="{{ p }}-address_type">Type</label>
+    <select id="{{ p }}-address_type" name="address_type" class="form-control">
+      {% for option in address_types %}
+        <option value="{{ option }}" {% if cvalues.address_type == option %}selected{% endif %}>{{ option }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="lp-form-group">
     <label for="{{ p }}-job_position">Job Position</label>
     <input type="text" id="{{ p }}-job_position" name="job_position" value="{{ cvalues.job_position }}" maxlength="{{ contact_limits.job_position }}" class="form-control">
   </div>

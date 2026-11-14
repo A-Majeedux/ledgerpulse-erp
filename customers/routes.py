@@ -14,6 +14,9 @@ from customers.services import (
     field_suggestions, form_as_typed, form_from_customer, get_contact, get_customer,
     list_contacts, list_customer_invoices, list_customer_receipts, list_customers, list_row,
     make_primary_contact, name_lock_reason, save_notes, tag_list, update_contact, update_customer,
+    PAYMENT_METHOD_OPTIONS, PAYMENT_TYPE_OPTIONS, give_receipt_a_voucher_number,
+    ADDRESS_TYPE_OPTIONS, list_vendors_for_link, linked_vendor,
+    clean_date as clean_receipt_date,
 )
 
 bp = Blueprint("customers", __name__, url_prefix="/customers")
@@ -44,6 +47,21 @@ def _get_accounts(org_id):
     cursor.close()
     conn.close()
     return accounts
+
+
+def _journal_names(org_id):
+    """The journal names already used in this company, for the Journal box."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT DISTINCT journal_name FROM journal_headers
+        WHERE organization_id = %s AND journal_name IS NOT NULL AND journal_name <> ''
+        ORDER BY journal_name
+    """, (org_id,))
+    names = [row[0] for row in cursor.fetchall()]
+    cursor.close()
+    conn.close()
+    return names
 
 
 def _get_customers(org_id):
@@ -124,6 +142,10 @@ def _show_edit_card(cursor, org_id, customer, *, values=None, problems=None,
         new_contact_form=blank_contact_form() if new_contact_form is None else new_contact_form,
         new_contact_problems=new_contact_problems or [],
         open_tab=_open_tab(open_tab),
+        # the vendor behind this customer, for the Purchases figure
+        vendors=list_vendors_for_link(cursor, org_id),
+        linked_vendor=linked_vendor(cursor, org_id, totals.get("vendor_id")),
+        address_types=ADDRESS_TYPE_OPTIONS,
     )
 
 
@@ -227,6 +249,34 @@ def edit_customer(customer_id):
 # ---------------------------------------------------------------------
 # The Notes tab of the card
 # ---------------------------------------------------------------------
+
+@bp.route("/<int:customer_id>/vendor", methods=["POST"])
+@require_organization
+def link_customer_vendor(customer_id):
+    """Link this customer to the vendor he is on the buying side, or unlink him.
+
+    Only the Purchases figure of the card reads it; nothing else about the
+    customer, his invoices or his receipts changes.
+    """
+    org_id = current_organization_id()
+    vendor_id = (request.form.get("vendor_id") or "").strip() or None
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        _customer_or_404(cursor, org_id, customer_id)
+        if vendor_id:
+            if linked_vendor(cursor, org_id, int(vendor_id)) is None:
+                abort(400)
+            vendor_id = int(vendor_id)
+        cursor.execute(
+            "UPDATE customers SET vendor_id = %s WHERE customer_id = %s AND organization_id = %s",
+            (vendor_id, customer_id, org_id))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for("customers.edit_customer", customer_id=customer_id, tab="sales"))
+
 
 @bp.route("/<int:customer_id>/notes", methods=["POST"])
 @require_organization
@@ -364,16 +414,33 @@ def customer_receipts_list():
     org_id = current_organization_id()
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT cr.customer_receipt_id, c.name, cr.amount, cr.receipt_date, cr.has_wht
+    # "Receipts" and "Cheques" are the same list, the second one only showing
+    # the money that came in by cheque (the Cheques tab of his screen).
+    tab = (request.args.get("tab") or "receipts").strip().lower()
+    sql = """
+        SELECT cr.customer_receipt_id, c.name, cr.amount, cr.receipt_date, cr.has_wht,
+               cr.voucher_no, cr.payment_method, cr.payment_type, cr.cheque_no, cr.cheque_date
         FROM customer_receipts cr JOIN customers c ON c.customer_id = cr.customer_id
         WHERE cr.organization_id = %s
-        ORDER BY cr.receipt_date DESC, cr.customer_receipt_id DESC
-    """, (org_id,))
+    """
+    params = [org_id]
+    if tab == "cheques":
+        sql += " AND cr.payment_method = 'Cheque'"
+    sql += " ORDER BY cr.receipt_date DESC, cr.customer_receipt_id DESC"
+    cursor.execute(sql, tuple(params))
     receipts = cursor.fetchall()
+    cursor.execute(
+        "SELECT COUNT(*) FROM customer_receipts WHERE organization_id = %s AND payment_method = 'Cheque'",
+        (org_id,))
+    cheque_count = cursor.fetchone()[0]
     cursor.close()
     conn.close()
-    return render_template("customers/customer_receipts_list.html", receipts=receipts)
+    return render_template(
+        "customers/customer_receipts_list.html",
+        receipts=receipts,
+        tab=tab,
+        cheque_count=cheque_count,
+    )
 
 
 @bp.route("/receipts/new", methods=["GET", "POST"])
@@ -392,6 +459,40 @@ def new_customer_receipt():
         wht_amount = money_round(gross_amount * (wht_rate / Decimal("100"))) if has_wht and wht_rate else to_decimal(0)
         net_received = gross_amount - wht_amount
         deposit_to_account_id = int(request.form["deposit_to_account_id"])
+
+        # The boxes his own receipt screen has above the amount. Anything that
+        # is not one of the offered answers falls back to the usual one, so an
+        # old screen (or an old bookmark) keeps saving receipts exactly as
+        # before; a cheque without its number or date is refused instead of
+        # being saved half-filled.
+        payment_type = (request.form.get("payment_type") or "").strip() or "Customer Payment"
+        if payment_type not in PAYMENT_TYPE_OPTIONS:
+            payment_type = "Customer Payment"
+        payment_method = (request.form.get("payment_method") or "").strip() or "Cash"
+        if payment_method not in PAYMENT_METHOD_OPTIONS:
+            payment_method = "Cash"
+        journal_name = (request.form.get("journal_name") or "").strip() or "Customer Receipts"
+        cheque_no = (request.form.get("cheque_no") or "").strip() or None
+        cheque_bank = (request.form.get("cheque_bank") or "").strip() or None
+        try:
+            cheque_date = clean_receipt_date(request.form.get("cheque_date")) if payment_method == "Cheque" else None
+        except ValueError:
+            cheque_date = None
+        if payment_method == "Cheque" and not (cheque_no and cheque_date):
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return render_template(
+                "customers/new_customer_receipt.html",
+                customers=_get_customers(org_id), accounts=_get_accounts(org_id),
+                tax_rates=get_active_tax_rates(org_id),
+                payment_types=PAYMENT_TYPE_OPTIONS, payment_methods=PAYMENT_METHOD_OPTIONS,
+                journals=_journal_names(org_id),
+                error="A cheque needs its number and its date. Fill both in, or change Payment Method.",
+                today=date.today().isoformat(),
+            )
+        if payment_method != "Cheque":
+            cheque_no = cheque_bank = cheque_date = None
 
         cursor.execute("SELECT 1 FROM customers WHERE customer_id = %s AND organization_id = %s", (customer_id, org_id))
         if not cursor.fetchone():
@@ -432,22 +533,30 @@ def new_customer_receipt():
                 cursor, organization_id=org_id,
                 reference=f"Customer Receipt - {customer_name}",
                 accounting_date=request.form["receipt_date"],
-                journal_name="Customer Receipts",
+                journal_name=journal_name,
                 lines=je_lines, source_type="CustomerReceipt", auto_post=True,
             )
 
             cursor.execute("""
                 INSERT INTO customer_receipts
                     (organization_id, customer_id, amount, receipt_date, memo,
-                     deposit_to_account_id, has_wht, wht_rate, wht_amount, journal_header_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     deposit_to_account_id, has_wht, wht_rate, wht_amount, journal_header_id,
+                     payment_type, journal_name, payment_method,
+                     cheque_no, cheque_bank, cheque_date)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING customer_receipt_id
             """, (
                 org_id, customer_id, gross_amount, request.form["receipt_date"],
                 request.form.get("memo", "").strip() or None, deposit_to_account_id,
                 has_wht, wht_rate, wht_amount, journal_header_id,
+                payment_type, journal_name, payment_method,
+                cheque_no, cheque_bank, cheque_date,
             ))
             customer_receipt_id = cursor.fetchone()[0]
+            # The voucher number his screen shows - given here, and never
+            # changed afterwards (customers/services.py).
+            give_receipt_a_voucher_number(
+                cursor, org_id, customer_receipt_id, request.form["receipt_date"])
             conn.commit()
         except UnbalancedEntryError as error:
             conn.rollback()
@@ -457,6 +566,8 @@ def new_customer_receipt():
                 "customers/new_customer_receipt.html",
                 customers=_get_customers(org_id), accounts=_get_accounts(org_id),
                 tax_rates=get_active_tax_rates(org_id),
+                payment_types=PAYMENT_TYPE_OPTIONS, payment_methods=PAYMENT_METHOD_OPTIONS,
+                journals=_journal_names(org_id),
                 error=str(error), today=date.today().isoformat(),
             )
 
@@ -468,6 +579,8 @@ def new_customer_receipt():
         "customers/new_customer_receipt.html",
         customers=_get_customers(org_id), accounts=_get_accounts(org_id),
         tax_rates=get_active_tax_rates(org_id),
+        payment_types=PAYMENT_TYPE_OPTIONS, payment_methods=PAYMENT_METHOD_OPTIONS,
+                journals=_journal_names(org_id),
         error=None, today=date.today().isoformat(),
     )
 
@@ -480,7 +593,9 @@ def customer_receipt_detail(customer_receipt_id):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT cr.customer_receipt_id, c.name, cr.amount, cr.receipt_date, cr.memo,
-               coa.name, cr.has_wht, cr.wht_rate, cr.wht_amount, cr.journal_header_id
+               coa.name, cr.has_wht, cr.wht_rate, cr.wht_amount, cr.journal_header_id,
+               cr.voucher_no, cr.payment_type, cr.journal_name, cr.payment_method,
+               cr.cheque_no, cr.cheque_bank, cr.cheque_date
         FROM customer_receipts cr
         JOIN customers c ON c.customer_id = cr.customer_id
         JOIN chart_of_accounts coa ON coa.account_id = cr.deposit_to_account_id

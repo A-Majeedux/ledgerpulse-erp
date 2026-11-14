@@ -1,0 +1,117 @@
+{# The print page of one sales invoice.
+
+   It reuses the print frame the vendor bills already print with
+   (templates/vendors/print/_print_base.html): the same toolbar, the same page
+   setup, the same signature boxes at the bottom. That frame is only READ from
+   here - no vendor screen or template is changed.
+
+   invoice  the invoice and its customer:
+              [0] sales_invoice_id   [1] invoice_no      [2] customer name
+              [3] address            [4] city            [5] NTN
+              [6] invoice_date       [7] due_date        [8] delivery_date
+              [9] status             [10] payment terms  [11] LC reference
+              [12] journal name
+   lines    one row per line: product name, label, account code, account name,
+            unit, quantity, rate, discount %, discount amount, tax label,
+            tax amount, line total
+   total_gross / total_discount / total_tax / grand_total #}
+{% extends "vendors/print/_print_base.html" %}
+{% set is_draft = (invoice[9] == 'Draft') %}
+{% block title %}Sales Invoice {{ invoice[1] or '' }}{% endblock %}
+{% block toolbar_title %}Sales Invoice — {{ invoice[1] or 'Draft' }}{% endblock %}
+{% block back_url %}{{ url_for('sales.sales_invoice_detail', sales_invoice_id=invoice[0]) }}{% endblock %}
+
+{% block content %}
+<div class="title-block">
+  <div class="doc-main-title">Sales Invoice</div>
+  <div class="doc-sub-number">{{ invoice[1] or 'Draft invoice' }}</div>
+</div>
+
+<table class="info-table">
+  <tr>
+    <th>Customer</th>
+    <td>
+      <strong>{{ invoice[2] | safe_str }}</strong>
+      {% if invoice[3] %}<br>{{ invoice[3] | safe_str }}{% endif %}
+      {% if invoice[4] %}<br>{{ invoice[4] | safe_str }}{% endif %}
+    </td>
+    <th>NTN</th>
+    <td>{{ invoice[5] | safe_str }}</td>
+  </tr>
+  <tr>
+    <th>Invoice Date</th>
+    <td>{{ invoice[6] | fmt_date_print }}</td>
+    <th>Due Date</th>
+    <td>{{ invoice[7] | fmt_date_print }}</td>
+  </tr>
+  <tr>
+    <th>Delivery Date</th>
+    <td>{{ invoice[8] | fmt_date_print }}</td>
+    <th>LC Reference</th>
+    <td>{{ invoice[11] | safe_str }}</td>
+  </tr>
+  <tr>
+    <th>Payment Terms</th>
+    <td>{{ invoice[10] | safe_str }}</td>
+    <th>Status</th>
+    <td>{{ invoice[9] | safe_str }}</td>
+  </tr>
+</table>
+
+<div style="font-weight: bold; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; color: #333;">Invoice Lines</div>
+<table class="lines-table">
+  <thead>
+    <tr>
+      <th style="width: 6%;">No.</th>
+      <th style="width: 40%; text-align: left;">Description</th>
+      <th style="width: 8%;">Qty</th>
+      <th style="width: 8%;">Unit</th>
+      <th style="width: 14%; text-align: right;">Rate</th>
+      <th style="width: 10%; text-align: right;">Disc %</th>
+      <th style="width: 14%; text-align: right;">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for l in lines %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td class="text-left">
+        <strong>{{ (l[0] or l[1]) | safe_str }}</strong>
+        {% if l[0] and l[1] and l[1] != l[0] %}<br>{{ l[1] | safe_str }}{% endif %}
+        {% if l[2] or l[3] %}<br><small style="color: #666;">Account: {{ l[2] | safe_str }}{% if l[2] and l[3] %} — {% endif %}{{ l[3] | safe_str }}</small>{% endif %}
+        {% if l[9] %}<br><small style="color: #666;">Sales tax: {{ l[9] | safe_str }}</small>{% endif %}
+      </td>
+      <td>{{ l[5] | fmt_qty_print }}</td>
+      <td>{{ l[4] | safe_str }}</td>
+      <td style="text-align: right;">{{ l[6] | fmt_money_print }}</td>
+      <td style="text-align: right;">{{ l[7] | fmt_qty_print }}</td>
+      <td class="text-right">{{ l[11] | fmt_money_print }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="totals-box">
+  <div class="totals-row">
+    <span>Gross (Qty x Rate):</span>
+    <span>{{ total_gross | fmt_money_print }}</span>
+  </div>
+  <div class="totals-row">
+    <span>Discount:</span>
+    <span>-{{ total_discount | fmt_money_print }}</span>
+  </div>
+  <div class="totals-row">
+    <span>Sales Tax:</span>
+    <span>{{ total_tax | fmt_money_print }}</span>
+  </div>
+  <div class="totals-row">
+    <span>Grand Total:</span>
+    <span>{{ grand_total | fmt_money_print }}</span>
+  </div>
+</div>
+
+<p style="font-size: 10px; color: #555;">
+  Journal: {{ invoice[12] | safe_str }}. This invoice was entered in ZYRO under the number above;
+  the number never changes.
+</p>
+{% endblock %}

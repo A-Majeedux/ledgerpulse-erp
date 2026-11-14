@@ -13,6 +13,8 @@
     </p>
   </div>
   <div>
+    <a href="{{ url_for('sales.sales_invoice_print', sales_invoice_id=invoice[0]) }}"
+       class="lp-btn secondary sm" target="_blank" rel="noopener">Print / Save PDF</a>
     {% if invoice[4] == 'Posted' %}
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
     {% else %}

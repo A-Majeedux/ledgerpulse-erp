@@ -141,6 +141,10 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 - 2026-11-14 — Fixed the "column p.organization_id does not exist" crash on his own database: an old products
   table with no company column; products and tax rates now get every missing column and a company, never the ZYRO
   head office while a real company exists (see section 14)
+- 2026-11-14 — The four screens he asked for in one go: a **printable sales invoice**, the **products screen as
+  cards** with Price and On hand and a search box, the **receipt screen** with Payment Type / Journal / Voucher
+  Number / Payment Method and the **Cheques** tab, and the **customer card finished** - a Type on every contact and
+  a **Purchases** figure from a linked vendor (see section 15)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -298,8 +302,9 @@ INV / 2026 / 00001
 `sales_invoices_number_per_organization`, on (company, number) where the number is not null. Nothing dropped,
 renamed or rewritten. The only change to existing rows is the number itself (empty → its number).
 
-**Not done, and why:** there is **no printout** for a sales invoice yet, so the number is on the screen but on no
-paper; and the **dashboard** still lists invoices without their numbers. Both are small jobs for later.
+**Not done at the time, and why:** there was **no printout** for a sales invoice yet, so the number was on the
+screen but on no paper - printed now, see section 15; and the **dashboard** still lists invoices without their
+numbers.
 
 ### The crash this found (14 Nov 2026): an old products table
 
@@ -340,3 +345,101 @@ this work. Rehearsed on a database built and filled by the previous version (5 i
 invoice got its number oldest-first and each year started again at 00001, no other row changed except the customers
 getting their IDs (which the customer card has always done), and the list, the invoice page and the customer card all
 showed the numbers. Not done: a run on the real (Neon) database.
+
+## 15. The four screens of the sixth round (built 14 Nov 2026)
+
+He picked **"All of them in one go"** out of the four things I offered, so all four are here. Every one of them is
+additive: new columns are added, never removed or renamed, and every screen that worked before still works.
+
+### A. A sales invoice can be printed
+
+`GET /sales/invoices/<id>/print` (`sales/routes.py: sales_invoice_print`) and the page
+`templates/sales/print/sales_invoice_print.html`.
+
+- It uses the **same print frame the vendor bills already print with**
+  (`templates/vendors/print/_print_base.html`): the same toolbar with **Print / Save PDF**, the same page setup,
+  the same four signature boxes at the bottom (Prepared / Checked / Approved / Authorized). Nothing on the vendor
+  side was changed - the frame is only read.
+- On the paper: the number (`INV/2026/01749`), the customer with its address and city, the **NTN**, the
+  **Delivery Date**, the **LC Reference**, the invoice date, the due date, the payment terms and the status.
+- Every line is printed with its product, its own wording, the account it was posted to, the unit, the quantity,
+  the rate, the discount per cent, the sales tax and the line amount. **Left joins**, on purpose: a line written
+  without a product or without an account still prints, so the paper can never show fewer lines than the invoice.
+- The totals box: gross (qty x rate), discount, sales tax, grand total - added up from the lines, the same way the
+  invoice page adds them.
+- The invoice page itself now has a **Print / Save PDF** button next to its status.
+- Another company asking for the invoice gets **404**, never the document.
+
+### B. The products screen, as cards
+
+`/sales/products` (`sales/routes.py: products_list`) and `templates/sales/products_list.html`.
+
+- Cards in a grid (not a table), each showing the **name**, Unit, the revenue account, **Price**, **On hand** and
+  an Active / Inactive pill, with **Edit** on the card.
+- A **search box on top** that narrows by product name, unit, account code or account name, and says
+  "3 of 12 product(s) match ...". A search with no match says so and offers a link back to all products.
+- Two new additive columns on `products`: `sales_price NUMERIC(15,2)` and `on_hand NUMERIC(15,3)`, both default 0,
+  both added with `ADD COLUMN IF NOT EXISTS` (and both in the `CREATE TABLE` for a brand new database). Nothing else
+  reads them, so a product nobody touches behaves exactly as before.
+- New screen `/sales/products/<id>/edit` (`edit_product`) to change name, unit, Price, On hand, revenue account and
+  Active. A Price or On hand that is not a number, or is negative, is **refused with a message** and nothing is
+  saved. The New Product form asks for Price and On hand as well.
+- **Honest note:** "On hand" is a figure he keeps on the product, not a stock ledger. Sold and bought quantities are
+  not subtracted from it yet; a real stock ledger is a later job.
+
+### C. The receipt screen, with the boxes and the Cheques tab
+
+`/customers/receipts` and `/customers/receipts/new` (`customers/routes.py`) with the templates in
+`templates/customers/`.
+
+- New additive columns on `customer_receipts`: `payment_type`, `journal_name`, `voucher_no`, `payment_method`,
+  `cheque_no`, `cheque_bank`, `cheque_date`.
+- The form asks **Payment Type** (Customer Payment / Advance Payment / Refund / Other), **Journal** (a box that
+  offers the journal names already used in the company, default Customer Receipts), **Voucher Number** (shown as
+  "Given when you save") and **Payment Method** (Cash / Cheque / Bank Transfer / Online Transfer / Other). Choosing
+  **Cheque** opens the cheque boxes: number, bank and date.
+- A cheque **without its number or its date is refused** with a message, and nothing is saved.
+- The voucher number is his shape: **`CPV/2026/00001`** - letters, the year of the receipt date, and a running number
+  that starts again at 1 every year inside each company. It is given when the receipt is saved, never changes, and a
+  unique index `(organization_id, voucher_no)` refuses a second receipt with the same one (the save simply takes the
+  next number). Receipts made before this version got their numbers **once, oldest first**, on the first start
+  (`customers/services.py: number_missing_receipts`, called from `customers/schema.py`).
+- The receipts list has a **Receipts | Cheques** tab strip; Cheques shows only the money that came in by cheque, with
+  the cheque number and date. The receipt page has the same two tabs and shows the cheque details, or says plainly
+  that this receipt was paid by cash / transfer.
+- **Compatibility:** a form (or a bookmark) that sends none of the new boxes still saves a receipt exactly as
+  before - Payment Type "Customer Payment", Payment Method "Cash", Journal "Customer Receipts" - and it still gets
+  its number.
+
+### D. The customer card, finished
+
+- **A Type on every contact**: `customer_contacts.address_type` (additive, default `Other`), chosen from
+  **Invoice Address / Delivery Address / Other** on every contact card, shown as a pill next to the name. A type
+  that is not one of the three is refused like any other bad box.
+- **Purchases in the header strip**: a fourth figure beside Sales / Invoiced / Due, read from the vendor the
+  customer is linked to. `customers.vendor_id` is the link (additive, no foreign key - the vendors table is made by
+  another part of the program and may not exist when the customers tables are made). The **Sales & Purchase** tab
+  now has "The vendor behind this customer": pick a vendor, **Save link**; the figure becomes the total of that
+  vendor's bills, with how many bills it came from. **Not linked** shows 0.00 and says to link a vendor.
+- Only the Purchases figure reads the link. Nothing about the customer, his invoices, his receipts or the vendor's
+  own screens changes, and a vendor of another company cannot be linked (400).
+
+### Checks
+
+- `tests/test_sales_invoice_print.py` (10 checks: the printed page and its contents, the totals adding up, the
+  other company getting 404, the button on the invoice page, the cards with Price/On hand, the search box narrowing
+  the cards, a search with no match, Price and On hand saved, a bad price refused, a new product keeping its figures).
+- `tests/test_customer_receipts_vouchers.py` (14 checks: the shape of a voucher number, the answers offered, a
+  contact with no type becoming Other, a bad type refused, the form's boxes, a cheque receipt keeping every box and
+  getting CPV/2026/00001, the numbers going up and starting again in 2027, a cheque without number/date refused with
+  nothing saved, an old-style receipt still saving, the Cheques tab showing only cheques, another company getting
+  404, a contact keeping its Type, the Purchases figure after linking, and a vendor of another company refused).
+- Whole suite: **123 passed**, with only the vendor print case failing that failed before this work
+  (`test_10_all_print_templates_and_routes`, "INVOICE LINES" vs "Invoice Lines" - it fails on a clean
+  zyro-current too).
+
+### Still not done (offered for later)
+
+- The **dashboard** still lists invoices without their numbers.
+- **On hand** is a figure he keeps, not a stock ledger.
+- The printed invoice has no company logo or bank details block beyond what the vendor print frame already shows.

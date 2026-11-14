@@ -13,6 +13,35 @@
   Nothing is changed from here.
 </p>
 
+<h4 class="lp-subhead">The vendor behind this customer</h4>
+<p class="lp-page-subtitle" style="margin-bottom: 12px;">
+  When the same business is a customer you sell to <em>and</em> a vendor you buy from, link the two here:
+  the Purchases figure at the top of the card then counts the bills written for that vendor.
+  Nothing else about the customer changes.
+</p>
+<form method="POST" action="{{ url_for('customers.link_customer_vendor', customer_id=customer.customer_id) }}"
+      style="display:flex; gap: 8px; align-items:center; flex-wrap: wrap; margin-bottom: 24px;">
+  {{ csrf_field() }}
+  <select name="vendor_id" class="form-control" style="max-width: 420px;">
+    <option value="">Not linked to a vendor</option>
+    {% for vendor in vendors %}
+      <option value="{{ vendor[0] }}" {% if linked_vendor and linked_vendor[0] == vendor[0] %}selected{% endif %}>{{ vendor[1] }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="lp-btn primary sm">Save link</button>
+  {% if linked_vendor %}
+    <span style="font-size: 13px; color: var(--lp-text-muted);">
+      Linked to <strong>{{ linked_vendor[1] }}</strong> &middot; Purchases {{ active_currency }} {{ totals.purchases_text }}
+      from {{ totals.bills }} bill{{ '' if totals.bills == 1 else 's' }}
+    </span>
+  {% endif %}
+</form>
+{% if not vendors %}
+  <div class="lp-empty-state" style="padding: 12px 16px; margin-bottom: 24px;">
+    No vendors have been entered in this company yet. Add the vendor on the Vendors screen, then come back here to link him.
+  </div>
+{% endif %}
+
 <h4 class="lp-subhead">Sales invoices</h4>
 {% if invoices %}
   <div class="lp-table-wrapper">

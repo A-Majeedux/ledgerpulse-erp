@@ -17,6 +17,56 @@
       {% for c in customers %}<option value="{{ c[0] }}">{{ c[1] }} ({{ c[2] }})</option>{% endfor %}
     </select>
 
+    <div style="display:flex; gap: 12px;">
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Payment Type</label>
+        <select name="payment_type" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+          {% for option in payment_types %}<option value="{{ option }}">{{ option }}</option>{% endfor %}
+        </select>
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Journal</label>
+        <input type="text" name="journal_name" list="journal-names" value="Customer Receipts"
+               style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+        <datalist id="journal-names">
+          {% for name in journals %}<option value="{{ name }}">{% endfor %}
+          <option value="Customer Receipts">
+          <option value="Cash Receipts">
+          <option value="Bank Receipts">
+        </datalist>
+      </div>
+    </div>
+
+    <div style="display:flex; gap: 12px;">
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Voucher Number</label>
+        <input type="text" value="Given when you save" disabled
+               style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; background: var(--lp-canvas); color: var(--lp-text-muted);">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Payment Method</label>
+        <select name="payment_method" id="payment_method" onchange="toggleCheque()" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+          {% for option in payment_methods %}<option value="{{ option }}">{{ option }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div id="cheque-panel" style="display:none; background: var(--lp-canvas); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+      <div style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--lp-text-muted); margin-bottom: 8px;">Cheque</div>
+      <div style="display:flex; gap: 12px;">
+        <div style="flex:1;">
+          <label style="font-size: 13px; font-weight: 600;">Cheque Number</label>
+          <input type="text" name="cheque_no" style="width:100%; padding:8px; margin: 6px 0 12px; border:1px solid var(--lp-border); border-radius:6px;">
+        </div>
+        <div style="flex:1;">
+          <label style="font-size: 13px; font-weight: 600;">Cheque Date</label>
+          <input type="date" name="cheque_date" style="width:100%; padding:8px; margin: 6px 0 12px; border:1px solid var(--lp-border); border-radius:6px;">
+        </div>
+      </div>
+      <label style="font-size: 13px; font-weight: 600;">Bank</label>
+      <input type="text" name="cheque_bank" placeholder="e.g. Meezan Bank, Hafizabad branch" style="width:100%; padding:8px; margin: 6px 0 0; border:1px solid var(--lp-border); border-radius:6px;">
+    </div>
+
     <label style="font-size: 13px; font-weight: 600;">Amount (gross, before any WHT deducted by the customer)</label>
     <input type="number" step="0.01" name="amount" id="amount" required oninput="recalcWht()" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
 
@@ -49,6 +99,10 @@
 </div>
 
 <script>
+function toggleCheque() {
+  const method = document.getElementById('payment_method').value;
+  document.getElementById('cheque-panel').style.display = method === 'Cheque' ? 'block' : 'none';
+}
 function toggleWht() {
   document.getElementById('wht-panel').style.display =
     document.getElementById('has_wht').checked ? 'block' : 'none';

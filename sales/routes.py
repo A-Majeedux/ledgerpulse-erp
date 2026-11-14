@@ -84,20 +84,142 @@ def _get_active_customers(org_id):
 @bp.route("/products")
 @require_organization
 def products_list():
+    """The products screen as cards, with the search box on top and the two
+    figures his own screen shows on every card: Price and On hand."""
+    org_id = current_organization_id()
+    q = (request.args.get("q") or "").strip()
+    conn = get_conn()
+    cursor = conn.cursor()
+    sql = """
+        SELECT p.product_id, p.name, p.unit, coa.code, coa.name, p.is_active,
+               COALESCE(p.sales_price, 0), COALESCE(p.on_hand, 0)
+        FROM products p
+        LEFT JOIN chart_of_accounts coa ON coa.account_id = p.default_account_id
+        WHERE p.organization_id = %s
+    """
+    params = [org_id]
+    if q:
+        sql += """ AND (p.name ILIKE %s OR p.unit ILIKE %s
+                        OR coa.code ILIKE %s OR coa.name ILIKE %s)"""
+        like = f"%{q}%"
+        params.extend([like, like, like, like])
+    sql += " ORDER BY p.name"
+    cursor.execute(sql, tuple(params))
+    products = cursor.fetchall()
+    cursor.execute("SELECT COUNT(*) FROM products WHERE organization_id = %s", (org_id,))
+    total_products = cursor.fetchone()[0]
+    cursor.close()
+    conn.close()
+    return render_template(
+        "sales/products_list.html",
+        products=products,
+        q=q,
+        total_products=total_products,
+    )
+
+
+def _product_price_and_stock(form):
+    """Read the Price and On hand boxes. A figure that is not a number is
+    refused before anything is written, with a message saying which one."""
+    from decimal import InvalidOperation
+    values = {}
+    for field, label in (("sales_price", "Price"), ("on_hand", "On hand")):
+        raw = (form.get(field) or "").strip()
+        if raw == "":
+            values[field] = Decimal("0")
+            continue
+        try:
+            number = Decimal(raw.replace(",", ""))
+        except (InvalidOperation, ValueError):
+            raise ValueError(f"{label} must be a number (for example 1250.50).")
+        if number < 0:
+            raise ValueError(f"{label} cannot be less than zero.")
+        values[field] = number
+    return values
+
+
+@bp.route("/products/<int:product_id>/edit", methods=["GET", "POST"])
+@require_organization
+def edit_product(product_id):
+    """Price, On hand, name, unit, revenue account and Active - all of it on
+    the product itself. Nothing about an invoice already written changes."""
     org_id = current_organization_id()
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT p.product_id, p.name, p.unit, coa.code, coa.name, p.is_active
-        FROM products p
-        LEFT JOIN chart_of_accounts coa ON coa.account_id = p.default_account_id
-        WHERE p.organization_id = %s
-        ORDER BY p.name
-    """, (org_id,))
-    products = cursor.fetchall()
+        SELECT product_id, name, unit, default_account_id, is_active,
+               COALESCE(sales_price, 0), COALESCE(on_hand, 0)
+        FROM products
+        WHERE product_id = %s AND organization_id = %s
+    """, (product_id, org_id))
+    product = cursor.fetchone()
+    if not product:
+        cursor.close()
+        conn.close()
+        abort(404)
+
+    if request.method == "POST":
+        name = (request.form.get("name") or "").strip()
+        if not name:
+            cursor.close()
+            conn.close()
+            return render_template(
+                "sales/edit_product.html",
+                product=product,
+                uom_choices=UOM_CHOICES,
+                accounts=_get_revenue_accounts(org_id),
+                error="The product needs a name.",
+            )
+        try:
+            figures = _product_price_and_stock(request.form)
+        except ValueError as error:
+            cursor.close()
+            conn.close()
+            return render_template(
+                "sales/edit_product.html",
+                product=product,
+                uom_choices=UOM_CHOICES,
+                accounts=_get_revenue_accounts(org_id),
+                error=str(error),
+            )
+        default_acc = request.form.get("default_account_id") or None
+        if default_acc:
+            cursor.execute(
+                "SELECT 1 FROM chart_of_accounts WHERE account_id = %s AND organization_id = %s",
+                (int(default_acc), org_id))
+            if not cursor.fetchone():
+                cursor.close()
+                conn.close()
+                abort(400)
+        cursor.execute("""
+            UPDATE products
+            SET name = %s, unit = %s, default_account_id = %s,
+                sales_price = %s, on_hand = %s, is_active = %s
+            WHERE product_id = %s AND organization_id = %s
+        """, (
+            name,
+            request.form.get("unit", "Units"),
+            int(default_acc) if default_acc else None,
+            figures["sales_price"],
+            figures["on_hand"],
+            request.form.get("is_active") == "on",
+            product_id,
+            org_id,
+        ))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return redirect(url_for("sales.products_list"))
+
     cursor.close()
     conn.close()
-    return render_template("sales/products_list.html", products=products)
+    return render_template(
+        "sales/edit_product.html",
+        product=product,
+        uom_choices=UOM_CHOICES,
+        accounts=_get_revenue_accounts(org_id),
+        error=None,
+    )
 
 
 @bp.route("/products/new", methods=["GET", "POST"])
@@ -118,14 +240,30 @@ def new_product():
         else:
             default_acc = _get_account_id_by_code(cursor, org_id, "4000")
 
+        try:
+            figures = _product_price_and_stock(request.form)
+        except ValueError as error:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return render_template(
+                "sales/new_product.html",
+                uom_choices=UOM_CHOICES,
+                accounts=_get_revenue_accounts(org_id),
+                error=str(error),
+            )
+
         cursor.execute("""
-            INSERT INTO products (organization_id, name, unit, default_account_id)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO products (organization_id, name, unit, default_account_id,
+                                  sales_price, on_hand)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """, (
             org_id,
             request.form["name"].strip(),
             request.form.get("unit", "Units"),
             default_acc,
+            figures["sales_price"],
+            figures["on_hand"],
         ))
         conn.commit()
         cursor.close()
@@ -136,6 +274,7 @@ def new_product():
         "sales/new_product.html",
         uom_choices=UOM_CHOICES,
         accounts=_get_revenue_accounts(org_id),
+        error=None,
     )
 
 
@@ -522,3 +661,60 @@ def post_sales_invoice(sales_invoice_id):
     cursor.close()
     conn.close()
     return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+
+# ---------------------------------------------------------------------
+# The print page of one sales invoice
+#
+# The same frame as the vendor bill print (templates/vendors/print/
+# _print_base.html), so both kinds of document come out of the printer
+# looking like the same paperwork.
+# ---------------------------------------------------------------------
+
+@bp.route("/invoices/<int:sales_invoice_id>/print")
+@require_organization
+def sales_invoice_print(sales_invoice_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT si.sales_invoice_id, si.invoice_no, c.name, c.address, c.city, c.ntn,
+               si.invoice_date, si.due_date, si.delivery_date, si.status, si.payment_terms,
+               si.lc_reference, si.journal_name
+        FROM sales_invoices si
+        JOIN customers c ON c.customer_id = si.customer_id
+        WHERE si.sales_invoice_id = %s AND si.organization_id = %s
+    """, (sales_invoice_id, org_id))
+    invoice = cursor.fetchone()
+    if not invoice:
+        cursor.close()
+        conn.close()
+        abort(404)
+
+    cursor.execute("""
+        SELECT p.name, sil.label, coa.code, coa.name, sil.unit, sil.quantity, sil.rate,
+               sil.discount_percent, sil.discount_amount, str.label, sil.tax_amount, sil.total
+        FROM sales_invoice_lines sil
+        LEFT JOIN products p ON p.product_id = sil.product_id
+        LEFT JOIN chart_of_accounts coa ON coa.account_id = sil.account_id
+        LEFT JOIN sales_tax_rates str ON str.sales_tax_rate_id = sil.sales_tax_rate_id
+        WHERE sil.sales_invoice_id = %s
+        ORDER BY sil.line_order, sil.sales_invoice_line_id
+    """, (sales_invoice_id,))
+    lines = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    total_gross = sum((to_decimal(line[5]) * to_decimal(line[6]) for line in lines), to_decimal(0))
+    total_discount = sum((to_decimal(line[8]) for line in lines), to_decimal(0))
+    total_tax = sum((to_decimal(line[10]) for line in lines), to_decimal(0))
+    grand_total = sum((to_decimal(line[11]) for line in lines), to_decimal(0))
+
+    return render_template(
+        "sales/print/sales_invoice_print.html",
+        invoice=invoice,
+        lines=lines,
+        total_gross=total_gross,
+        total_discount=total_discount,
+        total_tax=total_tax,
+        grand_total=grand_total,
+    )

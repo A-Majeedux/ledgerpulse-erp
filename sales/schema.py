@@ -87,6 +87,8 @@ def ensure_schema(cursor):
             organization_id INTEGER NOT NULL REFERENCES organizations(organization_id),
             name VARCHAR(150) NOT NULL,
             unit VARCHAR(20) NOT NULL DEFAULT 'Units',
+            sales_price NUMERIC(15, 2) DEFAULT 0,
+            on_hand NUMERIC(15, 3) DEFAULT 0,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -101,6 +103,12 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS name VARCHAR(150) NOT NULL DEFAULT ''")
     cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS unit VARCHAR(20) NOT NULL DEFAULT 'Units'")
     cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+    # The two figures his own products screen shows on every card: the price
+    # the product sells at, and how much of it is on hand. They are his to
+    # keep on the product itself until a stock ledger exists; nothing else
+    # reads them, so an untouched product behaves exactly as before.
+    cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS sales_price NUMERIC(15, 2) DEFAULT 0")
+    cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS on_hand NUMERIC(15, 3) DEFAULT 0")
 
     # -----------------------------------------------------------------
     # 2. Sales Tax Rates Master (separate from WHT tax_rates)

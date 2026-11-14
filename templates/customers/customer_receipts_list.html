@@ -6,16 +6,53 @@
   <h2 style="margin:0;">Customer Receipts</h2>
   <a href="{{ url_for('customers.new_customer_receipt') }}" class="lp-btn primary">+ New Receipt</a>
 </div>
+
+<div style="display:flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--lp-border);">
+  <a href="{{ url_for('customers.customer_receipts_list') }}"
+     style="padding: 8px 16px; text-decoration: none; font-size: 14px; font-weight: 600;
+            {% if tab != 'cheques' %}color: var(--lp-text); border-bottom: 2px solid var(--lp-accent); margin-bottom: -1px;{% else %}color: var(--lp-text-muted);{% endif %}">
+    Receipts
+  </a>
+  <a href="{{ url_for('customers.customer_receipts_list', tab='cheques') }}"
+     style="padding: 8px 16px; text-decoration: none; font-size: 14px; font-weight: 600;
+            {% if tab == 'cheques' %}color: var(--lp-text); border-bottom: 2px solid var(--lp-accent); margin-bottom: -1px;{% else %}color: var(--lp-text-muted);{% endif %}">
+    Cheques{% if cheque_count %} <span class="lp-pill draft" style="margin-left: 4px;">{{ cheque_count }}</span>{% endif %}
+  </a>
+</div>
+
 <div class="lp-card">
   <table class="lp-table">
-    <thead><tr><th>Customer</th><th>Date</th><th class="amount">Amount</th><th>WHT</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Voucher Number</th>
+        <th>Customer</th>
+        <th>Date</th>
+        <th>Method</th>
+        <th>Cheque</th>
+        <th class="amount">Amount</th>
+        <th>WHT</th>
+      </tr>
+    </thead>
     <tbody>
       {% for r in receipts %}
       <tr onclick="window.location='{{ url_for('customers.customer_receipt_detail', customer_receipt_id=r[0]) }}'" style="cursor:pointer;">
+        <td style="font-weight:600;">{{ r[5] or '—' }}</td>
         <td>{{ r[1] }}</td>
         <td>{{ r[3].strftime('%d %b %Y') }}</td>
+        <td>{{ r[6] or 'Cash' }}</td>
+        <td>
+          {% if r[6] == 'Cheque' %}
+            {{ r[8] or '—' }}{% if r[9] %} <span style="color: var(--lp-text-muted);">({{ r[9].strftime('%d %b %Y') }})</span>{% endif %}
+          {% else %}—{% endif %}
+        </td>
         <td class="amount">{{ "%.2f"|format(r[2]) }}</td>
         <td>{% if r[4] %}<span class="lp-pill posted">Yes</span>{% else %}—{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" style="text-align:center; color: var(--lp-text-muted); padding: 30px;">
+          {% if tab == 'cheques' %}No cheques have been received yet.{% else %}No receipts recorded yet.{% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

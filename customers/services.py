@@ -679,11 +679,14 @@ CONTACT_TEXT_FIELDS = [
     ("country", "Country", 100),
 ]
 
-CONTACT_FORM_FIELDS = ["name"] + [field for field, _label, _max_length in CONTACT_TEXT_FIELDS]
+CONTACT_FORM_FIELDS = ["name", "address_type"] + [field for field, _label, _max_length in CONTACT_TEXT_FIELDS]
+
+# What a contact card IS - the three answers his own card offers.
+ADDRESS_TYPE_OPTIONS = ["Invoice Address", "Delivery Address", "Other"]
 
 # The columns a contact card writes. The name is one of them, so a contact
 # cannot be saved without one (clean_contact_form refuses it first).
-_SAVED_CONTACT_COLUMNS = ["name"] + [field for field, _label, _max_length in CONTACT_TEXT_FIELDS]
+_SAVED_CONTACT_COLUMNS = ["name", "address_type"] + [field for field, _label, _max_length in CONTACT_TEXT_FIELDS]
 
 CONTACT_COLUMNS = (["contact_id", "name"] + _SAVED_CONTACT_COLUMNS + ["is_primary"])
 _SELECT_CONTACT = "SELECT " + ", ".join(CONTACT_COLUMNS) + " FROM customer_contacts"
@@ -703,6 +706,11 @@ def clean_contact_form(form):
         problems.append(f"Contact name is too long (maximum {NAME_MAX_LENGTH} characters).")
     data["name"] = name
 
+    address_type = clean_line(form.get("address_type")) or "Other"
+    if address_type not in ADDRESS_TYPE_OPTIONS:
+        problems.append("Contact type must be Invoice Address, Delivery Address or Other.")
+    data["address_type"] = address_type
+
     for field, label, max_length in CONTACT_TEXT_FIELDS:
         text = clean_block(form.get(field)) if field == "street" else clean_line(form.get(field))
         if len(text) > max_length:
@@ -718,7 +726,9 @@ def clean_contact_form(form):
 
 
 def blank_contact_form():
-    return {field: "" for field in CONTACT_FORM_FIELDS}
+    values = {field: "" for field in CONTACT_FORM_FIELDS}
+    values["address_type"] = "Other"
+    return values
 
 
 def contact_form_from_contact(contact):
@@ -837,8 +847,63 @@ def delete_contact(cursor, organization_id, customer_id, contact_id):
 # is not in these three figures yet, and neither is anything to do with
 # foreign currency (there is none in the system).
 
+def _table_exists(cursor, name):
+    """Is this table in the database? Asked without ever raising, because the
+    vendor side of the books is made by another part of the program."""
+    cursor.execute("SELECT to_regclass(%s)", ("public." + name,))
+    return cursor.fetchone()[0] is not None
+
+
+def list_vendors_for_link(cursor, organization_id):
+    """The vendors this customer could be linked to: [(id, name)]."""
+    if not _table_exists(cursor, "vendors"):
+        return []
+    cursor.execute("""
+        SELECT vendor_id, name FROM vendors
+        WHERE organization_id = %s ORDER BY name
+    """, (organization_id,))
+    return [(row[0], row[1]) for row in cursor.fetchall()]
+
+
+def linked_vendor(cursor, organization_id, vendor_id):
+    """(vendor_id, name) of the linked vendor, or None."""
+    if not vendor_id or not _table_exists(cursor, "vendors"):
+        return None
+    cursor.execute("SELECT vendor_id, name FROM vendors WHERE vendor_id = %s AND organization_id = %s",
+                   (vendor_id, organization_id))
+    row = cursor.fetchone()
+    return (row[0], row[1]) if row else None
+
+
+def vendor_purchases(cursor, organization_id, vendor_id):
+    """What has been bought from that vendor: {'purchases', 'bills'}.
+
+    The figure is what the vendor bills written for him add up to - the same
+    lines the Purchases screen prints - and it is zero when the customer is
+    not linked to a vendor at all.
+    """
+    empty = {"purchases": money_round(0), "purchases_text": format_amount(0), "bills": 0}
+    if not vendor_id:
+        return empty
+    if not (_table_exists(cursor, "vendor_bills") and _table_exists(cursor, "vendor_bill_lines")):
+        return empty
+    cursor.execute("""
+        SELECT COUNT(DISTINCT bill.vendor_bill_id), COALESCE(SUM(line.total), 0)
+        FROM vendor_bills bill
+        LEFT JOIN vendor_bill_lines line ON line.vendor_bill_id = bill.vendor_bill_id
+        WHERE bill.organization_id = %s AND bill.vendor_id = %s
+    """, (organization_id, vendor_id))
+    bills, purchases = cursor.fetchone()
+    purchases = money_round(purchases or 0)
+    return {"purchases": purchases, "purchases_text": format_amount(purchases), "bills": bills or 0}
+
+
 def customer_totals(cursor, organization_id, customer_id):
-    """{'sales', 'invoiced', 'due', 'received', 'invoices', 'posted_invoices'} - all Decimal."""
+    """{'sales', 'invoiced', 'due', 'received', 'invoices', 'posted_invoices'} - all Decimal.
+
+    'purchases' and 'bills' come from the vendor this customer is linked to
+    (vendor_id); both are zero when he is not linked to one.
+    """
     cursor.execute("""
         SELECT COUNT(*) FILTER (WHERE status = 'Posted'),
                COUNT(*),
@@ -872,6 +937,14 @@ def customer_totals(cursor, organization_id, customer_id):
     # the same figures ready to be written on the card
     for key in ("sales", "invoiced", "received", "due"):
         totals[key + "_text"] = format_amount(totals[key])
+
+    # What the customer buys FROM US is above; what we buy from him is here,
+    # read from the vendor he is linked to.
+    cursor.execute("SELECT vendor_id FROM customers WHERE customer_id = %s AND organization_id = %s",
+                   (customer_id, organization_id))
+    row = cursor.fetchone()
+    totals["vendor_id"] = row[0] if row else None
+    totals.update(vendor_purchases(cursor, organization_id, totals["vendor_id"]))
     return totals
 
 
@@ -1021,3 +1094,97 @@ def credit_position(totals, credit_limit):
         "room_text": format_amount(limit - due),
         "has_limit": limit > 0,
     }
+
+
+# -------------------------------------------------------------------------
+# The number on a customer receipt (his "Voucher Number")
+#
+# His own receipt screen shows a voucher number in the same shape as the
+# invoice numbers: letters, the year, and a running number that starts again
+# at 1 every year inside each company:
+#
+#     CPV / 2026 / 00001
+#      |     |       |
+#      |     |       +-- the running number in that company, that year
+#      |     +---------- the year of the receipt date
+#      +---------------- the letters a receipt voucher starts with
+#
+# Like an invoice number, it is given when the receipt is saved, never changes
+# afterwards, and is never used twice (a unique index holds that promise); the
+# receipts made before numbering existed get their numbers once, oldest first.
+# -------------------------------------------------------------------------
+
+RECEIPT_PREFIX = "CPV"
+RECEIPT_DIGITS = 5
+
+PAYMENT_TYPE_OPTIONS = ["Customer Payment", "Advance Payment", "Refund", "Other"]
+PAYMENT_METHOD_OPTIONS = ["Cash", "Cheque", "Bank Transfer", "Online Transfer", "Other"]
+
+
+def receipt_voucher_number(year, number):
+    """(2026, 42) -> 'CPV/2026/00042'."""
+    return f"{RECEIPT_PREFIX}/{year}/{int(number):0{RECEIPT_DIGITS}d}"
+
+
+def _last_receipt_number(cursor, organization_id, year):
+    cursor.execute("""
+        SELECT COALESCE(MAX(CAST(SPLIT_PART(voucher_no, '/', 3) AS INTEGER)), 0)
+        FROM customer_receipts
+        WHERE organization_id = %s AND voucher_no LIKE %s
+    """, (organization_id, f"{RECEIPT_PREFIX}/{year}/%"))
+    return cursor.fetchone()[0] or 0
+
+
+def next_receipt_voucher_number(cursor, organization_id, receipt_date):
+    if isinstance(receipt_date, str):
+        receipt_date = date.fromisoformat(receipt_date)
+    year = receipt_date.year
+    return receipt_voucher_number(year, _last_receipt_number(cursor, organization_id, year) + 1)
+
+
+def give_receipt_a_voucher_number(cursor, organization_id, customer_receipt_id, receipt_date):
+    """Write the receipt's voucher number. Returns it.
+
+    Two receipts saved in the same second can work out the same number; the
+    unique index refuses the second one and this simply takes the number after
+    it. The failed try is rolled back to its own savepoint, not the receipt.
+    """
+    import psycopg2
+    for _attempt in range(5):
+        number = next_receipt_voucher_number(cursor, organization_id, receipt_date)
+        cursor.execute("SAVEPOINT receipt_number")
+        try:
+            cursor.execute(
+                "UPDATE customer_receipts SET voucher_no = %s WHERE customer_receipt_id = %s",
+                (number, customer_receipt_id))
+            cursor.execute("RELEASE SAVEPOINT receipt_number")
+            return number
+        except psycopg2.errors.UniqueViolation:
+            cursor.execute("ROLLBACK TO SAVEPOINT receipt_number")
+    raise RuntimeError("Could not give the receipt a voucher number - please try again.")
+
+
+def number_missing_receipts(cursor):
+    """Give a voucher number to every receipt that has none, oldest first."""
+    cursor.execute("""
+        SELECT customer_receipt_id, organization_id, receipt_date
+        FROM customer_receipts
+        WHERE voucher_no IS NULL
+        ORDER BY organization_id, receipt_date, customer_receipt_id
+    """)
+    numbered = 0
+    for customer_receipt_id, organization_id, receipt_date in cursor.fetchall():
+        give_receipt_a_voucher_number(cursor, organization_id, customer_receipt_id, receipt_date)
+        numbered += 1
+    return numbered
+
+
+def clean_date(text):
+    """A date box as the browser sends it. Empty means none; nonsense is refused."""
+    text = (text or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        raise ValueError("Please give a real date.")

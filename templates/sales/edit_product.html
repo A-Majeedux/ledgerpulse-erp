@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ product[1] }}{% endblock %}
+{% block active_nav %}products{% endblock %}
+{% block content %}
+<div class="lp-card" style="max-width: 560px;">
+  <h2 style="margin-top:0;">{{ product[1] }}</h2>
+
+  {% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+  {% endif %}
+
+  <form method="POST">
+    {{ csrf_field() }}
+    <label style="font-size: 13px; font-weight: 600;">Product Name</label>
+    <input type="text" name="name" required value="{{ product[1] }}" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+
+    <label style="font-size: 13px; font-weight: 600;">Unit of Measure</label>
+    <select name="unit" required style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      {% for uom in uom_choices %}
+        <option value="{{ uom }}" {% if uom == product[2] %}selected{% endif %}>{{ uom }}</option>
+      {% endfor %}
+    </select>
+
+    <div style="display:flex; gap: 12px;">
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">Price (Rs)</label>
+        <input type="text" name="sales_price" inputmode="decimal" value="{{ '%.2f'|format(product[5] or 0) }}"
+               style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+      <div style="flex:1;">
+        <label style="font-size: 13px; font-weight: 600;">On hand ({{ product[2] }})</label>
+        <input type="text" name="on_hand" inputmode="decimal" value="{{ (product[6] or 0) | fmt_qty_print }}"
+               style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      </div>
+    </div>
+    <p style="font-size: 12px; color: var(--lp-text-muted); margin-top: -10px; margin-bottom: 16px;">
+      The price this product sells at, and how much of it you have. Invoices you have already saved keep their own rates.
+    </p>
+
+    <label style="font-size: 13px; font-weight: 600;">Default Revenue Account</label>
+    <select name="default_account_id" style="width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px;">
+      <option value="">Default (4000 - Sales Revenue)</option>
+      {% for acc in accounts %}
+        <option value="{{ acc[0] }}" {% if product[3] == acc[0] %}selected{% endif %}>{{ acc[1] }} — {{ acc[2] }}</option>
+      {% endfor %}
+    </select>
+
+    <label style="display:flex; align-items:center; gap:8px; font-size: 13px; font-weight: 600; margin-bottom: 20px;">
+      <input type="checkbox" name="is_active" {% if product[4] %}checked{% endif %}>
+      Active (an inactive product is not offered on new invoices)
+    </label>
+
+    <button type="submit" class="lp-btn primary">Save Changes</button>
+    <a href="{{ url_for('sales.products_list') }}" class="lp-btn" style="margin-left: 8px;">Back to Products</a>
+  </form>
+</div>
+{% endblock %}

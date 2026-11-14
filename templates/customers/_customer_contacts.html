@@ -57,6 +57,11 @@
               <strong>{{ contact.name }}</strong>
               {% if contact.job_position %}<span class="lp-contact-role">{{ contact.job_position }}</span>{% endif %}
             </div>
+            {% if contact.address_type and contact.address_type != 'Other' %}
+              <span class="lp-pill {{ 'posted' if contact.address_type == 'Invoice Address' else 'draft' }}">{{ contact.address_type }}</span>
+            {% elif contact.address_type %}
+              <span class="lp-pill draft">{{ contact.address_type }}</span>
+            {% endif %}
             {% if contact.is_primary %}<span class="lp-pill posted">Primary</span>{% endif %}
           </div>
           <div class="lp-contact-body">

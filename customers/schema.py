@@ -118,6 +118,28 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS wht_rate NUMERIC(5, 2)")
     cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS wht_amount NUMERIC(14, 2) DEFAULT 0")
     cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS journal_header_id INTEGER REFERENCES journal_headers(journal_header_id)")
+    # The boxes his own receipt screen has above the amount: which kind of
+    # payment this is, which journal it was written in, the voucher number the
+    # screen shows, how the money came in, and - for a cheque - the cheque's
+    # own details (the "Cheques" tab). All of them optional, so a receipt
+    # saved before this version still opens exactly as it did.
+    cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS payment_type VARCHAR(50) DEFAULT 'Customer Payment'")
+    cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS journal_name VARCHAR(100)")
+    cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS voucher_no VARCHAR(30)")
+    cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS payment_method VARCHAR(30) DEFAULT 'Cash'")
+    cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS cheque_no VARCHAR(50)")
+    cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS cheque_bank VARCHAR(150)")
+    cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS cheque_date DATE")
+    # One voucher number per company, never twice (customers/services.py).
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS customer_receipts_voucher_no_key
+        ON customer_receipts (organization_id, voucher_no)
+        WHERE voucher_no IS NOT NULL
+    """)
+    # A voucher number for the receipts made before numbering existed - once,
+    # oldest first (customers/services.py).
+    from customers.services import number_missing_receipts
+    number_missing_receipts(cursor)
 
     # The people and addresses kept under a customer - the "Contacts &
     # Addresses" tab of his own customer form. One customer may have many;
@@ -142,10 +164,22 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS zip_code VARCHAR(20)")
     cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS country VARCHAR(100)")
     cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT FALSE")
+    # What a contact IS: the address an invoice goes to, the address goods are
+    # delivered to, or just another person/place kept on file. His own contact
+    # card has the same three answers.
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS address_type VARCHAR(30) DEFAULT 'Other'")
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS customer_contacts_of_customer
         ON customer_contacts (organization_id, customer_id)
     """)
+
+    # The vendor behind this customer, when he is both: a customer bought
+    # from, and a vendor we buy from. Only the Purchases figure of the card
+    # reads it, and it is empty on every customer that is not linked, so
+    # nothing about an unlinked customer changes. No foreign key: the vendors
+    # table is made by another part of the program and may not exist yet when
+    # this runs.
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS vendor_id INTEGER")
 
     # WHT Receivable accounts - the asset-side mirror of the WHT Payable
     # accounts seeded in vendors/schema.py.
