@@ -12,23 +12,56 @@
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
+      {% if not source_document %}
       <form method="POST" action="{{ url_for('accounting.post_journal_entry_route', journal_header_id=header[0]) }}" style="display:inline;">
+        {{ csrf_field() }}
         <button type="submit" class="lp-btn primary">Post</button>
       </form>
+      {% endif %}
+    {% endif %}
+    {% if source_document and source_document.url %}
+      <a href="{{ source_document.url }}" class="lp-btn">Open {{ source_document.label }}</a>
     {% endif %}
   </div>
 </div>
 
+{% if source_document and header[4] != 'Posted' %}
+<p style="background: var(--lp-amber-bg); color: var(--lp-amber-text); padding: 10px 12px; border-radius: 8px; margin: 0 0 16px; font-size: 14px;">
+  This draft entry belongs to a {{ source_document.label }}. It is posted automatically when you post the {{ source_document.label }} - it cannot be posted from here.
+</p>
+{% endif %}
+
 <div class="lp-card">
+  <div class="lp-table-scroll">
   <table class="lp-table">
     <thead>
-      <tr><th>Account</th><th>Partner</th><th>Label</th><th class="amount">Debit</th><th class="amount">Credit</th></tr>
+      <tr><th>General account</th><th>Partner account</th><th>Label</th><th class="amount">Debit</th><th class="amount">Credit</th></tr>
     </thead>
     <tbody>
+      {# line = (account code, account name, partner name, label, debit, credit, account kind)
+         A line sits in the SAME column it was picked from on the entry form:
+         a customer / vendor line and a director / employee account under
+         Partner account, every other account under General account. #}
       {% for line in lines %}
-      <tr>
-        <td>{{ line[0] }} — {{ line[1] }}</td>
-        <td>{{ line[2] or '—' }}</td>
+      <tr data-line-kind="{{ line[6] }}">
+        {% if line[6] in trade_partner_kinds %}
+          <td class="lp-entry-none">—</td>
+          <td data-column="partner">
+            {{ line[2] or 'No partner named' }}
+            <small class="lp-entry-note">{{ 'Customer' if line[6] == trade_receivable_kind else 'Vendor' }} · posted to {{ line[0] }} — {{ line[1] }}</small>
+          </td>
+        {% elif line[6] in non_trading_partner_kinds %}
+          <td class="lp-entry-none">—</td>
+          <td data-column="partner">
+            {{ line[0] }} — {{ line[1] }}
+            <small class="lp-entry-note">{{ line[6] }}</small>
+          </td>
+        {% else %}
+          <td data-column="general">{{ line[0] }} — {{ line[1] }}</td>
+          {# a general line can still carry the name of the partner the
+             document was for (the bank line of a vendor payment, say) #}
+          <td class="lp-entry-none">{{ line[2] or '—' }}</td>
+        {% endif %}
         <td>{{ line[3] or '—' }}</td>
         <td class="amount">{{ "%.2f"|format(line[4]) if line[4] else '' }}</td>
         <td class="amount">{{ "%.2f"|format(line[5]) if line[5] else '' }}</td>
@@ -41,5 +74,6 @@
       </tr>
     </tbody>
   </table>
+  </div>
 </div>
 {% endblock %}

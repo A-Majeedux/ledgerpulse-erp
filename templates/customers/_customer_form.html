@@ -1,0 +1,107 @@
+{# The boxes of the customer card - shared by New Customer and Edit Customer.
+
+   values       what every box shows (text)
+   problems     what was wrong with the form that was just refused (may be empty)
+   limits       the longest text each box accepts
+   suggestions  values this organization's other customers already use,
+                offered while typing (Region, Territory, the categories, ...)
+   customer     the saved customer            (Edit only)
+   name_locked  why the name cannot be changed (Edit only, else nothing) #}
+{% set label_style = "font-size: 13px; font-weight: 600;" %}
+{% set box_style = "width:100%; padding:8px; margin: 6px 0 16px; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit; font-size:14px;" %}
+{% set part_style = "width:100%; padding:8px; margin: 6px 0 0; border:1px solid var(--lp-border); border-radius:6px; font-family:inherit; font-size:14px;" %}
+{% set note_style = "font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: -10px 0 16px;" %}
+
+{% macro text_box(field, label, type="text", suggest=false) %}
+  <label for="c-{{ field }}" style="{{ label_style }}">{{ label }}</label>
+  <input type="{{ type }}" id="c-{{ field }}" name="{{ field }}" value="{{ values[field] }}" maxlength="{{ limits[field] }}"
+         {% if suggest %}list="c-{{ field }}-list" autocomplete="off"{% endif %} style="{{ box_style }}">
+  {% if suggest %}
+    <datalist id="c-{{ field }}-list">{% for option in suggestions[field] %}<option value="{{ option }}">{% endfor %}</datalist>
+  {% endif %}
+{% endmacro %}
+
+{% if problems %}
+  <div style="background: var(--lp-coral-bg); color: var(--lp-coral-text); padding: 12px; border-radius: 8px; margin-bottom: 16px;">
+    {% if problems|length == 1 %}
+      {{ problems[0] }}
+    {% else %}
+      <strong>Nothing was saved. Please correct these {{ problems|length }} things:</strong>
+      <ul style="margin: 6px 0 0; padding-left: 20px;">{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+{% endif %}
+
+<div style="display:flex; gap:20px; align-items:center; flex-wrap:wrap; margin-bottom: 12px;">
+  <label style="font-size:14px; display:flex; align-items:center; gap:6px;">
+    <input type="radio" name="partner_type" value="person" {{ 'checked' if values.partner_type == 'person' }}> Person
+  </label>
+  <label style="font-size:14px; display:flex; align-items:center; gap:6px;">
+    <input type="radio" name="partner_type" value="company" {{ 'checked' if values.partner_type != 'person' }}> Company
+  </label>
+</div>
+
+<label for="c-name" style="{{ label_style }}">Customer name</label>
+<input type="text" id="c-name" name="name" value="{{ values.name }}" maxlength="{{ limits.name }}" required
+       {% if name_locked %}readonly{% endif %}
+       style="{{ box_style }} font-size:18px; font-weight:600;{% if name_locked %} background:#f7faf9;{% endif %}">
+{% if name_locked %}<p style="{{ note_style }}">{{ name_locked }}</p>{% endif %}
+
+<div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 32px;">
+  <div>
+    {{ text_box("email", "Email", type="email") }}
+    {{ text_box("phone", "Phone", type="tel") }}
+
+    <label for="c-address" style="{{ label_style }}">Address</label>
+    <textarea id="c-address" name="address" rows="2" maxlength="{{ limits.address }}" placeholder="Street" aria-label="Street"
+              style="{{ part_style }}">{{ values.address }}</textarea>
+    <input type="text" name="street2" value="{{ values.street2 }}" maxlength="{{ limits.street2 }}" placeholder="Street 2" aria-label="Street 2" style="{{ part_style }}">
+    <div style="display:flex; gap:8px;">
+      <input type="text" name="city" value="{{ values.city }}" maxlength="{{ limits.city }}" placeholder="City" aria-label="City" list="c-city-list" autocomplete="off" style="{{ part_style }} flex:2; min-width:0;">
+      <input type="text" name="state" value="{{ values.state }}" maxlength="{{ limits.state }}" placeholder="State" aria-label="State" list="c-state-list" autocomplete="off" style="{{ part_style }} flex:2; min-width:0;">
+      <input type="text" name="zip_code" value="{{ values.zip_code }}" maxlength="{{ limits.zip_code }}" placeholder="ZIP" aria-label="ZIP" style="{{ part_style }} flex:1; min-width:0;">
+    </div>
+    <input type="text" name="country" value="{{ values.country }}" maxlength="{{ limits.country }}" placeholder="Country" aria-label="Country" list="c-country-list" autocomplete="off" style="{{ part_style }} margin-bottom:16px;">
+    {% for field in ("city", "state", "country") %}
+      <datalist id="c-{{ field }}-list">{% for option in suggestions[field] %}<option value="{{ option }}">{% endfor %}</datalist>
+    {% endfor %}
+
+    {{ text_box("region", "Region", suggest=true) }}
+    {{ text_box("territory", "Territory", suggest=true) }}
+    {{ text_box("lic_number", "LIC Number") }}
+
+    <label for="c-lic_expiry_date" style="{{ label_style }}">LIC Expiry Date</label>
+    <input type="date" id="c-lic_expiry_date" name="lic_expiry_date" value="{{ values.lic_expiry_date }}" min="1900-01-01" max="2200-12-31" style="{{ box_style }}">
+  </div>
+
+  <div>
+    <label style="{{ label_style }}">ID</label>
+    <div style="{{ box_style }} border-color: transparent; padding-left: 0;">
+      {% if customer %}<strong>{{ customer.customer_no }}</strong>{% else %}<span style="color: var(--lp-text-muted);">Given automatically when you save</span>{% endif %}
+    </div>
+
+    {{ text_box("ntn", "NTN") }}
+    {{ text_box("category_parent", "Category Parent", suggest=true) }}
+    {{ text_box("cnic", "CNIC") }}
+    {{ text_box("strn", "STRN") }}
+    {{ text_box("category", "Category", suggest=true) }}
+
+    <label for="c-nature_of_supply" style="{{ label_style }}">Nature of supply</label>
+    <select id="c-nature_of_supply" name="nature_of_supply" style="{{ box_style }}">
+      {% for option in nature_options %}<option value="{{ option }}" {{ 'selected' if values.nature_of_supply == option }}>{{ option }}</option>{% endfor %}
+    </select>
+    <p style="{{ note_style }}">Decides which WHT Receivable ledger applies if this customer withholds tax on their payment - not a tax rate.</p>
+
+    <label for="c-credit_limit" style="{{ label_style }}">Credit limit</label>
+    <input type="number" id="c-credit_limit" name="credit_limit" value="{{ values.credit_limit }}" step="0.01" min="0" max="999999999999.99" style="{{ box_style }}">
+
+    {% if customer %}
+      <label for="c-status" style="{{ label_style }}">Status</label>
+      <select id="c-status" name="status" style="{{ box_style }}">
+        <option value="active" {{ 'selected' if values.status != 'inactive' }}>Active</option>
+        <option value="inactive" {{ 'selected' if values.status == 'inactive' }}>Inactive</option>
+      </select>
+      <p style="{{ note_style }}">An inactive customer keeps its history and its balance. It only stops being offered when you enter a new invoice, receipt or journal entry.</p>
+    {% endif %}
+  </div>
+</div>

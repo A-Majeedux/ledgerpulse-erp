@@ -5,7 +5,8 @@ Authentication routes: login, logout, and initial setup bootstrap.
 """
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, abort
-from core.db import get_conn
+from core.db import get_conn, seed_new_organization
+from organizations.schema import DEFAULT_ORGANIZATION_NAME
 from auth.services import (
     verify_password,
     hash_password,
@@ -127,15 +128,27 @@ def setup():
         user_id = cursor.fetchone()[0]
 
         # Check if an organization already exists (legacy), or create a new one
-        cursor.execute("SELECT organization_id FROM organizations ORDER BY organization_id LIMIT 1")
+        cursor.execute("SELECT organization_id, name FROM organizations ORDER BY organization_id LIMIT 1")
         org_row = cursor.fetchone()
         if org_row:
             org_id = org_row[0]
+            # The app creates a placeholder company called "My Organization"
+            # the very first time it starts (organizations/schema.py). If that
+            # placeholder is the one being handed to this administrator, give
+            # it the company name they just typed on the setup form. A company
+            # that already carries a real name of its own is never renamed.
+            if org_row[1] == DEFAULT_ORGANIZATION_NAME and org_name != DEFAULT_ORGANIZATION_NAME:
+                cursor.execute(
+                    "UPDATE organizations SET name = %s WHERE organization_id = %s",
+                    (org_name, org_id)
+                )
         else:
             cursor.execute("""
                 INSERT INTO organizations (name) VALUES (%s) RETURNING organization_id
             """, (org_name,))
             org_id = cursor.fetchone()[0]
+            # Starter Chart of Accounts, WHT accounts and tax rate lists
+            seed_new_organization(cursor, org_id)
             # Ensure subscription for new org
             cursor.execute("SELECT plan_id FROM subscription_plans LIMIT 1")
             plan_row = cursor.fetchone()

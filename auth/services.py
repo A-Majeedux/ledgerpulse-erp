@@ -56,6 +56,27 @@ def user_belongs_to_organization(user_id, organization_id):
     return bool(row)
 
 
+def add_organization_admin(cursor, organization_id, user_id):
+    """
+    Make a user an Admin member of an organization.
+
+    Uses the CALLER'S cursor (no commit here) so it becomes part of the same
+    transaction that created the organization: a company can never be saved
+    without its creator being able to open it afterwards.
+
+    Safe to call twice - an existing membership is left untouched.
+    """
+    cursor.execute("SELECT role_id FROM roles WHERE name = 'Admin'")
+    role_row = cursor.fetchone()
+    if not role_row:
+        raise RuntimeError("The 'Admin' role is missing from the roles table.")
+    cursor.execute("""
+        INSERT INTO organization_memberships (organization_id, user_id, role_id)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (organization_id, user_id) DO NOTHING
+    """, (organization_id, user_id, role_row[0]))
+
+
 from functools import wraps
 
 def require_platform_admin(f):

@@ -3,9 +3,13 @@ from decimal import Decimal
 from flask import Blueprint, render_template, request, redirect, url_for, abort
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
-from accounting.services import create_journal_entry, UnbalancedEntryError
-from wht.routes import get_active_tax_rates
+from accounting.services import (
+    create_journal_entry, JournalEntryError,
+    list_cash_and_bank_accounts, cash_or_bank_account_problem,
+)
+from wht.routes import get_active_tax_rates, pick_wht_rate
 from core.money import to_decimal, money_round
+from core.validation import ValidationError, parse_amount, parse_date
 
 bp = Blueprint("vendors", __name__, url_prefix="/vendors")
 
@@ -30,6 +34,16 @@ def _get_accounts(org_id):
         WHERE organization_id = %s AND is_active = TRUE ORDER BY code
     """, (org_id,))
     accounts = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return accounts
+
+
+def _get_cash_and_bank_accounts(org_id):
+    """The accounts a payment can be made from: active bank and cash accounts only."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    accounts = list_cash_and_bank_accounts(cursor, org_id)
     cursor.close()
     conn.close()
     return accounts
@@ -152,6 +166,31 @@ def new_vendor_bill():
                     conn.close()
                     abort(400)
 
+        # Check what was typed BEFORE anything is written, so a mistake comes
+        # back as a message on the form instead of a half-saved bill.
+        try:
+            bill_date = parse_date(request.form.get("bill_date"), "Bill Date")
+            line_count = 0
+            for i in range(len(account_ids)):
+                if not account_ids[i]:
+                    continue
+                line_count += 1
+                for column, values in (("quantity", quantities), ("rate", rates), ("total", totals)):
+                    typed = values[i].strip() if i < len(values) else ""
+                    if typed:
+                        parse_amount(typed, f"Line {line_count}: {column}", allow_zero=True)
+            if line_count == 0:
+                raise ValidationError("Add at least one line (with an account) before saving the bill.")
+        except ValidationError as error:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return render_template(
+                "vendors/new_vendor_bill.html",
+                vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
+                error=str(error), today=date.today().isoformat(),
+            )
+
         cursor.execute("""
             INSERT INTO vendor_bills
                 (organization_id, vendor_id, bill_date, due_date, payment_terms, journal_name)
@@ -160,7 +199,7 @@ def new_vendor_bill():
         """, (
             org_id,
             vendor_id,
-            request.form["bill_date"],
+            bill_date,
             request.form.get("due_date") or None,
             request.form.get("payment_terms", "").strip() or None,
             request.form.get("journal_name", "Expenses").strip(),
@@ -207,7 +246,7 @@ def new_vendor_bill():
             journal_header_id = create_journal_entry(
                 cursor, organization_id=org_id,
                 reference=f"Vendor Bill - {vendor_name}",
-                accounting_date=request.form["bill_date"],
+                accounting_date=bill_date,
                 journal_name=request.form.get("journal_name", "Expenses").strip(),
                 lines=je_lines, source_type="VendorBill", source_id=vendor_bill_id,
                 auto_post=False,
@@ -217,7 +256,7 @@ def new_vendor_bill():
                 (journal_header_id, vendor_bill_id)
             )
             conn.commit()
-        except UnbalancedEntryError as error:
+        except JournalEntryError as error:
             conn.rollback()
             cursor.close()
             conn.close()
@@ -286,7 +325,7 @@ def post_vendor_bill(vendor_bill_id):
         post_journal_entry(cursor, journal_header_id)
         cursor.execute("UPDATE vendor_bills SET status = 'Posted' WHERE vendor_bill_id = %s", (vendor_bill_id,))
         conn.commit()
-    except UnbalancedEntryError:
+    except JournalEntryError:
         conn.rollback()
     cursor.close()
     conn.close()
@@ -323,7 +362,14 @@ def new_vendor_payment():
 
     if request.method == "POST":
         vendor_id = int(request.form["vendor_id"])
-        paid_from_account_id = int(request.form["paid_from_account_id"])
+        # None when the box was left empty (or holds something that is not an
+        # account number) - answered with a message further down.
+        raw_paid_from = (request.form.get("paid_from_account_id") or "").strip()
+        paid_from_account_id = (
+            int(raw_paid_from)
+            if raw_paid_from.isascii() and raw_paid_from.isdigit() and len(raw_paid_from) <= 9
+            else None
+        )
 
         conn = get_conn()
         cursor = conn.cursor()
@@ -334,21 +380,59 @@ def new_vendor_payment():
             cursor.close()
             conn.close()
             abort(400)
-        cursor.execute("SELECT 1 FROM chart_of_accounts WHERE account_id = %s AND organization_id = %s", (paid_from_account_id, org_id))
-        if not cursor.fetchone():
+        if paid_from_account_id is not None:
+            cursor.execute("SELECT 1 FROM chart_of_accounts WHERE account_id = %s AND organization_id = %s", (paid_from_account_id, org_id))
+            if not cursor.fetchone():
+                conn.rollback()
+                cursor.close()
+                conn.close()
+                abort(400)
+
+        # Check what was typed BEFORE anything is written, so a mistake comes
+        # back as a message on the form instead of a wrong posted payment.
+        try:
+            # A payment leaves the business through a bank or cash account -
+            # never through an expense, a tax ledger or a partner account.
+            if paid_from_account_id is None:
+                raise ValidationError("Paid from account: choose one of this company's bank or cash accounts.")
+            account_problem = cash_or_bank_account_problem(cursor, org_id, paid_from_account_id, "Paid from account")
+            if account_problem:
+                raise ValidationError(account_problem)
+            base_amount = parse_amount(request.form.get("amount"), "Amount")
+            payment_date = parse_date(request.form.get("payment_date"), "Date")
+            has_wht = "has_wht" in request.form
+            # The rate must be one of this organization's active rates on the
+            # Tax Rates screen - never a free-typed or left-blank figure.
+            wht_rate = pick_wht_rate(org_id, request.form.get("wht_rate")) if has_wht else None
+            payment_method = request.form.get("payment_method", "Manual")
+            if payment_method not in PAYMENT_METHODS:
+                raise ValidationError("Payment method must be Manual or Cheque.")
+            if payment_method == "Cheque":
+                cheque_number = request.form.get("cheque_number", "").strip() or None
+                if not cheque_number:
+                    raise ValidationError("Enter the cheque number for a cheque payment.")
+                cheque_date = (
+                    parse_date(request.form.get("cheque_date"), "Cheque date")
+                    if request.form.get("cheque_date") else None
+                )
+            else:
+                # The cheque boxes are hidden for a non-cheque payment; anything
+                # still sitting in them must not be stored against it.
+                cheque_number = None
+                cheque_date = None
+        except ValidationError as error:
             conn.rollback()
             cursor.close()
             conn.close()
-            abort(400)
+            return render_template(
+                "vendors/new_vendor_payment.html",
+                vendors=_get_vendors(org_id), accounts=_get_cash_and_bank_accounts(org_id),
+                tax_rates=get_active_tax_rates(org_id),
+                error=str(error), today=date.today().isoformat(),
+            )
 
-        base_amount = to_decimal(request.form["amount"])
-        has_wht = "has_wht" in request.form
-        wht_rate = to_decimal(request.form.get("wht_rate") or 0) if has_wht else None
         wht_amount = money_round(base_amount * (wht_rate / Decimal("100"))) if has_wht and wht_rate else to_decimal(0)
         net_amount = base_amount - wht_amount
-        payment_method = request.form.get("payment_method", "Manual")
-        cheque_number = request.form.get("cheque_number", "").strip() or None
-        cheque_date = request.form.get("cheque_date") or None
 
         cursor.execute("SELECT name, nature_of_purchase FROM vendors WHERE vendor_id = %s", (vendor_id,))
         vendor_name, nature_of_purchase = cursor.fetchone()
@@ -386,7 +470,7 @@ def new_vendor_payment():
             journal_header_id = create_journal_entry(
                 cursor, organization_id=org_id,
                 reference=f"Vendor Payment - {vendor_name}",
-                accounting_date=request.form["payment_date"],
+                accounting_date=payment_date,
                 journal_name="Vendor Payments",
                 lines=je_lines, source_type="VendorPayment", auto_post=True,
             )
@@ -399,20 +483,20 @@ def new_vendor_payment():
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING vendor_payment_id
             """, (
-                org_id, vendor_id, base_amount, request.form["payment_date"],
+                org_id, vendor_id, base_amount, payment_date,
                 request.form.get("memo", "").strip() or None, paid_from_account_id,
                 payment_method, cheque_number, cheque_date, has_wht, wht_rate,
                 wht_amount, journal_header_id,
             ))
             vendor_payment_id = cursor.fetchone()[0]
             conn.commit()
-        except (UnbalancedEntryError, ValueError) as error:
+        except (JournalEntryError, ValueError) as error:
             conn.rollback()
             cursor.close()
             conn.close()
             return render_template(
                 "vendors/new_vendor_payment.html",
-                vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
+                vendors=_get_vendors(org_id), accounts=_get_cash_and_bank_accounts(org_id),
                 tax_rates=get_active_tax_rates(org_id),
                 error=str(error), today=date.today().isoformat(),
             )
@@ -423,7 +507,7 @@ def new_vendor_payment():
 
     return render_template(
         "vendors/new_vendor_payment.html",
-        vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
+        vendors=_get_vendors(org_id), accounts=_get_cash_and_bank_accounts(org_id),
         tax_rates=get_active_tax_rates(org_id),
         error=None, today=date.today().isoformat(),
     )

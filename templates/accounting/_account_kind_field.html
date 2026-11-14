@@ -1,0 +1,33 @@
+{# The "Kind" box, shared by the New Account and Edit Account screens.
+   Expects:
+     kinds          the kinds to offer (Edit), or nothing (New: every kind a
+                    user may set; the page's script narrows them to the Type)
+     selected_kind  the kind to show as picked
+   What each kind means is written once, here. #}
+{% set kind_help = {
+  'General': 'Offered in the General account column of a journal entry. Use it for revenue, expenses, tax, equity and any other ordinary account.',
+  'Bank': 'A bank account. Offered as "Paid from" on vendor payments and "Deposit to" on customer receipts, and counted in Cash & bank on the dashboard.',
+  'Cash': 'Cash in hand or petty cash. Offered as "Paid from" on vendor payments and "Deposit to" on customer receipts, and counted in Cash & bank on the dashboard.',
+  'Non-trading receivable': 'ONE person who owes the business outside normal trade - for example an advance or loan to an employee or a director. Create one account per person. Picked in the Partner account column of a journal entry.',
+  'Non-trading payable': 'ONE person the business owes outside normal trade - for example a loan from a director, or salary payable to an employee. Create one account per person. Picked in the Partner account column of a journal entry.',
+  'Trade receivable': 'The account all customers share. On a journal entry the customer is picked by name and the line lands here.',
+  'Trade payable': 'The account all vendors share. On a journal entry the vendor is picked by name and the line lands here.',
+} %}
+{% set offered = kinds if kinds is defined and kinds else ['General', 'Bank', 'Cash', 'Non-trading receivable', 'Non-trading payable'] %}
+{% set picked = (form.account_kind if form and form.account_kind else selected_kind) or 'General' %}
+
+<label for="account_kind" style="font-size: 13px; font-weight: 600;">Kind</label>
+<select name="account_kind" id="account_kind" style="width:100%; padding:8px; margin: 6px 0 6px; border:1px solid var(--lp-border); border-radius:6px;">
+  {% for k in offered %}<option value="{{ k }}" data-help="{{ kind_help.get(k, '') }}" {{ 'selected' if picked == k }}>{{ k }}</option>{% endfor %}
+</select>
+<p id="account_kind_help" style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 0 0 16px;">{{ kind_help.get(picked, '') }}</p>
+<script>
+(function () {
+  const kind = document.getElementById('account_kind');
+  const help = document.getElementById('account_kind_help');
+  kind.addEventListener('change', () => {
+    const option = kind.selectedOptions[0];
+    help.textContent = option ? option.dataset.help : '';
+  });
+})();
+</script>

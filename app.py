@@ -2,7 +2,7 @@ import os
 from flask import Flask, session, redirect, url_for, request, render_template, abort
 from markupsafe import Markup
 
-from core.db import ensure_all_schemas, get_conn
+from core.db import ensure_all_schemas, register_organization_seeders, get_conn
 from core.template_context import register_context_processors
 
 from auth.schema import ensure_schema as auth_schema
@@ -12,19 +12,19 @@ from auth.services import generate_csrf_token, validate_csrf, check_subscription
 from organizations.schema import ensure_schema as organizations_schema
 from organizations.routes import bp as organizations_bp
 
-from accounting.schema import ensure_schema as accounting_schema
+from accounting.schema import ensure_schema as accounting_schema, seed_organization as accounting_seed
 from accounting.routes import bp as accounting_bp
 
-from vendors.schema import ensure_schema as vendors_schema
+from vendors.schema import ensure_schema as vendors_schema, seed_organization as vendors_seed
 from vendors.routes import bp as vendors_bp
 
-from wht.schema import ensure_schema as wht_schema
+from wht.schema import ensure_schema as wht_schema, seed_organization as wht_seed
 from wht.routes import bp as wht_bp
 
-from customers.schema import ensure_schema as customers_schema
+from customers.schema import ensure_schema as customers_schema, seed_organization as customers_seed
 from customers.routes import bp as customers_bp
 
-from sales.schema import ensure_schema as sales_schema
+from sales.schema import ensure_schema as sales_schema, seed_organization as sales_seed
 from sales.routes import bp as sales_bp
 
 from dashboard.routes import bp as dashboard_bp
@@ -44,16 +44,32 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("FLASK_ENV") == "production"
 
 # --- 1. Make sure every table exists in dependency order ---
+# ORDER MATTERS: a table must exist before another table can point at it.
+# organizations comes first because every other segment (including auth's
+# memberships / subscriptions / audit log) has a foreign key to it. On a
+# brand-new empty database, creating auth first fails with
+# 'relation "organizations" does not exist'.
 if os.getenv("TESTING") != "true" and os.getenv("FLASK_ENV") != "testing":
     ensure_all_schemas([
-        auth_schema,
         organizations_schema,
+        auth_schema,
         accounting_schema,
         wht_schema,
         vendors_schema,
         customers_schema,
         sales_schema,
     ])
+
+# Starter data (Chart of Accounts, WHT accounts, tax rate lists) for a
+# company created later through "New Organization". Same order as the
+# schema list above; accounting MUST stay first (see core/db.py).
+register_organization_seeders([
+    accounting_seed,
+    wht_seed,
+    vendors_seed,
+    customers_seed,
+    sales_seed,
+])
 
 # --- 2. Register blueprints ---
 app.register_blueprint(auth_bp)

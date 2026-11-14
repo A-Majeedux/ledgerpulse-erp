@@ -2,7 +2,7 @@
 {% block title %}New Journal Entry{% endblock %}
 {% block active_nav %}journals{% endblock %}
 {% block content %}
-<div class="lp-card" style="max-width: 900px;">
+<div class="lp-card lp-entry">
   <h2 style="margin-top:0;">New Journal Entry</h2>
 
   {% if error %}
@@ -12,40 +12,50 @@
   {% endif %}
 
   <form method="POST" id="je-form">
-    <div style="display:flex; gap:16px; margin-bottom: 20px;">
-      <div style="flex:1;">
+    {{ csrf_field() }}
+    <div style="display:flex; gap:16px; margin-bottom: 20px; flex-wrap: wrap;">
+      <div style="flex:1; min-width: 180px;">
         <label style="font-size: 13px; font-weight: 600;">Reference</label>
         <input type="text" name="reference" value="{{ form.reference if form else '' }}" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
       </div>
-      <div style="flex:1;">
+      <div style="flex:1; min-width: 180px;">
         <label style="font-size: 13px; font-weight: 600;">Accounting Date</label>
         <input type="date" name="accounting_date" value="{{ form.accounting_date if form else today }}" required style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
       </div>
-      <div style="flex:1;">
+      <div style="flex:1; min-width: 180px;">
         <label style="font-size: 13px; font-weight: 600;">Journal</label>
         <input type="text" name="journal_name" value="{{ form.journal_name if form else 'Miscellaneous Operations' }}" style="width:100%; padding:8px; margin-top:6px; border:1px solid var(--lp-border); border-radius:6px;">
       </div>
     </div>
 
-    <table class="lp-table" id="lines-table">
-      <thead>
-        <tr>
-          <th style="width:20%;">Account</th>
-          <th style="width:15%;">Partner</th>
-          <th style="width:25%;">Label</th>
-          <th style="width:13%;">Debit</th>
-          <th style="width:13%;">Credit</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="lines-body">
-        <!-- rows added by JS, two blank rows to start -->
-      </tbody>
-    </table>
+    <p class="lp-entry-help">
+      Each line goes to <strong>one</strong> account. Pick a <strong>General account</strong>
+      (revenue, expenses, bank, cash, tax, equity) <strong>or</strong> a <strong>Partner account</strong>
+      (a customer, a vendor, or a director / employee account) &mdash; not both.
+      A customer or vendor is picked by name; the line is posted to Trade Receivables or Trade Creditors for you.
+    </p>
+
+    <div class="lp-table-scroll">
+      <table class="lp-table lp-entry-grid" id="lines-table">
+        <thead>
+          <tr>
+            <th style="width:26%;">General account</th>
+            <th style="width:26%;">Partner account</th>
+            <th style="width:20%;">Label</th>
+            <th style="width:12%;" class="amount">Debit</th>
+            <th style="width:12%;" class="amount">Credit</th>
+            <th style="width:4%;"></th>
+          </tr>
+        </thead>
+        <tbody id="lines-body">
+          <!-- rows added by JS, two blank rows to start -->
+        </tbody>
+      </table>
+    </div>
 
     <button type="button" onclick="addLine()" class="lp-btn" style="margin-top:12px;">+ Add line</button>
 
-    <div style="display:flex; justify-content:flex-end; gap:24px; margin-top:16px; padding-top:12px; border-top:1px solid var(--lp-border);">
+    <div style="display:flex; justify-content:flex-end; gap:24px; margin-top:16px; padding-top:12px; border-top:1px solid var(--lp-border); flex-wrap: wrap;">
       <div><strong>Debit total:</strong> <span id="total-debit">0.00</span></div>
       <div><strong>Credit total:</strong> <span id="total-credit">0.00</span></div>
       <div id="balance-indicator" style="font-weight:700;"></div>
@@ -55,28 +65,111 @@
   </form>
 </div>
 
-<script>
-const ACCOUNTS = [
-  {% for acc in accounts %}{ id: {{ acc[0] }}, label: "{{ acc[1] }} - {{ acc[2] }}" },{% endfor %}
-];
+{# What the two account boxes offer. Sent as data, not as HTML: the rows
+   below are built from it with DOM calls, so a customer or account name
+   can never be read as markup. #}
+<script type="application/json" id="je-options">{{ options|tojson }}</script>
+{# Lines the server sent back because the entry was refused (empty on a new form). #}
+<script type="application/json" id="je-lines">{{ (submitted_lines or [])|tojson }}</script>
 
-function accountOptions() {
-  return '<option value="">Select account…</option>' +
-    ACCOUNTS.map(a => `<option value="${a.id}">${a.label}</option>`).join('');
+<script>
+const OPTIONS = JSON.parse(document.getElementById('je-options').textContent);
+const SUBMITTED_LINES = JSON.parse(document.getElementById('je-lines').textContent);
+
+// One <select>: a placeholder, then the choices under their group headings.
+function buildSelect(name, placeholder, groups) {
+  const select = document.createElement('select');
+  select.name = name;
+  select.className = 'form-select';
+  select.add(new Option(placeholder, ''));
+  groups.forEach(group => {
+    const heading = document.createElement('optgroup');
+    heading.label = group.title;
+    group.options.forEach(choice => {
+      const option = new Option(choice.label, choice.value);
+      // What to say under the box once this choice is picked.
+      if (group.posts_to) option.dataset.note = 'Posts to ' + group.posts_to;
+      else if (choice.note) option.dataset.note = choice.note;
+      heading.appendChild(option);
+    });
+    select.appendChild(heading);
+  });
+  return select;
 }
 
-function addLine() {
-  const tbody = document.getElementById('lines-body');
+function cell(row, child) {
+  const td = document.createElement('td');
+  td.appendChild(child);
+  row.appendChild(td);
+  return td;
+}
+
+function textBox(name, type, value) {
+  const input = document.createElement('input');
+  input.type = type;
+  input.name = name;
+  input.className = 'form-control';
+  if (type === 'number') {
+    input.step = '0.01';
+    input.min = '0';
+    input.placeholder = '0.00';
+    input.classList.add('amount');
+    input.addEventListener('input', recalculate);
+  }
+  input.value = value;
+  return input;
+}
+
+// `values` is only passed when the server sent the entry back with an error:
+// it puts back exactly what was typed in that row, so nothing is lost.
+function addLine(values) {
   const row = document.createElement('tr');
-  row.innerHTML = `
-    <td><select name="account_id[]" onchange="recalculate()">${accountOptions()}</select></td>
-    <td><input type="text" name="partner_name[]"></td>
-    <td><input type="text" name="label[]"></td>
-    <td><input type="number" step="0.01" name="debit[]" value="0" oninput="recalculate()"></td>
-    <td><input type="number" step="0.01" name="credit[]" value="0" oninput="recalculate()"></td>
-    <td><button type="button" onclick="this.closest('tr').remove(); recalculate();" class="lp-btn">×</button></td>
-  `;
-  tbody.appendChild(row);
+
+  const general = buildSelect('account_id[]', 'Select account…', OPTIONS.general);
+  const partner = buildSelect(
+    'partner_account[]',
+    OPTIONS.partner.length ? 'Select partner…' : 'No customers, vendors or partner accounts yet',
+    OPTIONS.partner
+  );
+  general.setAttribute('aria-label', 'General account');
+  partner.setAttribute('aria-label', 'Partner account');
+  const note = document.createElement('small');
+  note.className = 'lp-entry-note';
+
+  // A line has ONE account: picking in one box empties the other.
+  // (Neither box is ever disabled - a disabled box is not sent, and the
+  // server reads the grid column by column.)
+  function showNote() {
+    const picked = partner.selectedOptions[0];
+    note.textContent = (partner.value && picked && picked.dataset.note) || '';
+  }
+  general.addEventListener('change', () => { if (general.value) partner.value = ''; showNote(); });
+  partner.addEventListener('change', () => { if (partner.value) general.value = ''; showNote(); });
+
+  cell(row, general);
+  cell(row, partner).appendChild(note);
+  cell(row, textBox('label[]', 'text', ''));
+  cell(row, textBox('debit[]', 'number', ''));
+  cell(row, textBox('credit[]', 'number', ''));
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'lp-btn lp-entry-remove';
+  remove.textContent = '×';
+  remove.setAttribute('aria-label', 'Remove this line');
+  remove.addEventListener('click', () => { row.remove(); recalculate(); });
+  cell(row, remove);
+
+  document.getElementById('lines-body').appendChild(row);
+
+  if (values) {
+    general.value = values.account_id || '';
+    partner.value = values.partner_account || '';
+    row.querySelector('[name="label[]"]').value = values.label || '';
+    row.querySelector('[name="debit[]"]').value = values.debit || '';
+    row.querySelector('[name="credit[]"]').value = values.credit || '';
+    showNote();
+  }
 }
 
 function recalculate() {
@@ -87,7 +180,7 @@ function recalculate() {
   document.getElementById('total-credit').textContent = totalCredit.toFixed(2);
   const indicator = document.getElementById('balance-indicator');
   if (Math.abs(totalDebit - totalCredit) < 0.005 && totalDebit > 0) {
-    indicator.textContent = '✓ Balanced';
+    indicator.textContent = 'Balanced';
     indicator.style.color = 'var(--lp-green-text)';
   } else {
     indicator.textContent = 'Not balanced';
@@ -95,8 +188,13 @@ function recalculate() {
   }
 }
 
-// Start with two blank lines so the form isn't empty on load.
-addLine();
-addLine();
+if (SUBMITTED_LINES.length) {
+  SUBMITTED_LINES.forEach(line => addLine(line));
+} else {
+  // Start with two blank lines so the form isn't empty on load.
+  addLine();
+  addLine();
+}
+recalculate();
 </script>
 {% endblock %}

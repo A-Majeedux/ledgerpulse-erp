@@ -10,6 +10,7 @@ Wire this up once in app.py:
     from core.template_context import register_context_processors
     register_context_processors(app)
 """
+from flask import session
 from core.db import get_conn
 from core.context import current_organization_id
 
@@ -19,7 +20,16 @@ def register_context_processors(app):
     def inject_organizations():
         conn = get_conn()
         cursor = conn.cursor()
-        cursor.execute("SELECT organization_id, name FROM organizations ORDER BY name")
+        # Only the organizations the logged-in user is a member of - the
+        # switcher must never list another tenant's company names. With
+        # nobody logged in (login / setup screens) the list is empty.
+        cursor.execute("""
+            SELECT organization_id, name FROM organizations
+            WHERE organization_id IN (
+                SELECT organization_id FROM organization_memberships WHERE user_id = %s
+            )
+            ORDER BY name
+        """, (session.get("user_id"),))
         organizations = cursor.fetchall()
         cursor.close()
         conn.close()

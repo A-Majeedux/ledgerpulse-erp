@@ -7,6 +7,12 @@ organization_id column pointing here, so one login can hold many
 completely separate companies with no data crossing between them.
 """
 
+# Name of the placeholder company created on the very first start (see the
+# bottom of ensure_schema). auth/routes.py::setup() uses this same constant
+# to recognise that placeholder and rename it to the company name the first
+# administrator actually typed.
+DEFAULT_ORGANIZATION_NAME = "My Organization"
+
 
 def ensure_schema(cursor):
     cursor.execute("""
@@ -35,5 +41,5 @@ def ensure_schema(cursor):
     if cursor.fetchone()[0] == 0:
         cursor.execute(
             "INSERT INTO organizations (name) VALUES (%s)",
-            ("My Organization",)
+            (DEFAULT_ORGANIZATION_NAME,)
         )

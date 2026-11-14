@@ -9,6 +9,7 @@
   {% endif %}
 
   <form method="POST" id="invoice-form">
+    {{ csrf_field() }}
     <div style="display:flex; gap:16px; margin-bottom: 20px;">
       <div style="flex:1;">
         <label style="font-size: 13px; font-weight: 600;">Customer</label>
