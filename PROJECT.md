@@ -80,7 +80,7 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 | Chart of accounts | 🟡 | Basic list/add only. Odoo-style hierarchy not built |
 | Journal entries | 🟡 | Basic form. Planned grid redesign not built |
 | Bank internal transfer | 🟡 | Exists, needs review |
-| Vendors: master | 🟡 | List/new/detail work. **Edit Vendor page is an empty 40-byte template: broken** |
+| Vendors: master | 🟡 | List/new/detail work. Edit page reuses the New Vendor form (works) |
 | Vendors: bills, credit notes, payments, batch | 🟡 | Most complete module. Claimed done; verify by running tests |
 | Customers + receipts | 🟡 | Smaller than vendors, older pattern |
 | Sales invoices | 🟡 | Invoices only. No quotation → order → delivery chain |
@@ -88,7 +88,7 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 | Inventory | ❌ | |
 | Fixed assets | ❌ | |
 | Bank reconciliation | ❌ | |
-| Reports | ✅ | Trial Balance done (GL and Partner Ledger not built yet) |
+| Reports | ✅ | Trial Balance and General Ledger done; Partner Ledger not built yet |
 
 ## 8. Voucher numbering (per old status report, re-verify)
 
@@ -112,14 +112,13 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 1. Clean up repo, commit to GitHub, separate test database
 2. Run all tests, fix failures
 3. **Trial Balance report** (must always net to zero)
-4. Finish Vendors (fix Edit Vendor, verify each flow)
+4. Finish Vendors (verify each flow)
 5. Customers + Sales invoices to the same standard
 6. General Ledger + Partner Ledger
 7. Then: purchases chain, inventory, fixed assets, bank reconciliation
 
 ## 11. Known problems (update as you fix)
 
-- Edit Vendor template is empty
 - Old status reports claimed "all tests passed" but the test cache showed failures. Re-run to confirm
 - No `requirements.txt` until now
 - Tests write to the real database
