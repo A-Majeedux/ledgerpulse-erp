@@ -1,0 +1,53 @@
+{# The boxes of ONE contact card - used by the "change this contact" form and
+   by the "Add a contact" form on the Contacts & Addresses tab.
+
+   cvalues        what every box shows (text)
+   contact_limits the longest text each box accepts
+   prefix         "k" for the Add box, "e" for a contact being changed - so
+                  that two forms on the same page never share a box name
+
+   The rules behind these boxes are in customers/services.py
+   (clean_contact_form). #}
+{% set p = prefix|default("k") %}
+<div class="lp-form-grid">
+  <div class="lp-form-group" style="grid-column: 1 / -1;">
+    <label for="{{ p }}-name">Name <span style="color: var(--lp-coral-text);">*</span></label>
+    <input type="text" id="{{ p }}-name" name="name" value="{{ cvalues.name }}" maxlength="150" required class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="{{ p }}-job_position">Job Position</label>
+    <input type="text" id="{{ p }}-job_position" name="job_position" value="{{ cvalues.job_position }}" maxlength="{{ contact_limits.job_position }}" class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="{{ p }}-phone">Phone</label>
+    <input type="tel" id="{{ p }}-phone" name="phone" value="{{ cvalues.phone }}" maxlength="{{ contact_limits.phone }}" class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="{{ p }}-email">Email</label>
+    <input type="email" id="{{ p }}-email" name="email" value="{{ cvalues.email }}" maxlength="{{ contact_limits.email }}" class="form-control">
+  </div>
+  <div class="lp-form-group" style="grid-column: 1 / -1;">
+    <label for="{{ p }}-street">Street</label>
+    <textarea id="{{ p }}-street" name="street" rows="2" maxlength="{{ contact_limits.street }}" class="form-control">{{ cvalues.street }}</textarea>
+  </div>
+  <div class="lp-form-group" style="grid-column: 1 / -1;">
+    <label for="{{ p }}-street2">Street 2</label>
+    <input type="text" id="{{ p }}-street2" name="street2" value="{{ cvalues.street2 }}" maxlength="{{ contact_limits.street2 }}" class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="{{ p }}-city">City</label>
+    <input type="text" id="{{ p }}-city" name="city" value="{{ cvalues.city }}" maxlength="{{ contact_limits.city }}" class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="{{ p }}-state">State</label>
+    <input type="text" id="{{ p }}-state" name="state" value="{{ cvalues.state }}" maxlength="{{ contact_limits.state }}" class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="{{ p }}-zip_code">ZIP</label>
+    <input type="text" id="{{ p }}-zip_code" name="zip_code" value="{{ cvalues.zip_code }}" maxlength="{{ contact_limits.zip_code }}" class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="{{ p }}-country">Country</label>
+    <input type="text" id="{{ p }}-country" name="country" value="{{ cvalues.country }}" maxlength="{{ contact_limits.country }}" class="form-control">
+  </div>
+</div>

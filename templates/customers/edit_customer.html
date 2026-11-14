@@ -10,14 +10,75 @@
   <a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary sm">Back to Customers</a>
 </div>
 
-<div class="lp-card" style="max-width: 1000px;">
-  <form method="POST">
-    {{ csrf_field() }}
-    {% include "customers/_customer_form.html" %}
-    <div style="display: flex; gap: 10px; margin-top: 28px;">
-      <button type="submit" class="lp-btn primary">Save Changes</button>
-      <a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary">Cancel</a>
-    </div>
-  </form>
+{# The three figures at the top. They only read the invoices and the
+   receipts; nothing is posted. What each one means is in
+   customers/services.py (customer_totals). #}
+<div class="lp-total-strip">
+  <div class="lp-total">
+    <span class="lp-total-label">Sales</span>
+    <strong class="lp-total-value">{{ active_currency }} {{ totals.sales_text }}</strong>
+    <small>{{ totals.invoices }} invoice{{ '' if totals.invoices == 1 else 's' }} entered, drafts included</small>
+  </div>
+  <div class="lp-total">
+    <span class="lp-total-label">Invoiced</span>
+    <strong class="lp-total-value">{{ active_currency }} {{ totals.invoiced_text }}</strong>
+    <small>{{ totals.posted_invoices }} in the books (posted)</small>
+  </div>
+  <div class="lp-total">
+    <span class="lp-total-label">Due</span>
+    <strong class="lp-total-value{{ ' negative' if totals.due < 0 }}">{{ active_currency }} {{ totals.due_text }}</strong>
+    <small>Invoiced less receipts received{% if totals.received > 0 %} ({{ active_currency }} {{ totals.received_text }} received){% endif %}</small>
+  </div>
 </div>
+
+<div class="lp-card" style="max-width: 1000px;">
+  <div class="lp-tabs" role="tablist">
+    <button type="button" class="lp-tab{{ ' active' if open_tab == 'customer' }}" role="tab"
+            data-tab-target="tab-customer" aria-selected="{{ 'true' if open_tab == 'customer' else 'false' }}"
+            aria-controls="tab-customer">Customer</button>
+    <button type="button" class="lp-tab{{ ' active' if open_tab == 'contacts' }}" role="tab"
+            data-tab-target="tab-contacts" aria-selected="{{ 'true' if open_tab == 'contacts' else 'false' }}"
+            aria-controls="tab-contacts">Contacts &amp; Addresses
+      {% if contacts %}<span class="lp-count">{{ contacts|length }}</span>{% endif %}
+    </button>
+  </div>
+
+  <div class="lp-tabpanel" id="tab-customer" role="tabpanel"{% if open_tab != 'customer' %} hidden{% endif %}>
+    <form method="POST" action="{{ url_for('customers.edit_customer', customer_id=customer.customer_id) }}">
+      {{ csrf_field() }}
+      {% include "customers/_customer_form.html" %}
+      <div style="display: flex; gap: 10px; margin-top: 28px;">
+        <button type="submit" class="lp-btn primary">Save Changes</button>
+        <a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="lp-tabpanel" id="tab-contacts" role="tabpanel"{% if open_tab != 'contacts' %} hidden{% endif %}>
+    {% include "customers/_customer_contacts.html" %}
+  </div>
+</div>
+
+<script>
+// The two tabs of the card. Only the page in front of you is shown; the other
+// is hidden, so that both cannot be saved by mistake. No page is loaded again.
+(function () {
+  var tabs = document.querySelectorAll(".lp-tab");
+  function open(name) {
+    for (var i = 0; i < tabs.length; i++) {
+      var tab = tabs[i];
+      var chosen = tab.getAttribute("data-tab-target") === name;
+      tab.classList.toggle("active", chosen);
+      tab.setAttribute("aria-selected", chosen ? "true" : "false");
+      var panel = document.getElementById(tab.getAttribute("data-tab-target"));
+      if (panel) { panel.hidden = !chosen; }
+    }
+  }
+  for (var i = 0; i < tabs.length; i++) {
+    (function (tab) {
+      tab.addEventListener("click", function () { open(tab.getAttribute("data-tab-target")); });
+    })(tabs[i]);
+  }
+})();
+</script>
 {% endblock %}

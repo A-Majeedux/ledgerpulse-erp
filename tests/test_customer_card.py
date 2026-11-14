@@ -25,11 +25,13 @@ from datetime import date
 from decimal import Decimal as D
 
 from customers.services import (
-    CUSTOMER_COLUMNS, FORM_FIELDS, LIST_COLUMNS, MAX_CREDIT_LIMIT, NAME_LOCKED_MESSAGE,
-    NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS, TEXT_FIELDS, TRADE_RECEIVABLE_CODE,
-    ValidationError, blank_form, clean_block, clean_customer_form, clean_line, clean_search,
-    form_as_typed, form_from_customer, format_amount, format_date, like_pattern, list_row,
-    parse_amount, same_name,
+    CONTACT_FORM_FIELDS, CONTACT_TEXT_FIELDS, CUSTOMER_COLUMNS, FORM_FIELDS, LIST_COLUMNS,
+    MAX_CREDIT_LIMIT, NAME_LOCKED_MESSAGE, NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS,
+    TAGS_MAX_COUNT, TAG_MAX_LENGTH, TEXT_FIELDS, TRADE_RECEIVABLE_CODE, ValidationError,
+    blank_contact_form, blank_form, clean_block, clean_contact_form, clean_currency,
+    clean_customer_form, clean_line, clean_search, clean_tags, clean_website,
+    contact_form_as_typed, contact_form_from_contact, form_as_typed, form_from_customer,
+    format_amount, format_date, like_pattern, list_row, parse_amount, same_name, tag_list,
 )
 
 
@@ -82,7 +84,12 @@ class CustomerCardRulesTests(unittest.TestCase):
         for field, _label, _max_length in TEXT_FIELDS:                       # an empty box is "nothing", not ""
             self.assertIsNone(data[field], field)
         self.assertNotIn("is_active", data)                                  # Status is for the Edit card only
-        self.assertEqual(set(data), {"name", "is_company", "nature_of_supply", "credit_limit", "lic_expiry_date"}
+        self.assertEqual(data["tags"], None)                                # no tags typed
+        self.assertIs(data["is_vendor"], False)                             # not ticked
+        self.assertIsNone(data["currency"])                                 # = the company's currency
+        self.assertIsNone(data["website"])
+        self.assertEqual(set(data), {"name", "is_company", "nature_of_supply", "credit_limit", "lic_expiry_date",
+                                     "tags", "is_vendor", "currency", "website"}
                          | {field for field, _label, _max_length in TEXT_FIELDS})
 
     def test_name(self):
@@ -260,6 +267,97 @@ class CustomerCardRulesTests(unittest.TestCase):
         self.assertIn("journal entry remembers its customer by name", NAME_LOCKED_MESSAGE)
 
 
+    def test_tags(self):
+        self.assertEqual(clean_tags("Punjab, VIP"), "Punjab, VIP")
+        self.assertEqual(clean_tags("  Punjab ,VIP,  , Punjab "), "Punjab, VIP")   # tidied, typed twice kept once
+        self.assertEqual(clean_tags("vip, VIP"), "vip")                            # the first spelling wins
+        self.assertEqual(clean_tags("a,b,c"), "a, b, c")
+        self.assertIsNone(clean_tags(""))                                          # empty box
+        self.assertIsNone(clean_tags("  ,  , "))                                   # only commas
+        self.assertIsNone(clean_tags(None))
+        self.assertEqual(tag_list("Punjab, VIP"), ["Punjab", "VIP"])
+        self.assertEqual(tag_list(None), [])
+        # a tag too long, and too many tags, are refused with a message
+        with self.assertRaises(ValidationError):
+            clean_tags("x" * (TAG_MAX_LENGTH + 1))
+        with self.assertRaises(ValidationError):
+            clean_tags(", ".join(f"t{number}" for number in range(TAGS_MAX_COUNT + 1)))
+        with self.assertRaises(ValidationError):                                   # together wider than the column
+            clean_tags(", ".join(chr(65 + number) * TAG_MAX_LENGTH for number in range(TAGS_MAX_COUNT)))
+        refused("at most 40 characters", tags="x" * (TAG_MAX_LENGTH + 1))
+        refused("At most 20 tags", tags=", ".join(f"t{number}" for number in range(TAGS_MAX_COUNT + 1)))
+        self.assertEqual(accepted(tags=" Punjab , VIP ")["tags"], "Punjab, VIP")
+
+    def test_website(self):
+        self.assertEqual(clean_website("  www.example.com "), "www.example.com")   # the cleaner on its own
+        for good in ("www.example.com", "example.com", "www.example", "https://www.example.com/about?x=1",
+                     "http://a.b"):
+            self.assertEqual(accepted(website=good)["website"], good)
+        self.assertIsNone(accepted(website="   ")["website"])
+        for bad in ("example", "www .example.com", "www.example.", ".example.com", "not a site",
+                    "example.com/ spaces"):
+            refused("does not look like a web address", website=bad)
+        refused("too long", website="www." + "x" * 260 + ".com")
+
+    def test_currency(self):
+        self.assertEqual(clean_currency("pkr"), "PKR")
+        self.assertEqual(accepted(currency="pkr")["currency"], "PKR")          # capitals, as codes are written
+        self.assertEqual(accepted(currency=" usd ")["currency"], "USD")
+        self.assertIsNone(accepted(currency="")["currency"])                   # empty = the company's currency
+        for bad in ("PK", "PKRX", "P K R", "12R", "روپیہ"):
+            refused("three-letter code", currency=bad)
+
+    def test_also_a_vendor_tick(self):
+        for ticked in ("1", "on", "true", "yes", " TRUE "):
+            self.assertIs(accepted(is_vendor=ticked)["is_vendor"], True)
+        for unticked in ("", "0", "off", "no", None):
+            self.assertIs(accepted(is_vendor=unticked)["is_vendor"], False)
+        self.assertIs(clean_customer_form({"name": "A"})[0]["is_vendor"], False)   # box not sent at all
+
+    def test_the_four_new_boxes_round_trip(self):
+        blank = blank_form()
+        for field in ("tags", "is_vendor", "currency", "website"):
+            self.assertIn(field, FORM_FIELDS)
+            self.assertIn(field, blank)
+        self.assertEqual(blank["is_vendor"], "")
+        customer = dict.fromkeys(CUSTOMER_COLUMNS)
+        customer.update(customer_id=3, name="Tagged Traders", tags="Punjab, VIP", is_vendor=True,
+                        currency="USD", website="www.example.com", is_active=True)
+        shown = form_from_customer(customer)
+        self.assertEqual((shown["tags"], shown["is_vendor"], shown["currency"], shown["website"]),
+                         ("Punjab, VIP", "1", "USD", "www.example.com"))
+        # a refused card keeps the tick as the user left it
+        self.assertEqual(form_as_typed({"name": "X", "is_vendor": "1", "tags": "a,b"})["tags"], "a,b")
+        self.assertEqual(form_as_typed({"name": "X", "is_vendor": "1"})["is_vendor"], "1")
+        self.assertEqual(form_as_typed({"name": "X"})["is_vendor"], "")
+
+    def test_a_contact_card(self):
+        data, problems = clean_contact_form({"name": "  Ali   Raza "})
+        self.assertEqual(problems, [])
+        self.assertEqual(data["name"], "Ali Raza")
+        for field, _label, _max_length in CONTACT_TEXT_FIELDS:
+            self.assertIsNone(data[field], field)
+        self.assertEqual(set(data), set(CONTACT_FORM_FIELDS))
+        # a contact needs a name, and nothing more
+        self.assertEqual(clean_contact_form({})[1], ["Contact name is required."])
+        self.assertEqual(clean_contact_form({"name": "   "})[1], ["Contact name is required."])
+        self.assertEqual(clean_contact_form({"name": "A" * 151})[1],
+                         ["Contact name is too long (maximum 150 characters)."])
+        problems = clean_contact_form({"name": "Ali", "email": "nobody", "phone": "call me",
+                                       "city": "c" * 101, "job_position": "j" * 101})[1]
+        self.assertEqual(len(problems), 4, problems)
+        # the boxes of a contact, blank and filled from one
+        self.assertEqual(blank_contact_form()["name"], "")
+        contact = dict.fromkeys(CONTACT_FORM_FIELDS + ["contact_id", "is_primary"])
+        contact.update(contact_id=9, name="Accounts Office", job_position="Manager", email="a@b.co",
+                       city="Lahore", is_primary=True)
+        shown = contact_form_from_contact(contact)
+        self.assertEqual((shown["name"], shown["job_position"], shown["email"], shown["city"]),
+                         ("Accounts Office", "Manager", "a@b.co", "Lahore"))
+        self.assertEqual(shown["street"], "")
+        self.assertEqual(contact_form_as_typed({"name": "  New  Name ", "city": "x" * 101}, base=shown)["name"],
+                         "  New  Name ")
+
 # ---------------------------------------------------------------------------
 # The screens, on a real (test) database
 # ---------------------------------------------------------------------------
@@ -308,9 +406,12 @@ class CustomerCardDatabaseTests(unittest.TestCase):
         conn = get_conn()
         cursor = conn.cursor()
         for org_id in (cls.org_id, cls.other_org_id):
-            for table, column in (("customer_receipts", "organization_id"), ("sales_invoices", "organization_id"),
-                                  ("customers", "organization_id")):
-                cursor.execute(f"DELETE FROM {table} WHERE {column} = %s", (org_id,))
+            for table in ("customer_receipts", "customer_contacts"):
+                cursor.execute(f"DELETE FROM {table} WHERE organization_id = %s", (org_id,))
+            cursor.execute("DELETE FROM sales_invoice_lines WHERE sales_invoice_id IN "
+                           "(SELECT sales_invoice_id FROM sales_invoices WHERE organization_id = %s)", (org_id,))
+            cursor.execute("DELETE FROM sales_invoices WHERE organization_id = %s", (org_id,))
+            cursor.execute("DELETE FROM customers WHERE organization_id = %s", (org_id,))
             cursor.execute("DELETE FROM journal_lines WHERE journal_header_id IN "
                            "(SELECT journal_header_id FROM journal_headers WHERE organization_id = %s)", (org_id,))
             cursor.execute("DELETE FROM journal_headers WHERE organization_id = %s", (org_id,))
@@ -330,8 +431,11 @@ class CustomerCardDatabaseTests(unittest.TestCase):
         cursor = conn.cursor()
         # everything this class writes, in the order the foreign keys allow
         for org_id in (self.org_id, self.other_org_id):
-            for table in ("customer_receipts", "sales_invoices"):
+            for table in ("customer_receipts", "customer_contacts"):
                 cursor.execute(f"DELETE FROM {table} WHERE organization_id = %s", (org_id,))
+            cursor.execute("DELETE FROM sales_invoice_lines WHERE sales_invoice_id IN "
+                           "(SELECT sales_invoice_id FROM sales_invoices WHERE organization_id = %s)", (org_id,))
+            cursor.execute("DELETE FROM sales_invoices WHERE organization_id = %s", (org_id,))
             cursor.execute("DELETE FROM journal_lines WHERE journal_header_id IN "
                            "(SELECT journal_header_id FROM journal_headers WHERE organization_id = %s)", (org_id,))
             cursor.execute("DELETE FROM journal_headers WHERE organization_id = %s", (org_id,))
@@ -547,6 +651,195 @@ class CustomerCardDatabaseTests(unittest.TestCase):
         cursor.close()
         conn.close()
         self.assertEqual(self.client.get(f"/customers/{other_customer_id}/edit").status_code, 404)
+
+    # -- the rest of the card: tags, vendor mark, currency -----------------
+    def test_the_four_new_boxes_are_saved(self):
+        self.save(name="Tagged Traders", tags=" Punjab , VIP , Punjab ", is_vendor="1",
+                  currency="usd", website="www.example.com")
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT tags, is_vendor, currency, website FROM customers WHERE organization_id = %s",
+                       (self.org_id,))
+        self.assertEqual(cursor.fetchone(), ("Punjab, VIP", True, "USD", "www.example.com"))
+        cursor.close()
+        conn.close()
+        customer_id = self.customers()[0][0]
+        page = self.client.get(f"/customers/{customer_id}/edit").get_data(as_text=True)
+        self.assertIn('value="Punjab, VIP"', page)
+        self.assertIn(">Punjab<", page)                                     # shown as a pill as well
+        self.assertIn('value="USD"', page)
+        self.assertIn("checked", page)                                      # Also a vendor is ticked
+
+    def test_a_bad_currency_or_website_is_refused_and_nothing_is_saved(self):
+        response = self.save(name="Bad Boxes", currency="PKRX", website="not a site")
+        page = response.get_data(as_text=True)
+        self.assertIn("three-letter code", page)
+        self.assertIn("does not look like a web address", page)
+        self.assertIn('value="PKRX"', page)                                 # what was typed is kept
+        self.assertEqual(self.customers(), [])
+
+    # -- contacts ----------------------------------------------------------
+    def contact(self, customer_id, **typed):
+        form = {"csrf_token": "test-csrf", "name": "Accounts Office"}
+        form.update(typed)
+        return self.client.post(f"/customers/{customer_id}/contacts", data=form)
+
+    def contacts(self, customer_id):
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT contact_id, name, email, city, is_primary FROM customer_contacts "
+                       "WHERE organization_id = %s AND customer_id = %s ORDER BY contact_id",
+                       (self.org_id, customer_id))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return rows
+
+    def test_the_first_contact_is_primary_and_a_second_is_not(self):
+        self.save(name="Contacted Traders")
+        customer_id = self.customers()[0][0]
+        self.assertEqual(self.contact(customer_id, name="Ali Raza", job_position="Manager",
+                                      email="ali@traders.example", phone="0300-1234567",
+                                      city="Lahore").status_code, 302)
+        self.contact(customer_id, name="Delivery Gate", city="Kasur")
+        rows = self.contacts(customer_id)
+        self.assertEqual([row[1] for row in rows], ["Ali Raza", "Delivery Gate"])
+        self.assertEqual([row[4] for row in rows], [True, False])          # one primary, the first
+
+        page = self.client.get(f"/customers/{customer_id}/edit?tab=contacts").get_data(as_text=True)
+        self.assertIn("Contacts &amp; Addresses", page)
+        self.assertIn("Ali Raza", page)
+        self.assertIn("ali@traders.example", page)
+        self.assertIn("Manager", page)
+        self.assertIn("Primary", page)
+        self.assertIn("Make primary", page)                                # offered on the second one
+
+    def test_make_primary_moves_the_mark(self):
+        self.save(name="Primary Traders")
+        customer_id = self.customers()[0][0]
+        self.contact(customer_id, name="First Person")
+        self.contact(customer_id, name="Second Person")
+        second_id = self.contacts(customer_id)[1][0]
+        response = self.client.post(f"/customers/{customer_id}/contacts/{second_id}/primary",
+                                    data={"csrf_token": "test-csrf"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual([row[4] for row in self.contacts(customer_id)], [False, True])
+
+    def test_removing_the_primary_hands_it_to_the_oldest_left(self):
+        self.save(name="Removable Traders")
+        customer_id = self.customers()[0][0]
+        self.contact(customer_id, name="First Person")
+        self.contact(customer_id, name="Second Person")
+        self.contact(customer_id, name="Third Person")
+        first_id = self.contacts(customer_id)[0][0]
+        self.client.post(f"/customers/{customer_id}/contacts/{first_id}/delete", data={"csrf_token": "test-csrf"})
+        rows = self.contacts(customer_id)
+        self.assertEqual([row[1] for row in rows], ["Second Person", "Third Person"])
+        self.assertEqual([row[4] for row in rows], [True, False])           # never without a primary
+
+    def test_a_contact_with_a_mistake_is_refused_and_nothing_is_added(self):
+        self.save(name="Mistake Traders")
+        customer_id = self.customers()[0][0]
+        response = self.contact(customer_id, name="  ", email="nobody", city="c" * 101)
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Contact name is required.", page)
+        self.assertIn("Email does not look like an email address", page)
+        self.assertIn("City is too long", page)
+        self.assertIn('value="nobody"', page)                               # the typed values are kept
+        self.assertEqual(self.contacts(customer_id), [])
+
+    def test_editing_a_contact(self):
+        self.save(name="Edited Traders")
+        customer_id = self.customers()[0][0]
+        self.contact(customer_id, name="Old Name", city="Lahore")
+        contact_id = self.contacts(customer_id)[0][0]
+        page = self.client.get(f"/customers/{customer_id}/edit?contact={contact_id}").get_data(as_text=True)
+        self.assertIn("Change this contact", page)                          # the card is open for changing
+        self.assertIn('value="Old Name"', page)
+        response = self.client.post(f"/customers/{customer_id}/contacts/{contact_id}",
+                                    data={"csrf_token": "test-csrf", "name": "New Name",
+                                          "city": "Kasur", "email": "new@example.com"})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.contacts(customer_id)[0][1:4], ("New Name", "new@example.com", "Kasur"))
+
+    def test_a_contact_cannot_be_reached_through_another_customer_or_company(self):
+        self.save(name="Ours")
+        self.save(name="Also Ours")
+        our_first, our_second = [row[0] for row in self.customers()]
+        self.contact(our_first, name="Private Contact")
+        contact_id = self.contacts(our_first)[0][0]
+        # the same company, but the wrong customer: nothing happens
+        self.client.post(f"/customers/{our_second}/contacts/{contact_id}/delete", data={"csrf_token": "test-csrf"})
+        self.assertEqual(len(self.contacts(our_first)), 1)
+        # another company's customer: not found
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO customers (organization_id, customer_no, name) VALUES (%s, 1, %s) "
+                       "RETURNING customer_id", (self.other_org_id, "Theirs"))
+        their_customer = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        self.assertEqual(self.client.post(f"/customers/{their_customer}/contacts",
+                                          data={"csrf_token": "test-csrf", "name": "Sneaky"}).status_code, 404)
+
+    # -- the three figures at the top --------------------------------------
+    def invoice(self, customer_id, total, status, day="2026-11-01"):
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO sales_invoices (organization_id, customer_id, invoice_date, status)
+            VALUES (%s, %s, %s, %s) RETURNING sales_invoice_id
+        """, (self.org_id, customer_id, day, status))
+        invoice_id = cursor.fetchone()[0]
+        cursor.execute("INSERT INTO sales_invoice_lines (sales_invoice_id, line_order, label, quantity, rate, total) "
+                       "VALUES (%s, 0, 'Line', 1, %s, %s)", (invoice_id, total, total))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return invoice_id
+
+    def receipt(self, customer_id, amount):
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO customer_receipts (organization_id, customer_id, amount, receipt_date) "
+                       "VALUES (%s, %s, %s, '2026-11-02')", (self.org_id, customer_id, amount))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    def test_the_three_figures(self):
+        self.save(name="Figures Traders")
+        customer_id = self.customers()[0][0]
+        self.invoice(customer_id, "2000.00", "Posted")
+        self.invoice(customer_id, "1000.00", "Draft")
+        self.receipt(customer_id, "500.00")
+        page = self.client.get(f"/customers/{customer_id}/edit").get_data(as_text=True)
+        self.assertIn("3,000.00", page)                                    # Sales: everything entered
+        self.assertIn("2,000.00", page)                                    # Invoiced: the posted one
+        self.assertIn("1,500.00", page)                                    # Due: invoiced less received
+        self.assertIn("2 invoices entered", page)
+        self.assertIn("1 in the books (posted)", page)
+
+    def test_the_figures_are_per_customer_and_show_a_negative_due(self):
+        self.save(name="Owed Traders")
+        self.save(name="Prepaid Traders")
+        owed_id, prepaid_id = [row[0] for row in self.customers()]
+        self.invoice(owed_id, "1000.00", "Posted")
+        self.receipt(owed_id, "250.00")
+        self.receipt(prepaid_id, "900.00")                                  # paid before being invoiced
+        page = self.client.get(f"/customers/{owed_id}/edit").get_data(as_text=True)
+        self.assertIn("750.00", page)                                      # 1,000 - 250
+        self.assertNotIn("900.00", page)                                    # the other customer's receipt
+        page = self.client.get(f"/customers/{prepaid_id}/edit").get_data(as_text=True)
+        self.assertIn("-900.00", page)                                     # he is in advance
+        self.assertIn("lp-total-value negative", page)
 
     def test_the_new_card_and_the_field_suggestions_open(self):
         self.save(name="Suggestion Traders", territory="KASUR TOWN", city="Lahore")

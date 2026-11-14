@@ -130,6 +130,8 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 - 2026-11-08 — Cleanup done, Trial Balance built and balanced
 - 2026-11-14 — Customer card: ID, the new boxes, an Edit screen with Active / Inactive, the list with search and the
   Columns tick-box menu; the rules in the new `customers/services.py` (see section 13)
+- 2026-11-14 — The rest of the card: Tags, Also a vendor, Currency, Website, the Contacts & Addresses tab with its
+  contact cards, the two tabs, and the Sales / Invoiced / Due figures at the top (see section 13)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -160,17 +162,58 @@ Credit limit. There is an **Edit** screen, with Status **Active / Inactive**.
   region, territory, city, both categories, NTN, CNIC, LIC number, phone, email or ID, and every typed word must be
   found.
 
-**Database change — additive only.** 15 columns added with `ADD COLUMN IF NOT EXISTS`, the ID given to the customers
-that had none, and one new unique index. Nothing is dropped, renamed or rewritten.
+### The rest of the card (also 14 Nov 2026)
 
-**Still open from his customer form:** Tags, Is Vendor, Currency, Website, the contact cards, the totals on top
-(Sales, Invoiced, Due) and the tabs. LIC Number and LIC Expiry Date are on every company's card for now — the owner
-was asked whether they are for Hextar only.
+The second half of his customer form. Same rule: only the customers tables are written, and no journal entry is
+created or changed.
 
-**Checks.** `tests/test_customer_card.py` (29 checks, the rules without a database and the screens on one), plus
-ZYRO's own `tests/` (51 passed; `test_vendors.py::test_10_all_print_templates_and_routes` failed before this work
+**Four more boxes on the card:**
+
+- **Tags** — the words he files a customer under, typed on one line separated by commas ("Punjab, VIP"). Tidied
+  (spaces off, a tag typed twice kept once), shown as a pill each under the box, at most 20 tags of 40 characters.
+- **Also a vendor** — a tick. *A note on the card only:* it does not create a vendor record, and nothing is posted.
+  The link between a customer and a vendor comes with the Purchases step.
+- **Currency** — the three-letter code he deals with the customer in (PKR, USD). Empty means the company's own
+  currency. *For reference only:* ZYRO keeps the books in the company currency; foreign-currency postings do not
+  exist, and this box changes no amount anywhere.
+- **Website** — checked only for its shape (no spaces, has a dot); nothing is opened or fetched.
+
+**Two tabs on the Edit card:**
+
+- **Customer** — everything above.
+- **Contacts & Addresses** — the people and addresses kept under the customer (name, job position, phone, email,
+  and a full address). Add, change, remove, and "Make primary". **One rule keeps them tidy:** while a customer has
+  any contacts, exactly one of them is the primary one — the first one added becomes primary by itself, "Make
+  primary" moves it, and removing the primary hands it to the oldest that is left. Contacts never post anything.
+
+**Three figures at the top of the Edit card** — read from the documents, by the customer's ID:
+
+| Figure | What it counts |
+|---|---|
+| **Sales** | every sales invoice entered for the customer, drafts included |
+| **Invoiced** | only the invoices that are in the books — the posted ones |
+| **Due** | Invoiced less the receipts already received from him (a minus means he has paid more than was invoiced) |
+
+These three are the agent's reading of his screens (his pictures are not in the repository), so the owner may want
+them worded differently — for example Sales to count only posted invoices. They only read; nothing is posted.
+*Known limit:* a manual journal entry that carries his name on account 1100 is not in these three figures, and
+neither is anything from another currency.
+
+**Database change — additive only.** 19 columns in all added with `ADD COLUMN IF NOT EXISTS` (the 15 of the card
+plus tags, is_vendor, currency, website), the ID given to the customers that had none, one new unique index, and one
+new table `customer_contacts` (created with `CREATE TABLE IF NOT EXISTS`, with its own additive columns and index).
+Nothing is dropped, renamed or rewritten.
+
+**Still open from his customer form:** the contact cards do not carry a "Type" (invoice address / delivery /
+other), and there are no Tags columns on the list. LIC Number and LIC Expiry Date are on every company's card for
+now — the owner was asked whether they are for Hextar only.
+
+**Checks.** `tests/test_customer_card.py` (45 checks: the rules without a database, and the screens on one), plus
+ZYRO's own `tests/` (67 passed; `test_vendors.py::test_10_all_print_templates_and_routes` failed before this work
 and still fails — it looks for the words "INVOICE LINES" on the vendor bill print, which the template writes as
 "Invoice lines"). Rehearsed on a database built and filled by the previous version: none of its rows changed; the
-15 columns and the index were added; every customer got its ID oldest first; the old blank-named customer showed as
-"(no name)" and could be given a name; two customers that already shared a name both stayed; the name of a customer
-with a receipt was locked. Not done: a run on the real (Neon) database.
+columns, the index and the contacts table were added; every customer got its ID oldest first; the old blank-named
+customer showed as "(no name)" and could be given a name; two customers that already shared a name both stayed; the
+name of a customer with a receipt was locked; the three figures came out right from documents the old version had
+made; and a contact was added, made primary and shown on an old customer. Not done: a run on the real (Neon)
+database.

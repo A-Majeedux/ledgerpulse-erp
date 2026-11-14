@@ -44,6 +44,16 @@ MAX_CREDIT_LIMIT = Decimal("999999999999.99")   # the largest amount NUMERIC(14,
 SEARCH_MAX_LENGTH = 100
 SEARCH_MAX_WORDS = 6
 
+# Tags: words the bookkeeper files a customer under. Typed as one line,
+# separated by commas; kept as one line in customers.tags.
+TAG_MAX_LENGTH = 40                     # one tag
+TAGS_MAX_COUNT = 20                     # how many tags one customer may carry
+TAGS_COLUMN_WIDTH = 255                 # customers.tags
+
+# The currency he deals with the customer in - three letters, for reference.
+CURRENCY_MAX_LENGTH = 10                # customers.currency
+WEBSITE_MAX_LENGTH = 255                # customers.website
+
 # The account every customer's balance sits on (ZYRO's own convention: the
 # account coded 1100, "Trade Receivables" - the same code the receipt screen
 # posts to). A journal line on this account that carries the customer's name
@@ -80,7 +90,7 @@ CUSTOMER_COLUMNS = [
     "customer_id", "customer_no", "name", "is_company", "nature_of_supply", "ntn", "strn", "cnic",
     "address", "street2", "city", "state", "zip_code", "country", "region", "territory",
     "category_parent", "category", "lic_number", "lic_expiry_date", "email", "phone",
-    "credit_limit", "is_active",
+    "credit_limit", "is_active", "tags", "is_vendor", "currency", "website",
 ]
 _SELECT_CUSTOMER = "SELECT " + ", ".join(CUSTOMER_COLUMNS) + " FROM customers"
 
@@ -173,6 +183,85 @@ def clean_block(raw):
     return "\n".join(line for line in lines if line)
 
 
+def clean_tags(raw):
+    """
+    The tags box -> one line of tags ("a, b, c"), or None when it is empty.
+
+    Commas separate the tags; a tag is trimmed, a tag typed twice (in any
+    capitalisation) is kept once, and the order he typed is kept. Raises
+    ValidationError when a tag is too long, there are too many, or they do
+    not fit the column.
+    """
+    text = _UNTYPEABLE.sub("", raw) if isinstance(raw, str) else ""
+    tags, seen = [], set()
+    for part in text.split(","):
+        tag = re.sub(r"\s+", " ", part).strip()
+        if not tag:
+            continue
+        if len(tag) > TAG_MAX_LENGTH:
+            raise ValidationError(f"Each tag must be at most {TAG_MAX_LENGTH} characters.")
+        if tag.lower() in seen:         # typed twice: kept once
+            continue
+        seen.add(tag.lower())
+        tags.append(tag)
+    if len(tags) > TAGS_MAX_COUNT:
+        raise ValidationError(f"At most {TAGS_MAX_COUNT} tags on one customer.")
+    joined = ", ".join(tags)
+    if len(joined) > TAGS_COLUMN_WIDTH:
+        raise ValidationError(
+            f"These tags are together too long (maximum {TAGS_COLUMN_WIDTH} characters). "
+            f"Keep fewer of them, or make them shorter."
+        )
+    return joined or None
+
+
+def tag_list(tags):
+    """'Punjab, VIP' -> ['Punjab', 'VIP'] for showing them one by one."""
+    return [tag.strip() for tag in (tags or "").split(",") if tag.strip()]
+
+
+_WEBSITE_CHARACTERS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~:/?#[]@!$&'()*+,;=%")
+
+
+def clean_website(raw):
+    """
+    The Website box -> the address as typed, or None when it is empty.
+
+    Only a shape is checked - it must look like a web address, not be a real
+    one; nothing is opened or fetched. A stray "https://" is accepted, and so
+    is "www.example.com".
+    """
+    text = clean_line(raw)
+    if not text:
+        return None
+    if len(text) > WEBSITE_MAX_LENGTH:
+        raise ValidationError(f"Website is too long (maximum {WEBSITE_MAX_LENGTH} characters).")
+    host = text.split("//")[-1].split("/")[0]
+    if (any(character not in _WEBSITE_CHARACTERS for character in text)
+            or " " in text or "." not in host or host.startswith(".") or host.endswith(".")):
+        raise ValidationError("Website does not look like a web address (for example www.example.com).")
+    return text
+
+
+_CURRENCY = re.compile(r"^[A-Z]{3}$")
+
+
+def clean_currency(raw):
+    """
+    The Currency box -> a three-letter code in capitals (PKR, USD), or None.
+
+    Empty means "the company's own currency". This is a note on the card
+    only: ZYRO keeps the books in the company's currency and posts nothing
+    in any other currency (foreign-currency postings are not built).
+    """
+    text = clean_line(raw).upper()
+    if not text:
+        return None
+    if not _CURRENCY.match(text):
+        raise ValidationError("Currency must be a three-letter code (for example PKR).")
+    return text
+
+
 def same_name(one, other):
     """Are two names the same text once stray spaces are ignored? (Capital letters DO count.)"""
     return clean_line(one) == clean_line(other)
@@ -249,6 +338,18 @@ def clean_customer_form(form, editing=False):
             else:
                 data["credit_limit"] = limit + Decimal("0.00")      # "-0" becomes plain 0.00
 
+    # The four boxes of the "rest of the card": tags, the also-a-vendor mark,
+    # the currency he deals in, and the website.
+    for field, cleaner, label in (("tags", clean_tags, "Tags"),
+                                  ("website", clean_website, "Website"),
+                                  ("currency", clean_currency, "Currency")):
+        try:
+            data[field] = cleaner(form.get(field))
+        except ValidationError as error:
+            problems.append(str(error))
+            data[field] = None
+    data["is_vendor"] = str(form.get("is_vendor") or "").strip().lower() in ("1", "on", "true", "yes")
+
     if editing:
         status = clean_line(form.get("status"))
         if status == "":
@@ -265,7 +366,8 @@ def clean_customer_form(form, editing=False):
 # ---------------------------------------------------------------------
 # What the card shows
 # ---------------------------------------------------------------------
-FORM_FIELDS = (["name", "partner_type", "nature_of_supply", "lic_expiry_date", "credit_limit", "status"]
+FORM_FIELDS = (["name", "partner_type", "nature_of_supply", "lic_expiry_date", "credit_limit", "status",
+                "tags", "is_vendor", "currency", "website"]
                + [field for field, _label, _max_length in TEXT_FIELDS])
 
 
@@ -287,6 +389,10 @@ def form_from_customer(customer):
     values["lic_expiry_date"] = customer["lic_expiry_date"].isoformat() if customer["lic_expiry_date"] else ""
     values["credit_limit"] = f"{Decimal(customer['credit_limit'] or 0):.2f}"
     values["status"] = "active" if customer["is_active"] is not False else "inactive"
+    values["tags"] = customer["tags"] or ""
+    values["website"] = customer["website"] or ""
+    values["currency"] = customer["currency"] or ""
+    values["is_vendor"] = "1" if customer["is_vendor"] else ""      # a tick-box: "1" or empty
     return values
 
 
@@ -301,6 +407,8 @@ def form_as_typed(form, base=None):
         typed = form.get(field)
         if isinstance(typed, str):
             values[field] = _UNTYPEABLE.sub("", typed)
+    # A tick-box the browser did not send was unticked by the user.
+    values["is_vendor"] = "1" if form.get("is_vendor") else ""
     return values
 
 
@@ -491,8 +599,9 @@ def next_customer_no(cursor, organization_id):
     return cursor.fetchone()[0]
 
 
-_SAVED_COLUMNS = ["name", "is_company", "nature_of_supply", "credit_limit", "lic_expiry_date"] + [
-    field for field, _label, _max_length in TEXT_FIELDS]
+_SAVED_COLUMNS = (["name", "is_company", "nature_of_supply", "credit_limit", "lic_expiry_date",
+                   "tags", "is_vendor", "currency", "website"]
+                  + [field for field, _label, _max_length in TEXT_FIELDS])
 
 
 def create_customer(cursor, organization_id, data):
@@ -544,3 +653,223 @@ def update_customer(cursor, organization_id, customer_id, data):
         "WHERE customer_id = %s AND organization_id = %s",
         [values[column] for column in _SAVED_COLUMNS] + [is_active, customer["customer_id"], organization_id],
     )
+
+
+# =====================================================================
+# The contacts kept under a customer ("Contacts & Addresses")
+# =====================================================================
+# A customer is one company or person in the books. The people and addresses
+# under it - a manager, a delivery address, an accounts office - are kept in
+# customer_contacts, and they never post anything to the ledger.
+#
+# One rule keeps them tidy: as long as a customer has contacts at all, one of
+# them is the PRIMARY one. The first contact added becomes primary by itself;
+# "Make primary" moves it; removing the primary hands it to the oldest that is
+# left. Nothing can leave a customer with two primaries or none.
+
+CONTACT_TEXT_FIELDS = [
+    ("job_position", "Job Position", 100),
+    ("email", "Email", 150),
+    ("phone", "Phone", 50),
+    ("street", "Street", 500),
+    ("street2", "Street 2", 200),
+    ("city", "City", 100),
+    ("state", "State", 100),
+    ("zip_code", "ZIP", 20),
+    ("country", "Country", 100),
+]
+
+CONTACT_FORM_FIELDS = ["name"] + [field for field, _label, _max_length in CONTACT_TEXT_FIELDS]
+
+# The columns a contact card writes. The name is one of them, so a contact
+# cannot be saved without one (clean_contact_form refuses it first).
+_SAVED_CONTACT_COLUMNS = ["name"] + [field for field, _label, _max_length in CONTACT_TEXT_FIELDS]
+
+CONTACT_COLUMNS = (["contact_id", "name"] + _SAVED_CONTACT_COLUMNS + ["is_primary"])
+_SELECT_CONTACT = "SELECT " + ", ".join(CONTACT_COLUMNS) + " FROM customer_contacts"
+
+
+def clean_contact_form(form):
+    """
+    Check one contact card. Returns (data, problems), the same way
+    clean_customer_form does: when problems is not empty nothing is saved.
+    """
+    data, problems = {}, []
+
+    name = clean_line(form.get("name"))
+    if not name:
+        problems.append("Contact name is required.")
+    elif len(name) > NAME_MAX_LENGTH:
+        problems.append(f"Contact name is too long (maximum {NAME_MAX_LENGTH} characters).")
+    data["name"] = name
+
+    for field, label, max_length in CONTACT_TEXT_FIELDS:
+        text = clean_block(form.get(field)) if field == "street" else clean_line(form.get(field))
+        if len(text) > max_length:
+            problems.append(f"{label} is too long (maximum {max_length} characters).")
+        data[field] = text or None
+
+    if data["email"] and not _EMAIL.match(data["email"]):
+        problems.append("Email does not look like an email address (for example name@example.com).")
+    if data["phone"] and not any(character.isdigit() for character in data["phone"]):
+        problems.append("Phone must contain a number.")
+
+    return data, problems
+
+
+def blank_contact_form():
+    return {field: "" for field in CONTACT_FORM_FIELDS}
+
+
+def contact_form_from_contact(contact):
+    values = blank_contact_form()
+    for field in CONTACT_FORM_FIELDS:
+        if contact.get(field) is not None:
+            values[field] = str(contact[field])
+    return values
+
+
+def contact_form_as_typed(form, base=None):
+    values = dict(base or blank_contact_form())
+    for field in CONTACT_FORM_FIELDS:
+        typed = form.get(field)
+        if isinstance(typed, str):
+            values[field] = _UNTYPEABLE.sub("", typed)
+    return values
+
+
+def _as_contact(row):
+    return dict(zip(CONTACT_COLUMNS, row)) if row else None
+
+
+def list_contacts(cursor, organization_id, customer_id):
+    """The customer's contacts, the primary one first, then by name."""
+    cursor.execute(_SELECT_CONTACT + " WHERE organization_id = %s AND customer_id = %s "
+                   "ORDER BY is_primary DESC, lower(name), contact_id",
+                   (organization_id, customer_id))
+    return [_as_contact(row) for row in cursor.fetchall()]
+
+
+def get_contact(cursor, organization_id, customer_id, contact_id):
+    """One contact of THIS customer and THIS organization, or None."""
+    cursor.execute(_SELECT_CONTACT + " WHERE contact_id = %s AND customer_id = %s AND organization_id = %s",
+                   (contact_id, customer_id, organization_id))
+    return _as_contact(cursor.fetchone())
+
+
+def count_contacts(cursor, organization_id, customer_id):
+    cursor.execute("SELECT count(*) FROM customer_contacts WHERE organization_id = %s AND customer_id = %s",
+                   (organization_id, customer_id))
+    return cursor.fetchone()[0]
+
+
+def create_contact(cursor, organization_id, customer_id, data):
+    """
+    Add a contact to a customer and return its id. The first contact of a
+    customer becomes the primary one by itself. The caller commits.
+    """
+    cursor.execute("SELECT 1 FROM customers WHERE customer_id = %s AND organization_id = %s",
+                   (customer_id, organization_id))
+    if cursor.fetchone() is None:
+        raise ValidationError("This customer no longer exists.")
+    is_primary = count_contacts(cursor, organization_id, customer_id) == 0
+    columns = ["organization_id", "customer_id"] + _SAVED_CONTACT_COLUMNS + ["is_primary"]
+    cursor.execute(
+        "INSERT INTO customer_contacts (" + ", ".join(columns) + ") VALUES ("
+        + ", ".join(["%s"] * len(columns)) + ") RETURNING contact_id",
+        [organization_id, customer_id] + [data[column] for column in _SAVED_CONTACT_COLUMNS] + [is_primary],
+    )
+    return cursor.fetchone()[0]
+
+
+def update_contact(cursor, organization_id, customer_id, contact_id, data):
+    """Save one contact card. Which contact is primary is not changed here. The caller commits."""
+    if get_contact(cursor, organization_id, customer_id, contact_id) is None:
+        raise ValidationError("This contact no longer exists.")
+    cursor.execute(
+        "UPDATE customer_contacts SET " + ", ".join(f"{column} = %s" for column in _SAVED_CONTACT_COLUMNS)
+        + " WHERE contact_id = %s AND customer_id = %s AND organization_id = %s",
+        [data[column] for column in _SAVED_CONTACT_COLUMNS] + [contact_id, customer_id, organization_id],
+    )
+
+
+def make_primary_contact(cursor, organization_id, customer_id, contact_id):
+    """Make one contact the primary one; every other contact of the customer stops being it."""
+    if get_contact(cursor, organization_id, customer_id, contact_id) is None:
+        raise ValidationError("This contact no longer exists.")
+    cursor.execute("UPDATE customer_contacts SET is_primary = FALSE "
+                   "WHERE organization_id = %s AND customer_id = %s AND contact_id <> %s",
+                   (organization_id, customer_id, contact_id))
+    cursor.execute("UPDATE customer_contacts SET is_primary = TRUE WHERE contact_id = %s", (contact_id,))
+
+
+def delete_contact(cursor, organization_id, customer_id, contact_id):
+    """
+    Remove one contact. If it was the primary one, the oldest contact that is
+    left becomes primary, so the customer keeps exactly one while it has any.
+    The caller commits.
+    """
+    contact = get_contact(cursor, organization_id, customer_id, contact_id)
+    if contact is None:
+        raise ValidationError("This contact no longer exists.")
+    cursor.execute("DELETE FROM customer_contacts WHERE contact_id = %s AND organization_id = %s AND customer_id = %s",
+                   (contact_id, organization_id, customer_id))
+    if contact["is_primary"]:
+        cursor.execute("SELECT contact_id FROM customer_contacts WHERE organization_id = %s AND customer_id = %s "
+                       "ORDER BY contact_id LIMIT 1", (organization_id, customer_id))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("UPDATE customer_contacts SET is_primary = TRUE WHERE contact_id = %s", (row[0],))
+
+
+# =====================================================================
+# The three figures at the top of the card
+# =====================================================================
+# What they mean, in plain words (they only READ; nothing is posted):
+#   Sales      every sales invoice entered for this customer, drafts included
+#   Invoiced   the invoices that are in the books - the posted ones
+#   Due        Invoiced minus the receipts already received from him
+#
+# They are found from the documents, by the customer's ID, not from the
+# journal lines by name - so a renamed customer cannot split them.
+#
+# KNOWN LIMIT: a manual journal entry that carries his name on account 1100
+# is not in these three figures yet, and neither is anything to do with
+# foreign currency (there is none in the system).
+
+def customer_totals(cursor, organization_id, customer_id):
+    """{'sales', 'invoiced', 'due', 'received', 'invoices', 'posted_invoices'} - all Decimal."""
+    cursor.execute("""
+        SELECT COUNT(*) FILTER (WHERE status = 'Posted'),
+               COUNT(*),
+               COALESCE(SUM(total) FILTER (WHERE status = 'Posted'), 0),
+               COALESCE(SUM(total), 0)
+        FROM (
+            SELECT invoice.sales_invoice_id, invoice.status,
+                   COALESCE(SUM(line.total), 0) AS total
+            FROM sales_invoices invoice
+            LEFT JOIN sales_invoice_lines line ON line.sales_invoice_id = invoice.sales_invoice_id
+            WHERE invoice.organization_id = %s AND invoice.customer_id = %s
+            GROUP BY invoice.sales_invoice_id, invoice.status
+        ) AS written
+    """, (organization_id, customer_id))
+    posted_count, invoice_count, invoiced, sales = cursor.fetchone()
+
+    cursor.execute("SELECT COALESCE(SUM(amount), 0) FROM customer_receipts "
+                   "WHERE organization_id = %s AND customer_id = %s", (organization_id, customer_id))
+    received = cursor.fetchone()[0]
+
+    invoiced = money_round(invoiced or 0)
+    received = money_round(received or 0)
+    totals = {
+        "sales": money_round(sales or 0),
+        "invoiced": invoiced,
+        "received": received,
+        "due": invoiced - received,
+        "invoices": invoice_count or 0,
+        "posted_invoices": posted_count or 0,
+    }
+    # the same figures ready to be written on the card
+    for key in ("sales", "invoiced", "received", "due"):
+        totals[key + "_text"] = format_amount(totals[key])
+    return totals

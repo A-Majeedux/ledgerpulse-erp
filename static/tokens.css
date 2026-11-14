@@ -1082,3 +1082,170 @@ a:hover { text-decoration: underline; }
 }
 
 .lp-nowrap { white-space: nowrap; }
+
+/* ==========================================================================
+   CUSTOMER CARD - the figures at the top, the two tabs, tags, and the
+   contact cards
+   --------------------------------------------------------------------------
+   Used by templates/customers/edit_customer.html, _customer_form.html and
+   _customer_contacts.html only.
+   Nothing above this line was changed; these rules only add, and every name
+   here is new, so no other screen can be affected.
+
+     .lp-total-strip, .lp-total     the Sales / Invoiced / Due figures
+     .lp-tabs, .lp-tab, .lp-tabpanel  the two tabs of the card
+     .lp-taglist                    the tags, one pill each
+     .lp-contact                    one contact card, and its parts
+   ========================================================================== */
+
+.lp-total-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--lp-space-4);
+  margin-bottom: var(--lp-space-6);
+}
+
+.lp-total {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--lp-space-4) var(--lp-space-5);
+  background: var(--lp-white);
+  border: 1px solid var(--lp-border);
+  border-left: 3px solid var(--lp-muted-teal);
+  border-radius: var(--lp-radius-sm);
+  box-shadow: var(--lp-shadow-panel);
+}
+
+.lp-total-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--lp-text-muted);
+}
+
+.lp-total-value {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--lp-deep-charcoal);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.lp-total-value.negative { color: var(--lp-coral-text); }
+
+.lp-total small {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--lp-text-muted);
+}
+
+/* ---------- Tabs ---------- */
+
+.lp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lp-space-2);
+  margin: calc(var(--lp-space-2) * -1) 0 var(--lp-space-6);
+  padding-bottom: var(--lp-space-3);
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.lp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--lp-space-2);
+  padding: 8px var(--lp-space-4);
+  border: 1px solid transparent;
+  border-radius: var(--lp-radius-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--lp-text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.lp-tab:hover { background: var(--lp-canvas); color: var(--lp-text); }
+.lp-tab.active {
+  background: var(--lp-soft-sage);
+  border-color: var(--lp-muted-teal);
+  color: var(--lp-green-text);
+}
+.lp-tab .lp-count {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--lp-white);
+  color: var(--lp-green-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lp-tabpanel[hidden] { display: none; }
+
+/* ---------- Tags ---------- */
+
+.lp-taglist { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---------- Contact cards ---------- */
+
+.lp-contacts-head { margin-bottom: var(--lp-space-4); }
+.lp-contacts-head .lp-page-subtitle { margin-top: 4px; }
+
+.lp-contact-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--lp-space-4);
+  margin-bottom: var(--lp-space-5);
+}
+
+.lp-contact {
+  padding: var(--lp-space-4);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-sm);
+  background: var(--lp-white);
+}
+
+.lp-contact-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--lp-space-3);
+  margin-bottom: var(--lp-space-2);
+}
+.lp-contact-head strong { font-size: 14.5px; color: var(--lp-deep-charcoal); }
+
+.lp-contact-role {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--lp-text-muted);
+}
+
+.lp-contact-body {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--lp-text);
+  overflow-wrap: anywhere;
+}
+
+.lp-contact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--lp-space-2);
+  margin-top: var(--lp-space-3);
+  padding-top: var(--lp-space-3);
+  border-top: 1px solid var(--lp-border);
+}
+.lp-contact-actions form { margin: 0; }
+
+.lp-contact-editing,
+.lp-contact-new {
+  grid-column: 1 / -1;
+  background: var(--lp-canvas);
+}
+
+.lp-contact-new { margin-top: 0; }

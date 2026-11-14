@@ -51,6 +51,15 @@
   </div>
 </div>
 
+<div class="lp-form-group">
+  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 400;">
+    <input type="checkbox" name="is_vendor" value="1" {{ 'checked' if values.is_vendor }}> Also a vendor
+  </label>
+  <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 2px 0 0;">
+    A note on the card only: it does not create a vendor record yet - the link between the two comes with Purchases.
+  </p>
+</div>
+
 <div class="lp-form-grid">
   <div class="lp-form-group" style="grid-column: 1 / -1;">
     <label for="c-name">Customer name <span style="color: var(--lp-coral-text);">*</span></label>
@@ -102,6 +111,11 @@
 <div class="lp-form-grid">
   {{ text_box("email", "Email", type="email") }}
   {{ text_box("phone", "Phone", type="tel") }}
+  <div class="lp-form-group">
+    <label for="c-website">Website</label>
+    <input type="text" id="c-website" name="website" value="{{ values.website }}" maxlength="255"
+           placeholder="www.example.com" class="form-control">
+  </div>
 </div>
 
 {{ section("Address") }}
@@ -146,6 +160,25 @@
   <div class="lp-form-group">
     <label for="c-lic_expiry_date">LIC Expiry Date</label>
     <input type="date" id="c-lic_expiry_date" name="lic_expiry_date" value="{{ values.lic_expiry_date }}" min="1900-01-01" max="2200-12-31" class="form-control">
+  </div>
+  <div class="lp-form-group">
+    <label for="c-currency">Currency</label>
+    <input type="text" id="c-currency" name="currency" value="{{ values.currency }}" maxlength="10"
+           placeholder="PKR" class="form-control" style="text-transform: uppercase;">
+    <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 6px 0 0;">
+      For reference. Leave it empty to mean the company's own currency - ZYRO keeps the books in that currency only.
+    </p>
+  </div>
+  <div class="lp-form-group" style="grid-column: 1 / -1;">
+    <label for="c-tags">Tags</label>
+    <input type="text" id="c-tags" name="tags" value="{{ values.tags }}" maxlength="255"
+           placeholder="e.g. Punjab, VIP, Wholesale" class="form-control">
+    <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 6px 0 0;">
+      Words you file this customer under, separated by commas. Up to 20 tags, 40 characters each.
+    </p>
+    {% if values.tags %}
+      <div class="lp-taglist" style="margin-top: 8px;">{% for tag in tag_list(values.tags) %}<span class="lp-pill draft">{{ tag }}</span>{% endfor %}</div>
+    {% endif %}
   </div>
 </div>
 

@@ -84,6 +84,15 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS category VARCHAR(100)")
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS lic_number VARCHAR(50)")
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS lic_expiry_date DATE")
+
+    # The rest of the card (14 Nov 2026): the tag words, the "also a vendor"
+    # mark, the currency he deals in, his website, and the people/addresses
+    # kept under him (the contacts table below). Additions only, as above.
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS tags VARCHAR(255)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_vendor BOOLEAN NOT NULL DEFAULT FALSE")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS currency VARCHAR(10)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS website VARCHAR(255)")
+
     _give_every_customer_an_id(cursor)
     cursor.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS customers_id_per_organization
@@ -106,6 +115,34 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS wht_rate NUMERIC(5, 2)")
     cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS wht_amount NUMERIC(14, 2) DEFAULT 0")
     cursor.execute("ALTER TABLE customer_receipts ADD COLUMN IF NOT EXISTS journal_header_id INTEGER REFERENCES journal_headers(journal_header_id)")
+
+    # The people and addresses kept under a customer - the "Contacts &
+    # Addresses" tab of his own customer form. One customer may have many;
+    # at most one of them is the primary one (customers/services.py keeps
+    # that rule). The table only ever grows: nothing here is dropped.
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS customer_contacts (
+            contact_id SERIAL PRIMARY KEY,
+            organization_id INTEGER NOT NULL REFERENCES organizations(organization_id),
+            customer_id INTEGER NOT NULL REFERENCES customers(customer_id),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS name VARCHAR(150)")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS job_position VARCHAR(100)")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS email VARCHAR(150)")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS phone VARCHAR(50)")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS street TEXT")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS street2 VARCHAR(200)")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS city VARCHAR(100)")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS state VARCHAR(100)")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS zip_code VARCHAR(20)")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS country VARCHAR(100)")
+    cursor.execute("ALTER TABLE customer_contacts ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT FALSE")
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS customer_contacts_of_customer
+        ON customer_contacts (organization_id, customer_id)
+    """)
 
     # WHT Receivable accounts - the asset-side mirror of the WHT Payable
     # accounts seeded in vendors/schema.py.

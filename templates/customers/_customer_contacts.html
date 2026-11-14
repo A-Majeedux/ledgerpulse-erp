@@ -1,0 +1,110 @@
+{# Contacts & Addresses - the people and addresses kept under this customer.
+
+   contacts              every contact: contact_id, name, job_position, email, phone,
+                         street, street2, city, state, zip_code, country, is_primary
+   editing_contact       the contact being changed in place (its id), or nothing
+   contact_form          the boxes of that contact, as saved or as typed
+   contact_problems      what was wrong with that contact card (may be empty)
+   new_contact_form      the boxes of the "Add a contact" form
+   new_contact_problems  what was wrong with a contact that was being added
+
+   One of the contacts is always the primary one while the customer has any:
+   the first one added becomes it, "Make primary" moves it, and removing it
+   hands it to the oldest that is left (customers/services.py). #}
+{% macro contact_address(contact) %}
+  {% set lines = [contact.street, contact.street2] %}
+  {% set town = [contact.city, contact.state, contact.zip_code]|select|join(', ') %}
+  {% for line in lines if line %}<div>{{ line }}</div>{% endfor %}
+  {% if town %}<div>{{ town }}</div>{% endif %}
+  {% if contact.country %}<div>{{ contact.country }}</div>{% endif %}
+{% endmacro %}
+
+<div class="lp-contacts-head">
+  <div>
+    <h3 style="margin: 0; font-size: 16px;">Contacts &amp; Addresses</h3>
+    <p class="lp-page-subtitle">People and addresses kept under this customer. They never post anything to the books.</p>
+  </div>
+</div>
+
+{% if contact_problems and editing_contact %}
+  <div class="alert alert-error">
+    {% if contact_problems|length == 1 %}{{ contact_problems[0] }}{% else %}
+      <strong>Nothing was saved. Please correct these {{ contact_problems|length }} things:</strong>
+      <ul style="margin: 6px 0 0; padding-left: 20px;">{% for problem in contact_problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if contacts %}
+  <div class="lp-contact-list">
+    {% for contact in contacts %}
+      {% if editing_contact == contact.contact_id %}
+        <form class="lp-contact lp-contact-editing" method="POST"
+              action="{{ url_for('customers.edit_customer_contact', customer_id=customer.customer_id, contact_id=contact.contact_id) }}">
+          {{ csrf_field() }}
+          <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--lp-text-muted); margin: 0 0 12px;">Change this contact</p>
+          {% with cvalues = contact_form, prefix = "e" %}{% include "customers/_contact_fields.html" %}{% endwith %}
+          <div style="display: flex; gap: 8px; margin-top: 4px;">
+            <button type="submit" class="lp-btn primary sm">Save contact</button>
+            <a href="{{ url_for('customers.edit_customer', customer_id=customer.customer_id, tab='contacts') }}" class="lp-btn secondary sm">Cancel</a>
+          </div>
+        </form>
+      {% else %}
+        <div class="lp-contact">
+          <div class="lp-contact-head">
+            <div>
+              <strong>{{ contact.name }}</strong>
+              {% if contact.job_position %}<span class="lp-contact-role">{{ contact.job_position }}</span>{% endif %}
+            </div>
+            {% if contact.is_primary %}<span class="lp-pill posted">Primary</span>{% endif %}
+          </div>
+          <div class="lp-contact-body">
+            {% if contact.email %}<div>{{ contact.email }}</div>{% endif %}
+            {% if contact.phone %}<div>{{ contact.phone }}</div>{% endif %}
+            {{ contact_address(contact) }}
+            {% if not contact.email and not contact.phone and not contact.street and not contact.street2 and not contact.city and not contact.country %}
+              <div style="color: var(--lp-text-muted);">No address or contact details yet.</div>
+            {% endif %}
+          </div>
+          <div class="lp-contact-actions">
+            <a class="lp-btn sm" href="{{ url_for('customers.edit_customer', customer_id=customer.customer_id, contact=contact.contact_id) }}">Edit</a>
+            {% if not contact.is_primary %}
+              <form method="POST" action="{{ url_for('customers.make_customer_contact_primary', customer_id=customer.customer_id, contact_id=contact.contact_id) }}">
+                {{ csrf_field() }}
+                <button type="submit" class="lp-btn sm">Make primary</button>
+              </form>
+            {% endif %}
+            <form method="POST" action="{{ url_for('customers.delete_customer_contact', customer_id=customer.customer_id, contact_id=contact.contact_id) }}"
+                  onsubmit="return confirm('Remove this contact? Its details will be lost.');">
+              {{ csrf_field() }}
+              <button type="submit" class="lp-btn danger sm">Remove</button>
+            </form>
+          </div>
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="lp-empty-state" style="padding: 24px 16px;">
+    No contacts yet. Add the people or addresses you deal with under this customer.
+  </div>
+{% endif %}
+
+<div class="lp-contact lp-contact-new">
+  <p style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--lp-text-muted); margin: 0 0 12px;">Add a contact</p>
+
+  {% if new_contact_problems %}
+    <div class="alert alert-error">
+      {% if new_contact_problems|length == 1 %}{{ new_contact_problems[0] }}{% else %}
+        <strong>Nothing was added. Please correct these {{ new_contact_problems|length }} things:</strong>
+        <ul style="margin: 6px 0 0; padding-left: 20px;">{% for problem in new_contact_problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <form method="POST" action="{{ url_for('customers.add_customer_contact', customer_id=customer.customer_id) }}">
+    {{ csrf_field() }}
+    {% with cvalues = new_contact_form, prefix = "k" %}{% include "customers/_contact_fields.html" %}{% endwith %}
+    <button type="submit" class="lp-btn primary sm">Add contact</button>
+  </form>
+</div>

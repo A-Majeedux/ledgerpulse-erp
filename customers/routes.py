@@ -7,18 +7,20 @@ from accounting.services import create_journal_entry, UnbalancedEntryError
 from wht.routes import get_active_tax_rates
 from core.money import to_decimal, money_round
 from customers.services import (
-    LIST_COLUMNS, NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS, TEXT_FIELDS,
-    ValidationError, blank_form, clean_customer_form, clean_search, count_customers,
-    create_customer, field_suggestions, form_as_typed, form_from_customer, get_customer,
-    list_customers, list_row, name_lock_reason, update_customer,
+    CONTACT_TEXT_FIELDS, LIST_COLUMNS, NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS, TEXT_FIELDS,
+    ValidationError, blank_contact_form, blank_form, clean_contact_form, clean_customer_form,
+    clean_search, contact_form_as_typed, contact_form_from_contact, count_customers, create_contact,
+    create_customer, customer_totals, delete_contact, field_suggestions, form_as_typed,
+    form_from_customer, get_contact, get_customer, list_contacts, list_customers, list_row,
+    make_primary_contact, name_lock_reason, tag_list, update_contact, update_customer,
 )
 
 bp = Blueprint("customers", __name__, url_prefix="/customers")
 
 
-def _field_limits():
-    """The longest text each box of the card accepts, for the maxlength attribute."""
-    return dict({field: max_length for field, _label, max_length in TEXT_FIELDS}, name=NAME_MAX_LENGTH)
+def _field_limits(fields=TEXT_FIELDS):
+    """The longest text each box of a card accepts, for the maxlength attribute."""
+    return dict({field: max_length for field, _label, max_length in fields}, name=NAME_MAX_LENGTH)
 
 
 def _get_account_id_by_code(cursor, org_id, code):
@@ -59,19 +61,46 @@ def _get_customers(org_id):
 # ---------------------------------------------------------------------
 # Customer master
 #
-# These three screens only read and write the customers table. The rules
-# (what may be typed, the ID, when a name is locked) live in
+# These screens only read and write the customers table, the people kept
+# under a customer (customer_contacts), and the three figures at the top of
+# the card, which are READ from the invoices and receipts. The rules (what
+# may be typed, the ID, when a name is locked, what the figures mean) live in
 # customers/services.py; nothing here touches a journal entry.
 # ---------------------------------------------------------------------
 
 def _customer_card(template, cursor, org_id, **context):
-    """Show one of the two card screens with everything they need."""
+    """Show one of the customer card screens with everything they need."""
     return render_template(
         template,
         nature_options=NATURE_OF_SUPPLY_OPTIONS,
         limits=_field_limits(),
+        contact_limits=_field_limits(CONTACT_TEXT_FIELDS),
         suggestions=field_suggestions(cursor, org_id),
+        tag_list=tag_list,          # so the card can show the tags one by one
         **context,
+    )
+
+
+def _show_edit_card(cursor, org_id, customer, *, values=None, problems=None,
+                    contact_form=None, contact_problems=None, editing_contact=None,
+                    new_contact_form=None, new_contact_problems=None, open_tab="customer"):
+    """Draw the Edit card: the totals, the two tabs, and the contact cards."""
+    return _customer_card(
+        "customers/edit_customer.html", cursor, org_id,
+        customer=customer,
+        values=form_from_customer(customer) if values is None else values,
+        problems=problems or [],
+        name_locked=name_lock_reason(cursor, org_id, customer),
+        totals=customer_totals(cursor, org_id, customer["customer_id"]),
+        contacts=list_contacts(cursor, org_id, customer["customer_id"]),
+        # the contact being changed in place
+        contact_form=contact_form,
+        contact_problems=contact_problems or [],
+        editing_contact=editing_contact,
+        # the "Add a contact" box at the bottom
+        new_contact_form=blank_contact_form() if new_contact_form is None else new_contact_form,
+        new_contact_problems=new_contact_problems or [],
+        open_tab="contacts" if open_tab == "contacts" else "customer",
     )
 
 
@@ -130,6 +159,8 @@ def edit_customer(customer_id):
 
     An INACTIVE customer keeps its history and its balance; it only stops
     being offered when a new receipt, invoice or journal entry is entered.
+
+    `?contact=<id>` opens the Contacts tab with that contact ready to change.
     """
     org_id = current_organization_id()
     conn = get_conn()
@@ -138,7 +169,7 @@ def edit_customer(customer_id):
         customer = get_customer(cursor, org_id, customer_id)
         if customer is None:            # no such customer in THIS organization
             abort(404)
-        values, problems = form_from_customer(customer), []
+
         if request.method == "POST":
             data, problems = clean_customer_form(request.form, editing=True)
             if not problems:
@@ -149,12 +180,126 @@ def edit_customer(customer_id):
                 except ValidationError as error:
                     conn.rollback()
                     problems = [str(error)]
-            values = form_as_typed(request.form, base=values)
-        return _customer_card(
-            "customers/edit_customer.html", cursor, org_id,
-            customer=customer, values=values, problems=problems,
-            name_locked=name_lock_reason(cursor, org_id, customer),
+            return _show_edit_card(cursor, org_id, customer,
+                                   values=form_as_typed(request.form, base=form_from_customer(customer)),
+                                   problems=problems)
+
+        editing_contact, contact_form = None, None
+        wanted = (request.args.get("contact") or "").strip()
+        if wanted.isascii() and wanted.isdigit():
+            contact = get_contact(cursor, org_id, customer_id, int(wanted))
+            if contact is not None:
+                editing_contact = contact["contact_id"]
+                contact_form = contact_form_from_contact(contact)
+        return _show_edit_card(
+            cursor, org_id, customer,
+            editing_contact=editing_contact, contact_form=contact_form,
+            open_tab="contacts" if editing_contact is not None else (request.args.get("tab") or "customer"),
         )
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ---------------------------------------------------------------------
+# The contacts kept under a customer
+# ---------------------------------------------------------------------
+
+def _customer_or_404(cursor, org_id, customer_id):
+    customer = get_customer(cursor, org_id, customer_id)
+    if customer is None:
+        abort(404)
+    return customer
+
+
+@bp.route("/<int:customer_id>/contacts", methods=["POST"])
+@require_organization
+def add_customer_contact(customer_id):
+    """Add one contact card. The first contact of a customer becomes primary."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        customer = _customer_or_404(cursor, org_id, customer_id)
+        data, problems = clean_contact_form(request.form)
+        if not problems:
+            try:
+                create_contact(cursor, org_id, customer_id, data)
+                conn.commit()
+                return redirect(url_for("customers.edit_customer", customer_id=customer_id, tab="contacts"))
+            except ValidationError as error:
+                conn.rollback()
+                problems = [str(error)]
+        return _show_edit_card(cursor, org_id, customer, open_tab="contacts",
+                               new_contact_form=contact_form_as_typed(request.form),
+                               new_contact_problems=problems)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@bp.route("/<int:customer_id>/contacts/<int:contact_id>", methods=["POST"])
+@require_organization
+def edit_customer_contact(customer_id, contact_id):
+    """Save one contact card. Which contact is primary is changed by the two actions below."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        customer = _customer_or_404(cursor, org_id, customer_id)
+        data, problems = clean_contact_form(request.form)
+        if not problems:
+            try:
+                update_contact(cursor, org_id, customer_id, contact_id, data)
+                conn.commit()
+                return redirect(url_for("customers.edit_customer", customer_id=customer_id, tab="contacts"))
+            except ValidationError as error:
+                conn.rollback()
+                problems = [str(error)]
+        return _show_edit_card(cursor, org_id, customer, open_tab="contacts",
+                               editing_contact=contact_id,
+                               contact_form=contact_form_as_typed(request.form),
+                               contact_problems=problems)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@bp.route("/<int:customer_id>/contacts/<int:contact_id>/primary", methods=["POST"])
+@require_organization
+def make_customer_contact_primary(customer_id, contact_id):
+    """Make this contact the primary one for the customer."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        _customer_or_404(cursor, org_id, customer_id)
+        try:
+            make_primary_contact(cursor, org_id, customer_id, contact_id)
+            conn.commit()
+        except ValidationError:
+            conn.rollback()
+        return redirect(url_for("customers.edit_customer", customer_id=customer_id, tab="contacts"))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@bp.route("/<int:customer_id>/contacts/<int:contact_id>/delete", methods=["POST"])
+@require_organization
+def delete_customer_contact(customer_id, contact_id):
+    """Remove a contact. If it was the primary one, the oldest left takes over."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        _customer_or_404(cursor, org_id, customer_id)
+        try:
+            delete_contact(cursor, org_id, customer_id, contact_id)
+            conn.commit()
+        except ValidationError:
+            conn.rollback()
+        return redirect(url_for("customers.edit_customer", customer_id=customer_id, tab="contacts"))
     finally:
         cursor.close()
         conn.close()
