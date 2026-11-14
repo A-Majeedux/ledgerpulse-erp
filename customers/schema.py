@@ -92,6 +92,9 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_vendor BOOLEAN NOT NULL DEFAULT FALSE")
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS currency VARCHAR(10)")
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS website VARCHAR(255)")
+    # The Notes tab of the card. TEXT, so the length limit is the app's
+    # (NOTES_MAX_LENGTH), not the column's.
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes TEXT")
 
     _give_every_customer_an_id(cursor)
     cursor.execute("""

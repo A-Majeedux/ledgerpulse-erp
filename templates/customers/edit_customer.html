@@ -32,36 +32,118 @@
 </div>
 
 <div class="lp-card" style="max-width: 1000px;">
-  <div class="lp-tabs" role="tablist">
-    <button type="button" class="lp-tab{{ ' active' if open_tab == 'customer' }}" role="tab"
-            data-tab-target="tab-customer" aria-selected="{{ 'true' if open_tab == 'customer' else 'false' }}"
-            aria-controls="tab-customer">Customer</button>
+  {# The card itself is always in front of him; the tabs below hold the rest. #}
+  <form method="POST" action="{{ url_for('customers.edit_customer', customer_id=customer.customer_id) }}">
+    {{ csrf_field() }}
+    {% if problems %}
+      <div class="alert alert-error">
+        {% if problems|length == 1 %}{{ problems[0] }}{% else %}
+          <strong>Nothing was saved. Please correct these {{ problems|length }} things:</strong>
+          <ul style="margin: 6px 0 0; padding-left: 20px;">{% for problem in problems %}<li>{{ problem }}</li>{% endfor %}</ul>
+        {% endif %}
+      </div>
+    {% endif %}
+    {% include "customers/_customer_form.html" %}
+    <div style="display: flex; gap: 10px; margin-top: 28px;">
+      <button type="submit" class="lp-btn primary">Save Changes</button>
+      <a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary">Cancel</a>
+    </div>
+  </form>
+
+  <div class="lp-tabs" role="tablist" style="margin-top: 30px;">
     <button type="button" class="lp-tab{{ ' active' if open_tab == 'contacts' }}" role="tab"
             data-tab-target="tab-contacts" aria-selected="{{ 'true' if open_tab == 'contacts' else 'false' }}"
             aria-controls="tab-contacts">Contacts &amp; Addresses
       {% if contacts %}<span class="lp-count">{{ contacts|length }}</span>{% endif %}
     </button>
-  </div>
-
-  <div class="lp-tabpanel" id="tab-customer" role="tabpanel"{% if open_tab != 'customer' %} hidden{% endif %}>
-    <form method="POST" action="{{ url_for('customers.edit_customer', customer_id=customer.customer_id) }}">
-      {{ csrf_field() }}
-      {% include "customers/_customer_form.html" %}
-      <div style="display: flex; gap: 10px; margin-top: 28px;">
-        <button type="submit" class="lp-btn primary">Save Changes</button>
-        <a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary">Cancel</a>
-      </div>
-    </form>
+    <button type="button" class="lp-tab{{ ' active' if open_tab == 'sales' }}" role="tab"
+            data-tab-target="tab-sales" aria-selected="{{ 'true' if open_tab == 'sales' else 'false' }}"
+            aria-controls="tab-sales">Sales &amp; Purchase
+      {% if invoices or receipts %}<span class="lp-count">{{ invoices|length + receipts|length }}</span>{% endif %}
+    </button>
+    <button type="button" class="lp-tab{{ ' active' if open_tab == 'accounting' }}" role="tab"
+            data-tab-target="tab-accounting" aria-selected="{{ 'true' if open_tab == 'accounting' else 'false' }}"
+            aria-controls="tab-accounting">Accounting
+      {% if ledger.lines %}<span class="lp-count">{{ ledger.lines|length }}</span>{% endif %}
+    </button>
+    <button type="button" class="lp-tab{{ ' active' if open_tab == 'notes' }}" role="tab"
+            data-tab-target="tab-notes" aria-selected="{{ 'true' if open_tab == 'notes' else 'false' }}"
+            aria-controls="tab-notes">Notes</button>
+    <button type="button" class="lp-tab{{ ' active' if open_tab == 'credit' }}" role="tab"
+            data-tab-target="tab-credit" aria-selected="{{ 'true' if open_tab == 'credit' else 'false' }}"
+            aria-controls="tab-credit">Credit Limit</button>
   </div>
 
   <div class="lp-tabpanel" id="tab-contacts" role="tabpanel"{% if open_tab != 'contacts' %} hidden{% endif %}>
     {% include "customers/_customer_contacts.html" %}
   </div>
+
+  <div class="lp-tabpanel" id="tab-sales" role="tabpanel"{% if open_tab != 'sales' %} hidden{% endif %}>
+    {% include "customers/_customer_sales.html" %}
+  </div>
+
+  <div class="lp-tabpanel" id="tab-accounting" role="tabpanel"{% if open_tab != 'accounting' %} hidden{% endif %}>
+    {% include "customers/_customer_accounting.html" %}
+  </div>
+
+  <div class="lp-tabpanel" id="tab-notes" role="tabpanel"{% if open_tab != 'notes' %} hidden{% endif %}>
+    <h3 style="margin: 0 0 4px; font-size: 16px;">Notes</h3>
+    <p class="lp-page-subtitle" style="margin-bottom: 16px;">
+      Anything you want to remember about this customer - terms agreed, who to call, the way he pays.
+      Only this box is saved here; nothing is posted.
+    </p>
+    {% if notes_problems %}
+      <div class="alert alert-error">
+        {% for problem in notes_problems %}<div>{{ problem }}</div>{% endfor %}
+      </div>
+    {% endif %}
+    <form method="POST" action="{{ url_for('customers.save_customer_notes', customer_id=customer.customer_id) }}">
+      {{ csrf_field() }}
+      <div class="lp-form-group">
+        <label for="c-notes">Note</label>
+        <textarea id="c-notes" name="notes" rows="10" maxlength="2000" class="form-control"
+                  placeholder="e.g. Cheque comes from the Lahore office; always ask for Mr. Imran.">{{ notes_text }}</textarea>
+        <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 6px 0 0;">
+          Up to 2,000 characters. The lines you type stay as you typed them.
+        </p>
+      </div>
+      <button type="submit" class="lp-btn primary sm">Save Note</button>
+    </form>
+  </div>
+
+  <div class="lp-tabpanel" id="tab-credit" role="tabpanel"{% if open_tab != 'credit' %} hidden{% endif %}>
+    <h3 style="margin: 0 0 4px; font-size: 16px;">Credit Limit</h3>
+    <p class="lp-page-subtitle" style="margin-bottom: 16px;">
+      The limit is entered on the card above (Credit limit). These three figures are worked out from it
+      and from what the customer owes right now; they do not post anything.
+    </p>
+    <div class="lp-total-strip" style="margin-top: 0;">
+      <div class="lp-total">
+        <span class="lp-total-label">Credit limit</span>
+        <strong class="lp-total-value">{{ active_currency }} {{ credit.limit_text }}</strong>
+        <small>{{ 'The limit you gave him' if credit.has_limit else 'No limit set on the card above' }}</small>
+      </div>
+      <div class="lp-total">
+        <span class="lp-total-label">Due now</span>
+        <strong class="lp-total-value{{ ' negative' if totals.due < 0 }}">{{ active_currency }} {{ credit.due_text }}</strong>
+        <small>Invoiced less receipts received</small>
+      </div>
+      <div class="lp-total">
+        <span class="lp-total-label">Room left</span>
+        <strong class="lp-total-value{{ ' negative' if credit.room < 0 }}">{{ active_currency }} {{ credit.room_text }}</strong>
+        <small>{{ 'Over the limit' if credit.room < 0 else 'Limit less what is due' }}</small>
+      </div>
+    </div>
+    <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 16px 0 0;">
+      ZYRO records the limit but does not stop a sale that goes over it yet - the invoice is still saved.
+    </p>
+  </div>
 </div>
 
 <script>
-// The two tabs of the card. Only the page in front of you is shown; the other
-// is hidden, so that both cannot be saved by mistake. No page is loaded again.
+// The tabs under the card. Only the tab in front of him is shown; the others
+// are hidden, so that a box on one of them cannot be saved by mistake. No
+// page is loaded again.
 (function () {
   var tabs = document.querySelectorAll(".lp-tab");
   function open(name) {
@@ -78,6 +160,25 @@
     (function (tab) {
       tab.addEventListener("click", function () { open(tab.getAttribute("data-tab-target")); });
     })(tabs[i]);
+  }
+  // A tag pill's little x takes that tag out of the box. Nothing is saved
+  // until "Save Changes" is pressed.
+  var tagBox = document.getElementById("c-tags");
+  var removeButtons = document.querySelectorAll("[data-remove-tag]");
+  for (var i = 0; i < removeButtons.length; i++) {
+    (function (button) {
+      button.addEventListener("click", function () {
+        var gone = button.getAttribute("data-remove-tag");
+        if (tagBox) {
+          var kept = tagBox.value.split(",").map(function (tag) { return tag.trim(); })
+            .filter(function (tag) { return tag && tag.toLowerCase() !== gone.trim().toLowerCase(); });
+          tagBox.value = kept.join(", ");
+          tagBox.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        var pill = button.parentNode;
+        if (pill) { pill.parentNode.removeChild(pill); }
+      });
+    })(removeButtons[i]);
   }
 })();
 </script>

@@ -28,10 +28,11 @@ from customers.services import (
     CONTACT_FORM_FIELDS, CONTACT_TEXT_FIELDS, CUSTOMER_COLUMNS, FORM_FIELDS, LIST_COLUMNS,
     MAX_CREDIT_LIMIT, NAME_LOCKED_MESSAGE, NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS,
     TAGS_MAX_COUNT, TAG_MAX_LENGTH, TEXT_FIELDS, TRADE_RECEIVABLE_CODE, ValidationError,
-    blank_contact_form, blank_form, clean_block, clean_contact_form, clean_currency,
-    clean_customer_form, clean_line, clean_search, clean_tags, clean_website,
-    contact_form_as_typed, contact_form_from_contact, form_as_typed, form_from_customer,
-    format_amount, format_date, like_pattern, list_row, parse_amount, same_name, tag_list,
+    NOTES_MAX_LENGTH, blank_contact_form, blank_form, clean_block, clean_contact_form,
+    clean_currency, clean_customer_form, clean_line, clean_notes, clean_search, clean_tags,
+    clean_website, contact_form_as_typed, contact_form_from_contact, credit_position,
+    form_as_typed, form_from_customer, format_amount, format_date, like_pattern, list_row,
+    parse_amount, same_name, tag_list,
 )
 
 
@@ -330,6 +331,34 @@ class CustomerCardRulesTests(unittest.TestCase):
         self.assertEqual(form_as_typed({"name": "X", "is_vendor": "1", "tags": "a,b"})["tags"], "a,b")
         self.assertEqual(form_as_typed({"name": "X", "is_vendor": "1"})["is_vendor"], "1")
         self.assertEqual(form_as_typed({"name": "X"})["is_vendor"], "")
+
+    def test_notes(self):
+        # the lines he typed stay as he typed them
+        self.assertEqual(clean_notes("Pays by cheque.\n\nAsk for Mr. Imran."),
+                         "Pays by cheque.\n\nAsk for Mr. Imran.")
+        self.assertEqual(clean_notes("  two lines \r\n second   \r\n"), "two lines\n second")
+        self.assertIsNone(clean_notes(""))                       # an empty box saves nothing
+        self.assertIsNone(clean_notes("   \n  \n "))             # only spaces and lines
+        self.assertIsNone(clean_notes(None))
+        self.assertEqual(len(clean_notes("x" * NOTES_MAX_LENGTH)), NOTES_MAX_LENGTH)
+        with self.assertRaises(ValidationError):
+            clean_notes("x" * (NOTES_MAX_LENGTH + 1))
+
+    def test_the_credit_position(self):
+        totals = {"due": D("250000.00")}
+        position = credit_position(totals, D("40000000"))
+        self.assertEqual(position["limit"], D("40000000.00"))
+        self.assertEqual(position["room"], D("39750000.00"))
+        self.assertEqual(position["limit_text"], "40,000,000.00")
+        self.assertEqual(position["room_text"], "39,750,000.00")
+        self.assertTrue(position["has_limit"])
+        # over the limit, and no limit at all
+        over = credit_position({"due": D("500.00")}, D("100"))
+        self.assertEqual(over["room"], D("-400.00"))
+        self.assertTrue(over["has_limit"])
+        nothing = credit_position({"due": D("0")}, None)
+        self.assertEqual(nothing["limit"], D("0.00"))
+        self.assertFalse(nothing["has_limit"])
 
     def test_a_contact_card(self):
         data, problems = clean_contact_form({"name": "  Ali   Raza "})
@@ -840,6 +869,184 @@ class CustomerCardDatabaseTests(unittest.TestCase):
         page = self.client.get(f"/customers/{prepaid_id}/edit").get_data(as_text=True)
         self.assertIn("-900.00", page)                                     # he is in advance
         self.assertIn("lp-total-value negative", page)
+
+    # -- the Notes tab -----------------------------------------------------
+    def note(self, customer_id, text):
+        return self.client.post(f"/customers/{customer_id}/notes",
+                                data={"csrf_token": "test-csrf", "notes": text})
+
+    def stored_notes(self, customer_id):
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT notes FROM customers WHERE customer_id = %s", (customer_id,))
+        notes = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        return notes
+
+    def test_a_note_is_saved_as_typed_and_nothing_else_changes(self):
+        self.save(name="Noted Traders", credit_limit="5000", tags="Punjab")
+        customer_id = self.customers()[0][0]
+        response = self.note(customer_id, "  Pays by cheque on Fridays.\r\n\r\nAsk for Mr. Imran.  ")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.stored_notes(customer_id),
+                         "Pays by cheque on Fridays.\n\nAsk for Mr. Imran.")
+        # the rest of the card is exactly as it was
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT credit_limit, tags FROM customers WHERE customer_id = %s", (customer_id,))
+        self.assertEqual(cursor.fetchone(), (D("5000.00"), "Punjab"))
+        cursor.close()
+        conn.close()
+        page = self.client.get(f"/customers/{customer_id}/edit?tab=notes").get_data(as_text=True)
+        self.assertIn("Pays by cheque on Fridays.", page)
+        self.assertIn("Ask for Mr. Imran.", page)
+
+    def test_an_empty_note_empties_the_tab(self):
+        self.save(name="Emptied Traders")
+        customer_id = self.customers()[0][0]
+        self.note(customer_id, "Something")
+        self.assertEqual(self.note(customer_id, "   ").status_code, 302)
+        self.assertIsNone(self.stored_notes(customer_id))
+
+    def test_a_note_that_is_too_long_is_refused_and_nothing_is_saved(self):
+        self.save(name="Wordy Traders")
+        customer_id = self.customers()[0][0]
+        response = self.note(customer_id, "x" * (NOTES_MAX_LENGTH + 1))
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Notes are too long", page)
+        self.assertIn("x" * 100, page)                      # what he typed is kept on the page
+        self.assertIsNone(self.stored_notes(customer_id))
+
+    def test_a_note_cannot_be_reached_through_another_company(self):
+        self.save(name="Ours")
+        customer_id = self.customers()[0][0]
+        self.save(name="Theirs", url="/customers/new")      # same company, second customer
+        other = self.customers()[1][0]
+        self.note(other, "belongs to the second")
+        self.assertIsNone(self.stored_notes(customer_id))
+        # another company's customer: not found
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO customers (organization_id, customer_no, name) "
+                       "VALUES (%s, 1, 'Their Customer') RETURNING customer_id", (self.other_org_id,))
+        theirs = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+        self.assertEqual(self.note(theirs, "sneaky").status_code, 404)
+
+        # -- Sales & Purchase --------------------------------------------------
+    def test_the_sales_tab_lists_his_invoices_and_receipts(self):
+        self.save(name="Buying Traders", credit_limit="100000")
+        self.save(name="Quiet Traders")
+        buying_id, quiet_id = [row[0] for row in self.customers()]
+        posted = self.invoice(buying_id, "2000.00", "Posted", day="2026-11-01")
+        self.invoice(buying_id, "1000.00", "Draft", day="2026-11-05")
+        self.receipt(buying_id, "500.00")
+        page = self.client.get(f"/customers/{buying_id}/edit?tab=sales").get_data(as_text=True)
+        self.assertIn("Sales invoices", page)
+        self.assertIn("3,000.00", page)                     # 2,000 + 1,000, drafts included
+        self.assertIn("2,000.00", page)
+        self.assertIn("1,000.00", page)
+        self.assertIn("Posted", page)
+        self.assertIn("Draft", page)
+        self.assertIn("Receipts received", page)
+        self.assertIn("500.00", page)
+        self.assertIn(f'<td class="lp-nowrap">{posted}</td>', page)   # the invoice's own number
+        # the quiet customer has nothing
+        page = self.client.get(f"/customers/{quiet_id}/edit?tab=sales").get_data(as_text=True)
+        self.assertIn("No sales invoice for this customer yet.", page)
+        self.assertIn("Nothing received from this customer yet.", page)
+        self.assertNotIn("2,000.00", page)                  # never another customer's documents
+
+    # -- Accounting --------------------------------------------------------
+    def journal_line(self, name, debit, credit, day="2026-11-05", reference="JV/2026/0001", status="Posted"):
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT account_id FROM chart_of_accounts WHERE organization_id = %s AND code = '1100'",
+                       (self.org_id,))
+        account_id = cursor.fetchone()[0]
+        cursor.execute("INSERT INTO journal_headers (organization_id, accounting_date, journal_name, reference, status) "
+                       "VALUES (%s, %s, 'Miscellaneous Operations', %s, %s) RETURNING journal_header_id",
+                       (self.org_id, day, reference, status))
+        header_id = cursor.fetchone()[0]
+        cursor.execute("INSERT INTO journal_lines (journal_header_id, account_id, debit, credit, partner_name, label) "
+                       "VALUES (%s, %s, %s, %s, %s, 'Freight charged')",
+                       (header_id, account_id, debit, credit, name))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    def test_the_accounting_tab_shows_what_the_books_say_about_him(self):
+        self.save(name="Ledger Traders")
+        self.save(name="Other Ledger Traders")
+        his_id, other_id = [row[0] for row in self.customers()]
+        self.journal_line("Ledger Traders", "2500.00", "0")
+        self.journal_line("ledger traders", "0", "500.00", day="2026-11-06", reference="JV/2026/0002")
+        self.journal_line("Other Ledger Traders", "9000.00", "0", reference="JV/2026/0003")
+        page = self.client.get(f"/customers/{his_id}/edit?tab=accounting").get_data(as_text=True)
+        self.assertIn("JV/2026/0001", page)
+        self.assertIn("JV/2026/0002", page)                 # his name, whatever the capitals
+        self.assertIn("2,500.00", page)
+        self.assertIn("500.00", page)
+        self.assertIn("PKR 2,000.00", page)                 # the balance: debit less credit
+        self.assertNotIn("9,000.00", page)                  # never the other customer's lines
+        # the other customer sees only his own
+        page = self.client.get(f"/customers/{other_id}/edit?tab=accounting").get_data(as_text=True)
+        self.assertIn("9,000.00", page)
+        self.assertNotIn("JV/2026/0001", page)
+
+    def test_the_accounting_tab_is_empty_for_a_customer_with_nothing_posted(self):
+        self.save(name="Fresh Traders")
+        customer_id = self.customers()[0][0]
+        page = self.client.get(f"/customers/{customer_id}/edit?tab=accounting").get_data(as_text=True)
+        self.assertIn("Nothing has been posted to account 1100", page)
+
+    # -- Credit Limit ------------------------------------------------------
+    def test_the_credit_tab_works_out_the_room_left(self):
+        self.save(name="Limit Traders", credit_limit="10000")
+        customer_id = self.customers()[0][0]
+        self.invoice(customer_id, "4000.00", "Posted")
+        self.receipt(customer_id, "1000.00")
+        page = self.client.get(f"/customers/{customer_id}/edit?tab=credit").get_data(as_text=True)
+        self.assertIn("10,000.00", page)                    # the limit
+        self.assertIn("3,000.00", page)                     # due now: 4,000 invoiced less 1,000 received
+        self.assertIn("7,000.00", page)                     # room left: 10,000 less 3,000
+
+    def test_a_customer_with_no_limit_says_so_and_can_be_over_it(self):
+        self.save(name="No Limit Traders", credit_limit="0")
+        customer_id = self.customers()[0][0]
+        self.invoice(customer_id, "4000.00", "Posted")
+        page = self.client.get(f"/customers/{customer_id}/edit?tab=credit").get_data(as_text=True)
+        self.assertIn("No limit set on the card above", page)
+        self.assertIn("Over the limit", page)
+        self.assertIn("-4,000.00", page)
+
+    # -- the tabs themselves ----------------------------------------------
+    def test_the_five_tabs_and_which_one_opens(self):
+        self.save(name="Tab Traders")
+        customer_id = self.customers()[0][0]
+        page = self.client.get(f"/customers/{customer_id}/edit").get_data(as_text=True)
+        for name in ("Contacts &amp; Addresses", "Sales &amp; Purchase", "Accounting", "Notes", "Credit Limit"):
+            self.assertIn(f">{name}", page)
+        # nothing asked for: the contacts, as on his own screen
+        self.assertIn('data-tab-target="tab-contacts" aria-selected="true"', page)
+        self.assertIn('id="tab-sales" role="tabpanel" hidden', page)
+        for tab in ("sales", "accounting", "notes", "credit"):
+            page = self.client.get(f"/customers/{customer_id}/edit?tab={tab}").get_data(as_text=True)
+            self.assertIn(f'id="tab-{tab}" role="tabpanel">', page, tab)
+            self.assertIn(f'data-tab-target="tab-{tab}" aria-selected="true"', page, tab)
+        # a tab that does not exist opens the contacts rather than nothing
+        page = self.client.get(f"/customers/{customer_id}/edit?tab=nonsense").get_data(as_text=True)
+        self.assertIn('data-tab-target="tab-contacts" aria-selected="true"', page)
+        # the card itself is always on the page, in front of the tabs
+        self.assertIn('name="credit_limit"', page)
 
     def test_the_new_card_and_the_field_suggestions_open(self):
         self.save(name="Suggestion Traders", territory="KASUR TOWN", city="Lahore")

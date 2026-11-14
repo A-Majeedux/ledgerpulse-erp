@@ -1,0 +1,60 @@
+{# Accounting - what the books say about the customer.
+
+   ledger  the lines on Trade Receivables (account 1100) that carry his name:
+             lines[]: date_text, journal_name, reference, status, debit, credit,
+                      debit_text, credit_text
+             debit_text, credit_text, balance, balance_text, name
+
+   This is the one place a hand-written journal entry shows up: the three
+   figures at the top of the card read the invoices and the receipts, not the
+   ledger. Nothing here is posted or changed. #}
+<h3 style="margin: 0 0 4px; font-size: 16px;">Accounting</h3>
+<p class="lp-page-subtitle" style="margin-bottom: 16px;">
+  Every line on Trade Receivables (account 1100) that carries this customer's name - written by
+  receipts, by invoices, and by hand in a journal entry.
+</p>
+
+{% if ledger.lines %}
+  <div class="lp-table-wrapper">
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Journal</th>
+          <th>Reference</th>
+          <th class="amount">Debit</th>
+          <th class="amount">Credit</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for line in ledger.lines %}
+          <tr>
+            <td class="lp-nowrap">{{ line.date_text }}</td>
+            <td class="lp-clip" title="{{ line.journal_name or '' }}">{{ line.journal_name or '' }}</td>
+            <td class="lp-clip" title="{{ line.reference }}">{{ line.reference }}</td>
+            <td class="amount lp-nowrap">{{ line.debit_text }}</td>
+            <td class="amount lp-nowrap">{{ line.credit_text }}</td>
+            <td><span class="lp-pill {{ 'posted' if line.status == 'Posted' else 'draft' }}">{{ line.status }}</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="3">Balance on account 1100</th>
+          <th class="amount lp-nowrap">{{ ledger.debit_text }}</th>
+          <th class="amount lp-nowrap">{{ ledger.credit_text }}</th>
+          <th class="amount lp-nowrap">{{ active_currency }} {{ ledger.balance_text }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 8px 0 0;">
+    Debit less credit. A hand-written journal entry is in this balance but not in the Sales / Invoiced / Due
+    figures above the card - those read the invoices and the receipts only.
+  </p>
+{% else %}
+  <div class="lp-empty-state" style="padding: 20px 16px;">
+    Nothing has been posted to account 1100 under this customer's name yet.
+  </div>
+{% endif %}

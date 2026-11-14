@@ -1,0 +1,74 @@
+{# Sales & Purchase - what the customer has bought, read from the documents.
+
+   invoices  every sales invoice entered for him (drafts included), newest first:
+             invoice_id, status, date_text, due_text, total, total_text
+   receipts  the money received from him, newest first:
+             receipt_id, date_text, amount, amount_text, memo
+
+   This tab only reads. Nothing is posted and no invoice or receipt is changed
+   from here - they are entered on the Sales and Receipts screens. #}
+<h3 style="margin: 0 0 4px; font-size: 16px;">Sales &amp; Purchase</h3>
+<p class="lp-page-subtitle" style="margin-bottom: 16px;">
+  What this customer has bought and what he has paid - read from the invoices and the receipts.
+  Nothing is changed from here.
+</p>
+
+<h4 class="lp-subhead">Sales invoices</h4>
+{% if invoices %}
+  <div class="lp-table-wrapper">
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th>Invoice</th>
+          <th>Invoice date</th>
+          <th>Due date</th>
+          <th class="amount">Total</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for invoice in invoices %}
+          <tr>
+            <td class="lp-nowrap">{{ invoice.invoice_id }}</td>
+            <td class="lp-nowrap">{{ invoice.date_text }}</td>
+            <td class="lp-nowrap">{{ invoice.due_text }}</td>
+            <td class="amount lp-nowrap">{{ active_currency }} {{ invoice.total_text }}</td>
+            <td><span class="lp-pill {{ 'posted' if invoice.status == 'Posted' else 'draft' }}">{{ invoice.status }}</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 8px 0 0;">
+    ZYRO does not print a number on an invoice yet, so the invoice's own number is shown.
+    To open or change an invoice, use the Invoices screen.
+  </p>
+{% else %}
+  <div class="lp-empty-state" style="padding: 20px 16px;">No sales invoice for this customer yet.</div>
+{% endif %}
+
+<h4 class="lp-subhead">Receipts received</h4>
+{% if receipts %}
+  <div class="lp-table-wrapper">
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th class="amount">Amount</th>
+          <th>Memo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for receipt in receipts %}
+          <tr>
+            <td class="lp-nowrap">{{ receipt.date_text }}</td>
+            <td class="amount lp-nowrap">{{ active_currency }} {{ receipt.amount_text }}</td>
+            <td class="lp-clip" title="{{ receipt.memo or '' }}">{{ receipt.memo or '' }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="lp-empty-state" style="padding: 20px 16px;">Nothing received from this customer yet.</div>
+{% endif %}

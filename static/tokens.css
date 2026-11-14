@@ -1249,3 +1249,55 @@ a:hover { text-decoration: underline; }
 }
 
 .lp-contact-new { margin-top: 0; }
+
+/* ---------- What his own screens show, added with the five tabs ---------- */
+
+/* The little x inside a tag pill (the tags box on the Edit card). */
+.lp-tag-x {
+  margin-left: 6px;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: inherit;
+  opacity: 0.65;
+  cursor: pointer;
+}
+.lp-tag-x:hover { opacity: 1; }
+
+/* The square with the contact's first letter, as on his own screen. */
+.lp-contact-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--lp-radius-sm);
+  background: var(--lp-soft-sage);
+  color: var(--lp-green-text);
+  font-size: 15px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.lp-contact-head { align-items: center; }
+
+/* A small heading inside a tab (Sales invoices, Receipts received). */
+.lp-subhead {
+  margin: var(--lp-space-5) 0 var(--lp-space-2);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--lp-text-muted);
+}
+.lp-subhead:first-of-type { margin-top: 0; }
+
+.lp-table tfoot th {
+  border-top: 1px solid var(--lp-border);
+  background: var(--lp-canvas);
+  font-size: 13px;
+  font-weight: 700;
+}

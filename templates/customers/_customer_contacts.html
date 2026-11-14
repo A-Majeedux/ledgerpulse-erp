@@ -52,7 +52,8 @@
       {% else %}
         <div class="lp-contact">
           <div class="lp-contact-head">
-            <div>
+            <span class="lp-contact-avatar" aria-hidden="true">{{ (contact.name or '?').strip()[:1]|upper }}</span>
+            <div style="flex: 1;">
               <strong>{{ contact.name }}</strong>
               {% if contact.job_position %}<span class="lp-contact-role">{{ contact.job_position }}</span>{% endif %}
             </div>

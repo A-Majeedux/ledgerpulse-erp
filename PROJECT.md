@@ -132,6 +132,9 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
   Columns tick-box menu; the rules in the new `customers/services.py` (see section 13)
 - 2026-11-14 — The rest of the card: Tags, Also a vendor, Currency, Website, the Contacts & Addresses tab with its
   contact cards, the two tabs, and the Sales / Invoiced / Due figures at the top (see section 13)
+- 2026-11-14 — The five tabs under his card, from his own screens: Contacts & Addresses, Sales & Purchase (his
+  invoices and receipts, read-only), Accounting (the 1100 lines under his name), Notes (a new column) and Credit
+  Limit (see section 13)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -204,16 +207,43 @@ plus tags, is_vendor, currency, website), the ID given to the customers that had
 new table `customer_contacts` (created with `CREATE TABLE IF NOT EXISTS`, with its own additive columns and index).
 Nothing is dropped, renamed or rewritten.
 
-**Still open from his customer form:** the contact cards do not carry a "Type" (invoice address / delivery /
-other), and there are no Tags columns on the list. LIC Number and LIC Expiry Date are on every company's card for
-now — the owner was asked whether they are for Hextar only.
+### The five tabs under the card (14 Nov 2026, from his own screens)
 
-**Checks.** `tests/test_customer_card.py` (45 checks: the rules without a database, and the screens on one), plus
-ZYRO's own `tests/` (67 passed; `test_vendors.py::test_10_all_print_templates_and_routes` failed before this work
+The owner sent pictures of his live customer and sales screens, so the Edit card now carries the same tabs, in
+the same order, with the card itself always in front of him: **Contacts & Addresses, Sales & Purchase, Accounting,
+Notes, Credit Limit.**
+
+- **Contacts & Addresses** — as above, and each contact now shows the same little square with its first letter
+  that his own screen shows. A tag pill carries a small **x** that takes the tag out of the box (`Save Changes`
+  keeps it out).
+- **Sales & Purchase** — two read-only tables: every sales invoice entered for him (date, due date, total, and
+  whether it is in the books) and every receipt received (date, amount, memo). *His screen shows an invoice number
+  like INV/2026/01749; ZYRO does not print a number on an invoice yet, so the invoice's own number is shown and the
+  card says so.* Nothing is changed from this tab — invoices and receipts are entered on their own screens.
+- **Accounting** — every line on **Trade Receivables (account 1100)** that carries his name, with the balance
+  (debit less credit). This is the one place a hand-written journal entry shows up: it is **in this balance but not
+  in the Sales / Invoiced / Due figures** at the top of the card, which read the invoices and the receipts only.
+- **Notes** — the one new box: up to 2,000 characters, saved on its own button (`Save Note`). The lines he types
+  stay as he typed them. It has its own column, so saving a note does not touch the card.
+- **Credit Limit** — the limit he entered on the card, what is due now, and the room left (a minus means over the
+  limit). The limit is still typed on the card itself, in Credit Terms. *ZYRO records the limit but does not stop a
+  sale that goes over it yet — the invoice is still saved.*
+
+**Database change for the tabs — additive only.** One column, `notes TEXT`, added with `ADD COLUMN IF NOT EXISTS`.
+No new table, nothing dropped, renamed or rewritten, and no journal entry is created or changed by any of the tabs.
+
+**Still open from his customer form:** the contact cards do not carry a "Type" (invoice address / delivery /
+other). His header strip also carries **Purchases** and **Lots/Serial Numbers**, which need the vendor link and the
+stock module and are not on the card yet. LIC Number and LIC Expiry Date are on every company's card for now — the
+owner was asked whether they are for Hextar only.
+
+**Checks.** `tests/test_customer_card.py` (57 checks: the rules without a database, and the screens on one), plus
+ZYRO's own `tests/` (79 passed; `test_vendors.py::test_10_all_print_templates_and_routes` failed before this work
 and still fails — it looks for the words "INVOICE LINES" on the vendor bill print, which the template writes as
 "Invoice lines"). Rehearsed on a database built and filled by the previous version: none of its rows changed; the
 columns, the index and the contacts table were added; every customer got its ID oldest first; the old blank-named
 customer showed as "(no name)" and could be given a name; two customers that already shared a name both stayed; the
 name of a customer with a receipt was locked; the three figures came out right from documents the old version had
-made; and a contact was added, made primary and shown on an old customer. Not done: a run on the real (Neon)
-database.
+made; and a contact was added, made primary and shown on an old customer. The five tabs were then opened on that
+same upgraded database: his old invoice and his old receipt were listed, the Due figure came out right, and a note
+was saved and read back. Not done: a run on the real (Neon) database.

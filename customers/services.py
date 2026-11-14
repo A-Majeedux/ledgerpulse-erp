@@ -90,7 +90,7 @@ CUSTOMER_COLUMNS = [
     "customer_id", "customer_no", "name", "is_company", "nature_of_supply", "ntn", "strn", "cnic",
     "address", "street2", "city", "state", "zip_code", "country", "region", "territory",
     "category_parent", "category", "lic_number", "lic_expiry_date", "email", "phone",
-    "credit_limit", "is_active", "tags", "is_vendor", "currency", "website",
+    "credit_limit", "is_active", "tags", "is_vendor", "currency", "website", "notes",
 ]
 _SELECT_CUSTOMER = "SELECT " + ", ".join(CUSTOMER_COLUMNS) + " FROM customers"
 
@@ -873,3 +873,149 @@ def customer_totals(cursor, organization_id, customer_id):
     for key in ("sales", "invoiced", "received", "due"):
         totals[key + "_text"] = format_amount(totals[key])
     return totals
+
+
+# ---------------------------------------------------------------------------
+# The other tabs of the card: Sales & Purchase, Accounting, Notes, Credit Limit
+#
+# All of them READ. None of them creates or changes a document, and none of
+# them posts anything. The Notes tab writes the one column it owns.
+# ---------------------------------------------------------------------------
+
+NOTES_MAX_LENGTH = 2000          # what one Notes tab holds
+TRADE_RECEIVABLES_CODE = "1100"  # the ledger a customer is followed on
+
+
+def clean_notes(notes):
+    """The Notes tab: what he wants to remember about the customer.
+
+    The lines he typed are kept as he typed them (a note is not a name - two
+    lines mean two lines), only the spaces at the ends of each line go, so a
+    note looks the same the next time he opens it.
+    """
+    text = (notes or "").replace("\r\n", "\n").replace("\r", "\n")
+    text = "\n".join(line.rstrip() for line in text.split("\n")).strip()
+    if not text:
+        return None
+    if len(text) > NOTES_MAX_LENGTH:
+        raise ValidationError(f"Notes are too long (maximum {NOTES_MAX_LENGTH} characters).")
+    return text
+
+
+def save_notes(cursor, organization_id, customer_id, notes):
+    """Write the Notes tab. Nothing else on the card is touched."""
+    cursor.execute(
+        "UPDATE customers SET notes = %s WHERE customer_id = %s AND organization_id = %s",
+        (clean_notes(notes), customer_id, organization_id),
+    )
+    return cursor.rowcount > 0
+
+
+def _invoice_row(invoice_id, invoice_date, due_date, status, total):
+    return {
+        "invoice_id": invoice_id,
+        "status": status,
+        "date_text": format_date(invoice_date),
+        "due_text": format_date(due_date),
+        "total": money_round(total or 0),
+        "total_text": format_amount(total),
+    }
+
+
+def list_customer_invoices(cursor, organization_id, customer_id):
+    """Every sales invoice entered for the customer, newest first - drafts included.
+
+    ZYRO does not print a number on an invoice yet, so the card shows the
+    invoice's own number (its ID) and says so.
+    """
+    cursor.execute("""
+        SELECT invoice.sales_invoice_id, invoice.invoice_date, invoice.due_date, invoice.status,
+               COALESCE(SUM(line.total), 0)
+        FROM sales_invoices invoice
+        LEFT JOIN sales_invoice_lines line ON line.sales_invoice_id = invoice.sales_invoice_id
+        WHERE invoice.organization_id = %s AND invoice.customer_id = %s
+        GROUP BY invoice.sales_invoice_id, invoice.invoice_date, invoice.due_date, invoice.status
+        ORDER BY invoice.invoice_date DESC, invoice.sales_invoice_id DESC
+    """, (organization_id, customer_id))
+    return [_invoice_row(*row) for row in cursor.fetchall()]
+
+
+def _receipt_row(receipt_id, receipt_date, amount, memo):
+    return {
+        "receipt_id": receipt_id,
+        "date_text": format_date(receipt_date),
+        "amount": money_round(amount or 0),
+        "amount_text": format_amount(amount),
+        "memo": memo,
+    }
+
+
+def list_customer_receipts(cursor, organization_id, customer_id):
+    """The money received from the customer, newest first."""
+    cursor.execute("""
+        SELECT customer_receipt_id, receipt_date, amount, memo
+        FROM customer_receipts
+        WHERE organization_id = %s AND customer_id = %s
+        ORDER BY receipt_date DESC, customer_receipt_id DESC
+    """, (organization_id, customer_id))
+    return [_receipt_row(*row) for row in cursor.fetchall()]
+
+
+def customer_ledger(cursor, organization_id, customer):
+    """What the books themselves say about the customer.
+
+    The lines on Trade Receivables (account 1100) whose name is his name.
+    This is the one place a hand-written journal entry shows up: the three
+    figures at the top of the card read documents, not the ledger.
+    """
+    name = (customer.get("name") or "").strip()
+    lines, debit_total, credit_total = [], Decimal("0"), Decimal("0")
+    if name:
+        cursor.execute("""
+            SELECT header.accounting_date, header.journal_name, header.reference, header.status,
+                   line.label, COALESCE(line.partner_name, ''), line.debit, line.credit
+            FROM journal_lines line
+            JOIN journal_headers header ON header.journal_header_id = line.journal_header_id
+            JOIN chart_of_accounts account ON account.account_id = line.account_id
+            WHERE header.organization_id = %s
+              AND account.code = %s
+              AND LOWER(TRIM(COALESCE(line.partner_name, ''))) = LOWER(%s)
+            ORDER BY header.accounting_date DESC, line.journal_line_id DESC
+        """, (organization_id, TRADE_RECEIVABLES_CODE, name))
+        for accounting_date, journal_name, reference, status, label, partner, debit, credit in cursor.fetchall():
+            debit, credit = money_round(debit or 0), money_round(credit or 0)
+            debit_total += debit
+            credit_total += credit
+            lines.append({
+                "date_text": format_date(accounting_date),
+                "journal_name": journal_name,
+                "reference": reference or label or "",
+                "status": status,
+                "debit": debit,
+                "credit": credit,
+                "debit_text": format_amount(debit) if debit else "",
+                "credit_text": format_amount(credit) if credit else "",
+            })
+    balance = debit_total - credit_total
+    return {
+        "lines": lines,
+        "debit_text": format_amount(debit_total),
+        "credit_text": format_amount(credit_total),
+        "balance": balance,
+        "balance_text": format_amount(balance),
+        "name": name,
+    }
+
+
+def credit_position(totals, credit_limit):
+    """The Credit Limit tab: the limit he gave, what is due now, and the room left."""
+    limit = money_round(credit_limit or 0)
+    due = money_round(totals.get("due") or 0)
+    return {
+        "limit": limit,
+        "limit_text": format_amount(limit),
+        "due_text": format_amount(due),
+        "room": limit - due,
+        "room_text": format_amount(limit - due),
+        "has_limit": limit > 0,
+    }

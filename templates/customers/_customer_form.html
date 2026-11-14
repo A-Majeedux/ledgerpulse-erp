@@ -177,7 +177,17 @@
       Words you file this customer under, separated by commas. Up to 20 tags, 40 characters each.
     </p>
     {% if values.tags %}
-      <div class="lp-taglist" style="margin-top: 8px;">{% for tag in tag_list(values.tags) %}<span class="lp-pill draft">{{ tag }}</span>{% endfor %}</div>
+      <div class="lp-taglist" style="margin-top: 8px;">
+        {% for tag in tag_list(values.tags) %}
+          <span class="lp-pill draft">{{ tag }}{% if customer %}<button type="button" class="lp-tag-x"
+                data-remove-tag="{{ tag }}" title="Take this tag out" aria-label="Take the tag {{ tag }} out">&times;</button>{% endif %}</span>
+        {% endfor %}
+      </div>
+      {% if customer %}
+        <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 6px 0 0;">
+          The x on a tag takes it out of the box; "Save Changes" keeps it out.
+        </p>
+      {% endif %}
     {% endif %}
   </div>
 </div>

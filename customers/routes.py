@@ -10,9 +10,10 @@ from customers.services import (
     CONTACT_TEXT_FIELDS, LIST_COLUMNS, NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS, TEXT_FIELDS,
     ValidationError, blank_contact_form, blank_form, clean_contact_form, clean_customer_form,
     clean_search, contact_form_as_typed, contact_form_from_contact, count_customers, create_contact,
-    create_customer, customer_totals, delete_contact, field_suggestions, form_as_typed,
-    form_from_customer, get_contact, get_customer, list_contacts, list_customers, list_row,
-    make_primary_contact, name_lock_reason, tag_list, update_contact, update_customer,
+    create_customer, credit_position, customer_ledger, customer_totals, delete_contact,
+    field_suggestions, form_as_typed, form_from_customer, get_contact, get_customer,
+    list_contacts, list_customer_invoices, list_customer_receipts, list_customers, list_row,
+    make_primary_contact, name_lock_reason, save_notes, tag_list, update_contact, update_customer,
 )
 
 bp = Blueprint("customers", __name__, url_prefix="/customers")
@@ -81,18 +82,40 @@ def _customer_card(template, cursor, org_id, **context):
     )
 
 
+# The tabs under the card, in the order they are drawn. "customer" is the
+# card itself, which is always in front of him; the rest are the tabs.
+OPEN_TABS = ("contacts", "sales", "accounting", "notes", "credit")
+
+
+def _open_tab(wanted):
+    """Which tab starts open. Anything unknown opens the card's own body."""
+    wanted = (wanted or "").strip().lower()
+    return wanted if wanted in OPEN_TABS else "contacts"
+
+
 def _show_edit_card(cursor, org_id, customer, *, values=None, problems=None,
                     contact_form=None, contact_problems=None, editing_contact=None,
-                    new_contact_form=None, new_contact_problems=None, open_tab="customer"):
-    """Draw the Edit card: the totals, the two tabs, and the contact cards."""
+                    new_contact_form=None, new_contact_problems=None, open_tab="contacts",
+                    notes_text=None, notes_problems=None):
+    """Draw the Edit card: the totals, the card itself, and the five tabs."""
+    totals = customer_totals(cursor, org_id, customer["customer_id"])
+    invoices = list_customer_invoices(cursor, org_id, customer["customer_id"])
+    receipts = list_customer_receipts(cursor, org_id, customer["customer_id"])
     return _customer_card(
         "customers/edit_customer.html", cursor, org_id,
         customer=customer,
         values=form_from_customer(customer) if values is None else values,
         problems=problems or [],
         name_locked=name_lock_reason(cursor, org_id, customer),
-        totals=customer_totals(cursor, org_id, customer["customer_id"]),
+        totals=totals,
+        # the tabs under the card
         contacts=list_contacts(cursor, org_id, customer["customer_id"]),
+        invoices=invoices,
+        receipts=receipts,
+        ledger=customer_ledger(cursor, org_id, customer),
+        credit=credit_position(totals, customer.get("credit_limit")),
+        notes_text=(customer.get("notes") or "") if notes_text is None else notes_text,
+        notes_problems=notes_problems or [],
         # the contact being changed in place
         contact_form=contact_form,
         contact_problems=contact_problems or [],
@@ -100,7 +123,7 @@ def _show_edit_card(cursor, org_id, customer, *, values=None, problems=None,
         # the "Add a contact" box at the bottom
         new_contact_form=blank_contact_form() if new_contact_form is None else new_contact_form,
         new_contact_problems=new_contact_problems or [],
-        open_tab="contacts" if open_tab == "contacts" else "customer",
+        open_tab=_open_tab(open_tab),
     )
 
 
@@ -194,8 +217,34 @@ def edit_customer(customer_id):
         return _show_edit_card(
             cursor, org_id, customer,
             editing_contact=editing_contact, contact_form=contact_form,
-            open_tab="contacts" if editing_contact is not None else (request.args.get("tab") or "customer"),
+            open_tab="contacts" if editing_contact is not None else (request.args.get("tab") or "contacts"),
         )
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# ---------------------------------------------------------------------
+# The Notes tab of the card
+# ---------------------------------------------------------------------
+
+@bp.route("/<int:customer_id>/notes", methods=["POST"])
+@require_organization
+def save_customer_notes(customer_id):
+    """Write what he typed in the Notes tab. Nothing else on the card changes."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        customer = _customer_or_404(cursor, org_id, customer_id)
+        typed = request.form.get("notes") or ""
+        try:
+            save_notes(cursor, org_id, customer_id, typed)
+        except ValidationError as error:
+            return _show_edit_card(cursor, org_id, customer, open_tab="notes",
+                                   notes_text=typed, notes_problems=[str(error)])
+        conn.commit()
+        return redirect(url_for("customers.edit_customer", customer_id=customer_id, tab="notes"))
     finally:
         cursor.close()
         conn.close()
