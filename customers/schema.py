@@ -37,6 +37,31 @@ def seed_organization(cursor, organization_id):
             """, (organization_id, code, name))
 
 
+def _give_every_customer_an_id(cursor):
+    """
+    A customer's ID is a running number inside its organization: 1, 2, 3...
+    New customers get theirs when they are saved (customers/services.py).
+
+    This gives one to every customer that has none yet - the customers that
+    existed before the ID did - continuing after the organization's highest
+    ID, oldest customer first. A customer that already has an ID keeps it,
+    so running this again changes nothing.
+    """
+    cursor.execute("""
+        UPDATE customers
+        SET customer_no = numbered.new_no
+        FROM (
+            SELECT waiting.customer_id,
+                   COALESCE((SELECT MAX(taken.customer_no) FROM customers taken
+                             WHERE taken.organization_id = waiting.organization_id), 0)
+                   + ROW_NUMBER() OVER (PARTITION BY waiting.organization_id ORDER BY waiting.customer_id) AS new_no
+            FROM customers waiting
+            WHERE waiting.customer_no IS NULL
+        ) AS numbered
+        WHERE customers.customer_id = numbered.customer_id
+    """)
+
+
 def ensure_schema(cursor):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS customers (
@@ -58,6 +83,33 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS address TEXT")
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS credit_limit NUMERIC(14, 2) DEFAULT 0")
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE")
+
+    # The customer card: ID, Person / Company, contact details, the address
+    # in parts (the existing "address" column is the Street line), Region,
+    # Territory, the two categories and the licence. Every statement only
+    # ADDS a column - nothing existing is changed, renamed or removed - and
+    # does nothing at all on a database that already has the column.
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_no INTEGER")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_company BOOLEAN NOT NULL DEFAULT TRUE")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS email VARCHAR(150)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS phone VARCHAR(50)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS street2 VARCHAR(200)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS city VARCHAR(100)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS state VARCHAR(100)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS zip_code VARCHAR(20)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS country VARCHAR(100)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS region VARCHAR(50)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS territory VARCHAR(100)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS category_parent VARCHAR(100)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS category VARCHAR(100)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS lic_number VARCHAR(50)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS lic_expiry_date DATE")
+    _give_every_customer_an_id(cursor)
+    # One ID is never held by two customers of the same organization.
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS customers_id_per_organization
+        ON customers (organization_id, customer_no)
+    """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS customer_receipts (

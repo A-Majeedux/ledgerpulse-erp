@@ -1164,3 +1164,53 @@ a:hover { text-decoration: underline; }
 .lp-entry-note { display: block; margin-top: 3px; font-size: 12px; line-height: 1.4; color: var(--lp-text-soft); }
 .lp-entry-note:empty { display: none; }
 .lp-entry-none { color: var(--lp-text-muted); }
+
+
+/* ==========================================================================
+   TICK-BOX COLUMN MENU, and the list that uses it
+   --------------------------------------------------------------------------
+   Used by templates/customers/customers_list.html.
+   Nothing above this line was changed; these rules only add.
+
+     .lp-colmenu, .lp-colmenu-panel   the "Columns" button and its panel of tick-boxes
+     .lp-list                         a list with many columns: the same table, a little tighter
+     .lp-clip                         one line of text, ended with "..." when it does not fit
+   ========================================================================== */
+
+.lp-colmenu { position: relative; flex: 0 0 auto; }
+.lp-colmenu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 210px;
+  max-height: 360px;
+  overflow-y: auto;
+  padding: var(--lp-space-2) 0;
+  background: var(--lp-white);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-sm);
+  box-shadow: var(--lp-shadow-panel);
+}
+.lp-colmenu-panel[hidden] { display: none; }
+.lp-colmenu-panel label {
+  display: flex;
+  align-items: center;
+  gap: var(--lp-space-2);
+  padding: 6px var(--lp-space-4);
+  font-size: 13.5px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.lp-colmenu-panel label:hover { background: rgba(221, 239, 232, 0.4); }
+.lp-colmenu-panel input { width: 15px; height: 15px; margin: 0; accent-color: var(--lp-muted-teal); }
+
+.lp-list th, .lp-list td { padding: var(--lp-space-3) 10px; }
+.lp-list th:first-child, .lp-list td:first-child { padding-left: var(--lp-space-3); }
+.lp-list th { vertical-align: bottom; line-height: 1.35; }   /* a long heading may take two lines */
+.lp-list td { font-size: 13.5px; }
+.lp-table-scroll > .lp-table.lp-list { min-width: 0; }
+/* A page that holds such a list may use the whole width of a wide screen. */
+.lp-content:has(.lp-list) { max-width: none; }
+
+.lp-clip { display: block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

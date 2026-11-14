@@ -17,8 +17,9 @@ your company.
 | `python3 test_money.py` | Decimal-safe money arithmetic and rounding | No |
 | `python3 test_integration.py` | Invoice, payment and receipt arithmetic | No |
 | `python3 test_dashboard.py` | Dashboard arithmetic: which dates a period covers, like-for-like comparisons, percentages, rounding | No |
+| `python3 test_customers.py` | The rules of the customer card: what may be typed in each box, the limits, how the list writes amounts and dates, the search | No |
 | `python3 test_auth.py` | Login, platform-admin and subscription rules | Yes - reads `DATABASE_URL` |
-| `python3 test_workflows.py` | The real screens end to end: every form, every journal entry posted, wrong input refused, companies kept apart, every dashboard figure compared with the ledger, which accounts each screen offers, and the upgrade of an older database | Yes - `TEST_DATABASE_URL` |
+| `python3 test_workflows.py` | The real screens end to end: every form, every journal entry posted, wrong input refused, companies kept apart, every dashboard figure compared with the ledger, which accounts each screen offers, the customer card (ID, Edit, list, search), and the upgrade of an older database | Yes - `TEST_DATABASE_URL` |
 
 `test_workflows.py` never touches your real data: it creates its own empty
 scratch database on the server `TEST_DATABASE_URL` points to, works only in

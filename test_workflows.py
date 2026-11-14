@@ -38,7 +38,11 @@ WHAT IT COVERS
   10. Account kinds: payments and receipts offer bank and cash accounts
       only; a journal entry has a General account column and a Partner
       account column; an older database is upgraded without losing anything
-  11. The ledger as a whole still obeys its rules at the end
+  11. The customer card: every customer gets an ID, the card's boxes are
+      saved and can be edited, wrong input is refused without losing what
+      was typed, a name with entries is locked, the list and its search,
+      and an older database is upgraded without losing anything
+  12. The ledger as a whole still obeys its rules at the end
 """
 import json
 import os
@@ -1444,8 +1448,649 @@ def _upgrade_of_an_older_database():
             print(f"\n(could not drop scratch database {old_name}: {error})")
 
 
-def test_11_ledger_integrity():
-    section("11. The ledger as a whole")
+# ---------------------------------------------------------------------
+# 11. The customer card
+# ---------------------------------------------------------------------
+CARD_FIELDS = ["customer_no", "name", "is_company", "nature_of_supply", "ntn", "strn", "cnic", "address", "street2", "city",
+               "state", "zip_code", "country", "region", "territory", "category_parent", "category", "lic_number",
+               "lic_expiry_date", "email", "phone", "credit_limit", "is_active"]
+LEDGER_FINGERPRINT = """SELECT count(*), sum(debit), sum(credit),
+                               md5(string_agg(journal_line_id || ':' || account_id || ':' || debit || ':' || credit || ':' || coalesce(partner_name, ''),
+                                              '|' ORDER BY journal_line_id))
+                        FROM journal_lines"""
+
+
+def customer_list(browser, search=None):
+    """The customer list as the page shows it: (rows, the count line, tick-boxes, the page).
+    rows       [{column key: text, 'inactive': bool, 'link': the Edit address}], top to bottom
+    tick-boxes [(column key, label, ticked)] of the Columns menu, top to bottom"""
+    import html
+    from urllib.parse import quote
+    page = browser.get("/customers/" + ("?q=" + quote(search) if search is not None else "")).get_data(as_text=True)
+    text = lambda fragment: html.unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", fragment))).strip()
+    rows = []
+    body = re.search(r"<tbody>(.*?)</tbody>", page, re.S)
+    for row in re.findall(r"<tr>(.*?)</tr>", body.group(1), re.S) if body else []:
+        cells = {key: text(inner) for key, inner in re.findall(r'<td[^>]*data-col="([a-z_]+)"[^>]*>(.*?)</td>', row, re.S)}
+        name = re.search(r'<a href="([^"]+)" class="lp-clip"[^>]*>(.*?)</a>', row, re.S)
+        cells.update(name=text(name.group(2)), link=name.group(1), inactive="Inactive</span>" in row)
+        rows.append(cells)
+    count = re.search(r'id="customer-count"[^>]*>(.*?)</span>', page, re.S)
+    boxes = [(key, label.strip(), bool(ticked)) for key, ticked, label in
+             re.findall(r'<label><input type="checkbox" data-col="([a-z_]+)"\s*(checked)?\s*>\s*([^<]+?)\s*</label>', page)]
+    return rows, (text(count.group(1)) if count else None), boxes, page
+
+
+def customer_form(browser, path):
+    """{box: value} of the customer form on a page, plus the page itself."""
+    page = browser.get(path).get_data(as_text=True)
+    form = [f for f in forms_in(page) if "partner_type" in f["names"]]
+    return (dict(form[0]["fields"]) if form else None), page
+
+
+def test_11_customer_card(browser, ids):
+    section("11. The customer card: the ID, the boxes, Edit, the list and its search")
+    _customer_card_checks(browser, ids)
+    _customers_of_an_older_database(ids)
+
+
+def _customer_card_checks(browser, ids):
+    from datetime import date
+    from customers.services import LIST_COLUMNS, NAME_LOCKED_MESSAGE, NAME_MAX_LENGTH, TEXT_FIELDS
+
+    response = browser.submit("/organizations/new", {"name": "Card Co"})
+    org = one("SELECT organization_id FROM organizations WHERE name = 'Card Co'")
+    check("a new company 'Card Co' is created for these checks", response.status_code == 302 and org is not None)
+    ids["card_org"] = org
+    ledger_at_the_start = q(LEDGER_FINGERPRINT)
+
+    def card(name, organization=None):
+        rows = q("SELECT customer_id, " + ", ".join(CARD_FIELDS) + " FROM customers WHERE organization_id = %s AND name = %s ORDER BY customer_id",
+                 (organization or org, name))
+        return dict(zip(["customer_id"] + CARD_FIELDS, rows[0])) if rows else None
+
+    def card_by_id(customer_id):
+        rows = q("SELECT customer_id, organization_id, created_at, " + ", ".join(CARD_FIELDS) + " FROM customers WHERE customer_id = %s", (customer_id,))
+        return rows[0] if rows else None
+
+    def new(name, **boxes):
+        response = browser.submit("/customers/new", dict({"name": name}, **boxes), has="partner_type")
+        return response, card(name)
+
+    def edit(customer_id, **boxes):
+        return browser.submit(f"/customers/{customer_id}/edit", boxes, has="partner_type")
+
+    # ---- the form ------------------------------------------------------------
+    boxes, page = customer_form(browser, "/customers/new")
+    wanted = {"name", "partner_type", "email", "phone", "address", "street2", "city", "state", "zip_code", "country", "region", "territory",
+              "lic_number", "lic_expiry_date", "ntn", "strn", "cnic", "category_parent", "category", "nature_of_supply", "credit_limit"}
+    check("New Customer has every box of the card: Person / Company, name, email, phone, the address in parts, Region, Territory, "
+          "LIC Number, LIC Expiry Date, NTN, STRN, CNIC, Category Parent, Category, Nature of supply, Credit limit",
+          boxes is not None and wanted <= set(boxes) and "status" not in boxes, str(sorted(wanted - set(boxes or {}))))
+    check("...it starts as a Company with Supplies and a credit limit of 0.00, and says the ID is given automatically",
+          boxes is not None and (boxes.get("partner_type"), boxes.get("nature_of_supply"), boxes.get("credit_limit")) == ("company", "Supplies", "0.00")
+          and "Given automatically when you save" in page)
+
+    # ---- saving ----------------------------------------------------------------
+    full = {"partner_type": "company", "email": "accounts@kasurtraders.example", "phone": "0300-5550101",
+            "address": "Canal Road", "street2": "Near Grain Market", "city": "Kasur", "state": "Punjab", "zip_code": "55050",
+            "country": "Pakistan", "region": "KSR", "territory": "KASUR TOWN", "category_parent": "Distribution", "category": "Dealer",
+            "lic_number": "L/101/PW/TST", "lic_expiry_date": "2027-03-05", "ntn": "1234567-8", "strn": "1100223344556",
+            "cnic": "35202-1234567-1", "nature_of_supply": "Services", "credit_limit": "40000000"}
+    response, first = new("Kasur Traders", **full)
+    expected = dict(full, name="Kasur Traders", is_company=True, lic_expiry_date=date(2027, 3, 5), credit_limit=D("40000000.00"),
+                    customer_no=1, is_active=True)
+    del expected["partner_type"]
+    check("a customer saved with every box filled keeps every value, and is given ID 1 (the company's first customer)",
+          response.status_code == 302 and first is not None and {key: first[key] for key in expected} == expected,
+          error_box(response) or str(first))
+    response, second = new("  Multan   Agro  Centre ", partner_type="person", credit_limit="")
+    second = card("Multan Agro Centre")
+    check("a customer saved with only a name is fine too: stray spaces in the name are tidied, Person is kept, every empty box is saved as empty, "
+          "the credit limit is 0.00, and the ID is 2",
+          response.status_code == 302 and second is not None and second["customer_no"] == 2 and second["is_company"] is False
+          and second["credit_limit"] == D("0.00") and second["is_active"] is True and second["nature_of_supply"] == "Supplies"
+          and all(second[field] is None for field, _label, _limit in TEXT_FIELDS), str(second))
+    response, third = new("Lahore Seed House", region="LHR", territory="LAHORE", credit_limit="2500000.555", lic_expiry_date="2026-12-31")
+    check("the third customer is ID 3, and its credit limit 2,500,000.555 is saved as 2,500,000.56 (rounded like every amount)",
+          third is not None and third["customer_no"] == 3 and third["credit_limit"] == D("2500000.56"), str(third))
+    numbering = q("SELECT organization_id, array_agg(customer_no ORDER BY customer_id) FROM customers GROUP BY 1 ORDER BY 1")
+    check(f"in every one of the {len(numbering)} companies that has customers, the IDs run 1, 2, 3... in the order the customers were created "
+          "(each company counts for itself)",
+          all(numbers == list(range(1, len(numbers) + 1)) for _organization, numbers in numbering), str(numbering))
+
+    # ---- the list --------------------------------------------------------------
+    rows, count, tick_boxes, page = customer_list(browser)
+    check("the list shows the three customers by name, each with its ID:  1 Kasur Traders,  3 Lahore Seed House,  2 Multan Agro Centre",
+          [(row["customer_no"], row["name"]) for row in rows] == [("1", "Kasur Traders"), ("3", "Lahore Seed House"), ("2", "Multan Agro Centre")]
+          and count == "3 customers", f"{[(row.get('customer_no'), row['name']) for row in rows]} / {count}")
+    kasur = rows[0] if rows else {}
+    check("...amounts carry thousands separators and 2 decimals (40,000,000.00) and dates read 05 Mar 2027",
+          (kasur.get("credit_limit"), kasur.get("lic_expiry_date")) == ("40,000,000.00", "05 Mar 2027"), str(kasur))
+    check("...and the other boxes are shown as saved: region KSR, territory KASUR TOWN, LIC number, category parent, country, email, phone",
+          [kasur.get(key) for key in ("region", "territory", "lic_number", "category_parent", "country", "email", "phone")]
+          == ["KSR", "KASUR TOWN", "L/101/PW/TST", "Distribution", "Pakistan", "accounts@kasurtraders.example", "0300-5550101"], str(kasur))
+    check("...an empty box is shown empty (never the word None)",
+          rows and all(rows[2].get(key) == "" for key in ("email", "phone", "region", "territory", "lic_number", "lic_expiry_date")) and ">None<" not in page)
+    headers = re.findall(r'<th class="[^"]*"\s*(?:data-col="([a-z_]+)"(\s+hidden)?)?\s*>([^<]+)</th>', page)
+    shown = [label for _key, hidden, label in headers if not hidden]
+    check("the columns shown at first are: ID, Name, Credit Limit, Email, Phone, Region, Territory, LIC Number, LIC Expiry Date, Category Parent, Country",
+          shown == ["ID", "Name", "Credit Limit", "Email", "Phone", "Region", "Territory", "LIC Number", "LIC Expiry Date", "Category Parent", "Country"],
+          str(shown))
+    expected_boxes = [(column["key"], column["label"], column["shown"]) for column in LIST_COLUMNS if not column.get("fixed")]
+    check(f"the tick-box menu has one box for each of the other {len(expected_boxes)} columns, ticked exactly for the ones shown "
+          "(NTN, Street, City, State, STRN, CNIC, Nature of Supply and Category start unticked); Name has no box - it always shows",
+          tick_boxes == expected_boxes and len(expected_boxes) == 18 and "name" not in [key for key, _label, _ticked in tick_boxes], str(tick_boxes))
+    hidden_cells = set(re.findall(r'<td data-col="([a-z_]+)" hidden>', page))
+    check("...and every row carries the unticked columns too, hidden, so ticking a box can show them without loading the page again",
+          hidden_cells == {key for key, _label, ticked in expected_boxes if not ticked}, str(sorted(hidden_cells)))
+    check("each name on the list opens that customer's Edit screen",
+          [row["link"] for row in rows] == [f"/customers/{c['customer_id']}/edit" for c in (first, third, second)], str([row["link"] for row in rows]))
+
+    # ---- search ----------------------------------------------------------------
+    found = lambda text: ([row["name"] for row in customer_list(browser, text)[0]], customer_list(browser, text)[1])
+    check("search finds part of a name, whatever the capitals:  'SEED'  ->  Lahore Seed House (1 of 3 customers)",
+          found("SEED") == (["Lahore Seed House"], "1 of 3 customers"), str(found("SEED")))
+    check("...a territory or a region:  'kasur town'  ->  Kasur Traders;   'lhr'  ->  Lahore Seed House",
+          found("kasur town")[0] == ["Kasur Traders"] and found("lhr")[0] == ["Lahore Seed House"], f"{found('kasur town')} {found('lhr')}")
+    check("...or an ID:  '2'  ->  Multan Agro Centre, whose only 2 is its ID (and Kasur Traders, whose NTN has a 2 in it) - not Lahore Seed House",
+          found("2")[0] == ["Kasur Traders", "Multan Agro Centre"], str(found("2")))
+    check("...and every typed word must be found:  'traders nosuchword' -> nobody;  'traders distribution' -> Kasur Traders (its name and its category parent)",
+          found("traders nosuchword")[0] == [] and found("traders distribution")[0] == ["Kasur Traders"],
+          f"{found('traders nosuchword')} {found('traders distribution')}")
+    nothing = customer_list(browser, "zzzz")
+    check("a search that finds nobody says so, and offers Clear",
+          nothing[0] == [] and "No customer matches" in nothing[3] and ">Clear</a>" in nothing[3] and nothing[1] == "0 of 3 customers")
+    check("the characters % and _ are searched as themselves ('%' and '_' find nobody, instead of everybody)",
+          found("%")[0] == [] and found("_")[0] == [] and found("a_a")[0] == [], f"{found('%')} {found('_')}")
+    hostile = [browser.get("/customers/?q=" + text).status_code for text in
+               ("x" * 5000, "%25" * 300, "%00", "%27%3B%20DROP%20TABLE%20customers%3B--", "a+b+c+d+e+f+g+h+i+j", "%5C", "%F0%9F%98%80")]
+    check(f"odd search text never crashes the list ({len(hostile)} tries: 5,000 letters, 300 percent signs, a NUL, SQL text, ten words, a backslash, an emoji)",
+          hostile == [200] * len(hostile) and one("SELECT count(*) FROM customers WHERE organization_id = %s", (org,)) == 3, str(hostile))
+
+    # ---- wrong input is refused, nothing is saved, nothing typed is lost ------------
+    refused(browser, "new customer with no name", "/customers/new", [("name", "")], "Customer name is required")
+    refused(browser, "new customer whose name is only spaces", "/customers/new", [("name", "     ")], "Customer name is required")
+    refused(browser, f"a name of {NAME_MAX_LENGTH + 1} characters", "/customers/new", [("name", "N" * (NAME_MAX_LENGTH + 1))], "too long")
+    refused(browser, "an NTN of 31 characters (this used to end in 'Internal Server Error')", "/customers/new",
+            [("name", "Long NTN"), ("ntn", "9" * 31)], "NTN is too long (maximum 30")
+    over = []
+    for field, label, limit in TEXT_FIELDS:
+        before = row_counts()
+        response = browser.post_raw("/customers/new", [("name", f"Too long {field}"), (field, "7" * (limit + 1))])
+        if not (response.status_code == 200 and f"{label} is too long (maximum {limit} characters)" in (error_box(response) or "") and row_counts() == before):
+            over.append(field)
+    check(f"each of the {len(TEXT_FIELDS)} text boxes refuses one character more than its column holds, with a message naming the box", not over, str(over))
+    refused(browser, "email 'nobody'", "/customers/new", [("name", "Bad Email"), ("email", "nobody")], "does not look like an email")
+    refused(browser, "phone 'call me'", "/customers/new", [("name", "Bad Phone"), ("phone", "call me")], "Phone must contain a number")
+    refused(browser, "LIC Expiry Date 31-12-2026 (not a date the form can send)", "/customers/new",
+            [("name", "Bad Date"), ("lic_expiry_date", "31-12-2026")], "not a valid date")
+    refused(browser, "LIC Expiry Date in the year 9999", "/customers/new", [("name", "Far Date"), ("lic_expiry_date", "9999-12-31")], "between the years 1900 and 2200")
+    refused(browser, "credit limit -1", "/customers/new", [("name", "Bad Limit"), ("credit_limit", "-1")], "cannot be negative")
+    refused(browser, "credit limit 'abc'", "/customers/new", [("name", "Bad Limit"), ("credit_limit", "abc")], "must be a number")
+    refused(browser, "credit limit 'NaN'", "/customers/new", [("name", "Bad Limit"), ("credit_limit", "NaN")], "must be a number")
+    refused(browser, "credit limit 1,000,000,000,000 (13 digits - more than the column holds)", "/customers/new",
+            [("name", "Bad Limit"), ("credit_limit", "1000000000000")], "too large")
+    refused(browser, "credit limit 1e999999", "/customers/new", [("name", "Bad Limit"), ("credit_limit", "1e999999")], "too large")
+    refused(browser, "neither Person nor Company", "/customers/new", [("name", "Bad Type"), ("partner_type", "robot")], "Person or Company")
+    refused(browser, "nature of supply 'Goods'", "/customers/new", [("name", "Bad Nature"), ("nature_of_supply", "Goods")], "Supplies or Services")
+
+    before = row_counts()
+    response = browser.post_raw("/customers/new", [
+        ("name", "Half Typed Customer"), ("partner_type", "person"), ("nature_of_supply", "Services"), ("email", "not-an-email"),
+        ("territory", "SAHIWAL"), ("address", "Plot 9\nIndustrial Area"), ("lic_expiry_date", "2027-01-31"), ("credit_limit", "-5"), ("ntn", "7654321-0")])
+    back = [f for f in forms_in(response.get_data(as_text=True)) if "partner_type" in f["names"]]
+    back = dict(back[0]["fields"]) if back else {}
+    check("a refused form comes back with BOTH mistakes listed and everything that was typed still in its box "
+          "(name, Person, Services, the wrong email, territory, both address lines, the date, the wrong credit limit, NTN)",
+          response.status_code == 200 and row_counts() == before
+          and "does not look like an email" in (error_box(response) or "") and "cannot be negative" in (error_box(response) or "")
+          and [back.get(key) for key in ("name", "partner_type", "nature_of_supply", "email", "territory", "address", "lic_expiry_date", "credit_limit", "ntn")]
+          == ["Half Typed Customer", "person", "Services", "not-an-email", "SAHIWAL", "Plot 9\nIndustrial Area", "2027-01-31", "-5", "7654321-0"],
+          f"{error_box(response)} / {back}")
+
+    # ---- two customers cannot share a name (yet) --------------------------------------
+    refused(browser, "a second 'Kasur Traders'", "/customers/new", [("name", "Kasur Traders")], "already exists (ID 1)")
+    refused(browser, "...also as 'kasur   TRADERS ' (capitals and spaces do not make it a different customer)", "/customers/new",
+            [("name", "kasur   TRADERS ")], "already exists (ID 1)")
+    browser.post_raw("/organizations/switch/1", [("org_id", "1")])
+    highest = one("SELECT max(customer_no) FROM customers WHERE organization_id = 1")
+    response = browser.submit("/customers/new", {"name": "Kasur Traders", "region": "ONLY-IN-COMPANY-1"}, has="partner_type")
+    other = card("Kasur Traders", 1)
+    check("another company may have its own 'Kasur Traders'; it gets that company's next ID, not Card Co's",
+          response.status_code == 302 and other is not None and other["customer_no"] == highest + 1 and other["customer_id"] != first["customer_id"],
+          error_box(response) or str(other))
+    browser.post_raw(f"/organizations/switch/{org}", [("org_id", str(org))])
+
+    # ---- Edit ----------------------------------------------------------------------
+    boxes, page = customer_form(browser, f"/customers/{first['customer_id']}/edit")
+    check("Edit Customer opens with every box as it was saved, the ID shown, and a Status box",
+          boxes is not None and dict(full, name="Kasur Traders", credit_limit="40000000.00", status="active").items() <= boxes.items()
+          and re.search(r"<strong>1</strong>", page) is not None and "readonly" not in page, str(boxes))
+    response = edit(first["customer_id"], name="Kasur Traders & Sons", partner_type="person", territory="KASUR CITY", credit_limit="1500000",
+                    lic_expiry_date="", email="", category="Wholesaler", nature_of_supply="Supplies")
+    changed = card("Kasur Traders & Sons")
+    check("changes are saved: the new name (this customer has no entries yet), Person, territory, credit limit 1,500,000.00, category, nature; "
+          "the emptied boxes (email, LIC expiry date) are empty; the boxes not touched keep their values",
+          response.status_code == 302 and changed is not None and card("Kasur Traders") is None
+          and (changed["is_company"], changed["territory"], changed["credit_limit"], changed["category"], changed["nature_of_supply"],
+               changed["email"], changed["lic_expiry_date"]) == (False, "KASUR CITY", D("1500000.00"), "Wholesaler", "Supplies", None, None)
+          and (changed["ntn"], changed["lic_number"], changed["city"], changed["phone"]) == ("1234567-8", "L/101/PW/TST", "Kasur", "0300-5550101"),
+          error_box(response) or str(changed))
+    check("...and the customer is still the same customer: same ID 1, same record",
+          changed is not None and (changed["customer_no"], changed["customer_id"]) == (1, first["customer_id"]))
+    kept = card_by_id(first["customer_id"])
+    for description, fields, message in [
+            ("Edit with the name emptied", [("name", " ")], "Customer name is required"),
+            ("Edit with an NTN of 31 characters", [("name", "Kasur Traders & Sons"), ("ntn", "9" * 31)], "NTN is too long"),
+            ("Edit with credit limit 'abc'", [("name", "Kasur Traders & Sons"), ("credit_limit", "abc")], "must be a number"),
+            ("Edit with Status 'deleted'", [("name", "Kasur Traders & Sons"), ("status", "deleted")], "Status must be Active or Inactive"),
+            ("Edit renaming it to the name of customer 3", [("name", "lahore seed house")], "already exists (ID 3)")]:
+        refused(browser, description, f"/customers/{first['customer_id']}/edit", fields, message)
+    response = browser.post_raw(f"/customers/{first['customer_id']}/edit", [
+        ("name", "Kasur Traders & Sons"), ("territory", "TYPED TERRITORY"), ("phone", "0300-0000000"), ("credit_limit", "abc"), ("status", "inactive")])
+    back = [f for f in forms_in(response.get_data(as_text=True)) if "partner_type" in f["names"]]
+    back = dict(back[0]["fields"]) if back else {}
+    check("a refused Edit comes back with what was just typed (territory, phone, the wrong credit limit, Inactive) - not with the saved values - "
+          "and the boxes that were not sent still show what is saved (NTN, city)",
+          response.status_code == 200 and "must be a number" in (error_box(response) or "")
+          and [back.get(key) for key in ("territory", "phone", "credit_limit", "status", "ntn", "city")]
+          == ["TYPED TERRITORY", "0300-0000000", "abc", "inactive", "1234567-8", "Kasur"], f"{error_box(response)} / {back}")
+    check("...and after those six refusals the customer is exactly as it was", card_by_id(first["customer_id"]) == kept)
+    response = edit(first["customer_id"], name="KASUR Traders & Sons")
+    check("a name may be re-typed with different capitals (it is still the only customer of that name)",
+          response.status_code == 302 and card("KASUR Traders & Sons") is not None, error_box(response))
+    edit(first["customer_id"], name="Kasur Traders")
+    check("everything up to here - new customers, edits, renames, refusals - wrote nothing to the journal: every journal line is as it was",
+          q(LEDGER_FINGERPRINT) == ledger_at_the_start)
+
+    # ---- a name with entries is locked ----------------------------------------------
+    bank, revenue = account("1010", org), account("4000", org)
+    browser.submit("/sales/products/new", {"name": "Card Product", "unit": "Units", "default_account_id": revenue})
+    product = str(one("SELECT product_id FROM products WHERE organization_id = %s AND name = 'Card Product'", (org,)))
+    tax = str(one("SELECT sales_tax_rate_id FROM sales_tax_rates WHERE organization_id = %s ORDER BY rate_percent LIMIT 1", (org,)))
+    lines_named = lambda name: one("""SELECT count(*) FROM journal_lines l JOIN journal_headers h ON h.journal_header_id = l.journal_header_id
+                                      WHERE h.organization_id = %s AND l.partner_name = %s""", (org, name))
+
+    def locked(customer_id):
+        boxes, page = customer_form(browser, f"/customers/{customer_id}/edit")
+        return NAME_LOCKED_MESSAGE in page and re.search(r'name="name"[^>]*\breadonly\b', page) is not None
+
+    _, by_receipt = new("Receipt Customer", territory="OKARA")
+    _, by_invoice = new("Draft Invoice Customer")
+    _, by_journal = new("Journal Customer")
+    _, free = new("No Entries Customer")
+    check("a customer with no entries can still be renamed: the name box is open and there is no warning",
+          not any(locked(c["customer_id"]) for c in (by_receipt, by_invoice, by_journal, free)))
+    response = browser.submit("/customers/receipts/new", {"customer_id": str(by_receipt["customer_id"]), "amount": "1000", "receipt_date": "2026-11-13",
+                                                          "deposit_to_account_id": bank}, has="customer_id")
+    check("after a receipt from the customer, its name box is locked and the screen says why",
+          response.status_code == 302 and lines_named("Receipt Customer") > 0 and locked(by_receipt["customer_id"]), error_box(response))
+    response = browser.submit("/sales/invoices/new", {"customer_id": str(by_invoice["customer_id"]), "invoice_date": "2026-11-13"}, has="customer_id", rows=[
+        ("product_id[]", product), ("label[]", "Card"), ("account_id[]", revenue), ("unit[]", "Units"),
+        ("quantity[]", "1"), ("rate[]", "500"), ("discount_percent[]", "0"), ("sales_tax_rate_id[]", tax)])
+    draft_status = one("SELECT status FROM sales_invoices WHERE organization_id = %s AND customer_id = %s", (org, by_invoice["customer_id"]))
+    check("after an invoice that is still a DRAFT the name is locked too (its draft journal entry already carries the name)",
+          response.status_code == 302 and draft_status == "Draft" and locked(by_invoice["customer_id"]), f"{error_box(response)} / {draft_status}")
+    response = browser.submit("/accounting/journal-entries/new", {"reference": "Card lock", "accounting_date": "2026-11-13"}, rows=[
+        ("account_id[]", ""), ("partner_account[]", f"customer:{by_journal['customer_id']}"), ("label[]", "x"), ("debit[]", "750"), ("credit[]", ""),
+        ("account_id[]", revenue), ("partner_account[]", ""), ("label[]", "x"), ("debit[]", ""), ("credit[]", "750")])
+    check("after a journal entry made with the customer in the Partner account column, the name is locked too",
+          response.status_code == 302 and lines_named("Journal Customer") == 1 and locked(by_journal["customer_id"]), error_box(response))
+    check("...while the customer without entries is still free", not locked(free["customer_id"]))
+
+    kept = card_by_id(by_receipt["customer_id"])
+    ledger_with_the_entries = q(LEDGER_FINGERPRINT)
+    for customer, label in ((by_receipt, "a receipt"), (by_invoice, "a draft invoice"), (by_journal, "a journal entry")):
+        refused(browser, f"renaming the customer that has {label} (sent straight to the server, past the locked box)",
+                f"/customers/{customer['customer_id']}/edit", [("name", customer["name"] + " Renamed")], "cannot be changed")
+    refused(browser, "...not even a change of capitals", f"/customers/{by_receipt['customer_id']}/edit", [("name", "RECEIPT CUSTOMER")], "cannot be changed")
+    check("...the name is unchanged, and no journal line was renamed",
+          card_by_id(by_receipt["customer_id"]) == kept and lines_named("Receipt Customer") > 0 and lines_named("Receipt Customer Renamed") == 0)
+    response = edit(by_receipt["customer_id"], territory="SAHIWAL", phone="0300-5550202", credit_limit="900000")
+    after = card("Receipt Customer")
+    check("everything else on a locked customer can still be changed (territory, phone, credit limit)",
+          response.status_code == 302 and (after["territory"], after["phone"], after["credit_limit"]) == ("SAHIWAL", "0300-5550202", D("900000.00")),
+          error_box(response) or str(after))
+    response = browser.post_raw(f"/customers/{by_receipt['customer_id']}/edit", [("name", "  Receipt   Customer "), ("city", "Sahiwal")])
+    check("...and stray spaces around a locked name are not mistaken for a new name",
+          response.status_code == 302 and card("Receipt Customer")["city"] == "Sahiwal", error_box(response) if response.status_code == 200 else response.status_code)
+    check("...and editing customers that have entries left every journal line as it was (amounts, accounts and the names on the lines)",
+          q(LEDGER_FINGERPRINT) == ledger_with_the_entries)
+    response = edit(free["customer_id"], name="Renamed Before Any Entry")
+    browser.submit("/customers/receipts/new", {"customer_id": str(free["customer_id"]), "amount": "300", "receipt_date": "2026-11-13",
+                                               "deposit_to_account_id": bank}, has="customer_id")
+    check("a customer renamed BEFORE its first entry has all its entries under the new name - its balance is in one piece",
+          response.status_code == 302 and lines_named("Renamed Before Any Entry") > 0 and lines_named("No Entries Customer") == 0)
+
+    browser.post_raw("/organizations/switch/1", [("org_id", "1")])
+    response = browser.submit("/customers/new", {"name": "Receipt Customer"}, has="partner_type")
+    namesake = card("Receipt Customer", 1)
+    open_before = namesake is not None and not locked(namesake["customer_id"])
+    renamed = browser.submit(f"/customers/{namesake['customer_id']}/edit", {"name": "Receipt Customer Of Company 1"}, has="partner_type")
+    check("the lock looks at the customer's OWN company only: company 1's new 'Receipt Customer' has no entries and can be renamed, "
+          "although Card Co's 'Receipt Customer' has a receipt",
+          response.status_code == 302 and open_before and renamed.status_code == 302 and card("Receipt Customer Of Company 1", 1) is not None,
+          error_box(renamed) if renamed.status_code == 200 else f"{response.status_code} {open_before} {renamed.status_code}")
+    browser.post_raw(f"/organizations/switch/{org}", [("org_id", str(org))])
+
+    # a customer saved by the older New Customer screen, which kept extra spaces INSIDE a name
+    q("""INSERT INTO customers (organization_id, name, customer_no)
+         VALUES (%s, 'Older  Copy   Customer', (SELECT max(customer_no) + 1 FROM customers WHERE organization_id = %s))""", (org, org))
+    spaced = card("Older  Copy   Customer")
+    browser.submit("/customers/receipts/new", {"customer_id": str(spaced["customer_id"]), "amount": "200", "receipt_date": "2026-11-13",
+                                               "deposit_to_account_id": bank}, has="customer_id")
+    response = edit(spaced["customer_id"], territory="GUJRAT")
+    after = card("Older  Copy   Customer")
+    check("a customer saved long ago with extra spaces inside its name can still be edited once it has entries, and the name stays exactly "
+          "as it is stored - so its entries stay with it",
+          locked(spaced["customer_id"]) and response.status_code == 302 and after is not None and after["territory"] == "GUJRAT"
+          and lines_named("Older  Copy   Customer") > 0, error_box(response) if response.status_code == 200 else str(after))
+    ids["card_lock_customers"] = {"receipt": (by_receipt["customer_id"], "Receipt Customer"), "invoice": (by_invoice["customer_id"], "Draft Invoice Customer"),
+                                  "journal": (by_journal["customer_id"], "Journal Customer"), "nothing": (second["customer_id"], "Multan Agro Centre")}
+
+    # ---- Status: Active / Inactive ---------------------------------------------------
+    def offered():
+        """Is 'Lahore Seed House' offered on (a new receipt, a new invoice, the Partner account box of a journal entry)?"""
+        in_select = lambda path: "Lahore Seed House" in "".join(
+            re.findall(r'<select name="customer_id".*?</select>', browser.get(path).get_data(as_text=True), re.S))
+        _general, partner, _data = journal_entry_choices(browser)
+        in_journal = any(label == "Lahore Seed House" for group in partner.values() for _value, label in group)
+        return in_select("/customers/receipts/new"), in_select("/sales/invoices/new"), in_journal
+
+    ledger_before_the_status = q(LEDGER_FINGERPRINT)
+    check("an active customer is offered on a new receipt, a new invoice and in the Partner account box of a journal entry", offered() == (True, True, True), str(offered()))
+    response = edit(third["customer_id"], status="inactive")
+    rows, count, _boxes, page = customer_list(browser)
+    seed_house = [row for row in rows if row["name"] == "Lahore Seed House"]
+    check("made Inactive on its Edit screen, it is no longer offered in any of the three places",
+          response.status_code == 302 and card("Lahore Seed House")["is_active"] is False and offered() == (False, False, False), str(offered()))
+    check("...but it stays on the customer list, marked Inactive, with its ID and details, and search still finds it",
+          len(seed_house) == 1 and seed_house[0]["inactive"] and seed_house[0]["customer_no"] == "3" and seed_house[0]["region"] == "LHR"
+          and [row["inactive"] for row in rows if row["name"] != "Lahore Seed House"].count(True) == 0
+          and [row["name"] for row in customer_list(browser, "seed")[0]] == ["Lahore Seed House"])
+    boxes, _page = customer_form(browser, f"/customers/{third['customer_id']}/edit")
+    response = edit(third["customer_id"], status="active")
+    check("its Edit screen shows Status Inactive, and setting it back to Active offers it everywhere again",
+          boxes.get("status") == "inactive" and response.status_code == 302 and offered() == (True, True, True), f"{boxes.get('status')} {offered()}")
+    response = browser.post_raw(f"/customers/{third['customer_id']}/edit", [("name", "Lahore Seed House"), ("region", "LHR"), ("territory", "LAHORE")])
+    check("an Edit that does not send the Status box leaves the status alone", response.status_code == 302 and card("Lahore Seed House")["is_active"] is True)
+
+    check("...and switching a customer off and on wrote nothing to the journal", q(LEDGER_FINGERPRINT) == ledger_before_the_status)
+
+    # ---- one company never sees or changes another company's customers --------------------
+    acme = card_by_id(int(ids["customer"]))
+    names = [row["name"] for row in customer_list(browser)[0]]
+    in_company_1 = [name for (name,) in q("SELECT name FROM customers WHERE organization_id = 1 AND name <> 'Kasur Traders'")]
+    check(f"Card Co's list shows only its own {len(names)} customers - not company 1's ({', '.join(in_company_1)}); searching 'Acme' finds nobody",
+          names and not set(names) & set(in_company_1) and len(names) == one("SELECT count(*) FROM customers WHERE organization_id = %s", (org,))
+          and customer_list(browser, "Acme")[0] == [], str(names))
+    check("Card Co cannot open the Edit screen of company 1's customer (404)", browser.get(f"/customers/{ids['customer']}/edit").status_code == 404)
+    refused(browser, "Card Co saving over company 1's customer", f"/customers/{ids['customer']}/edit", [("name", "Taken Over"), ("credit_limit", "1")])
+    check("...and company 1's customer is exactly as it was", card_by_id(int(ids["customer"])) == acme)
+    _boxes, page = customer_form(browser, "/customers/new")
+    check("the values offered while typing (Region, Territory...) are Card Co's own - never another company's",
+          'value="KSR"' in page and 'value="KASUR CITY"' in page and "ONLY-IN-COMPANY-1" not in page)
+    check("a customer number that does not exist is 'not found', never a crash",
+          [browser.get(path).status_code for path in ("/customers/999999999/edit", "/customers/99999999999999999999/edit", "/customers/0/edit",
+                                                      "/customers/abc/edit", "/customers/-1/edit")] == [404] * 5)
+
+    # ---- text that tries to break the page ---------------------------------------------
+    crashes, tries = [], 0
+    every_box = ["name", "partner_type", "nature_of_supply", "lic_expiry_date", "credit_limit", "status"] + [field for field, _label, _limit in TEXT_FIELDS]
+    hostile = ["\x00", "x" * 100000, "'; DROP TABLE customers; --", "<script>alert(1)</script>", "😀" * 50, "٠١٢٣", "-1e999999", "%s %d {0} {{x}}", "\\", "\r\n\r\n"]
+    for path in ("/customers/new", f"/customers/{second['customer_id']}/edit"):
+        for value in hostile:
+            for fields in ([(box, value) for box in every_box],                                 # the same text in every box
+                           [("name", "Odd Input Customer")] + [(box, value) for box in every_box[1:]],
+                           [("name", value)]):
+                tries += 1
+                status = browser.post_raw(path, fields).status_code
+                if status >= 500:
+                    crashes.append((path, value[:20], status))
+        for fields in ([], [("name", "A"), ("name", "B")], [("credit_limit", "1"), ("credit_limit", "2"), ("name", "Twice")]):
+            tries += 1
+            status = browser.post_raw(path, fields).status_code
+            if status >= 500:
+                crashes.append((path, str(fields)[:30], status))
+    check(f"{tries} forms filled with text that tries to break the page (a NUL, 100,000 letters, SQL, a script, emoji, odd numbers, repeated boxes) "
+          "never end in a crash page", not crashes, str(crashes[:5]))
+    check("...and the customers table is still there, with every customer it had",
+          one("SELECT count(*) FROM customers WHERE name IN ('Kasur Traders', 'Lahore Seed House', 'Receipt Customer')") >= 3)
+    browser.post_raw("/customers/new", [("name", "<script>alert('x')</script> & Co"), ("territory", "<b>bold</b>")])
+    pages = customer_list(browser)[3] + browser.get(f"/customers/{card(chr(60) + 'script>alert(' + chr(39) + 'x' + chr(39) + ')</script> & Co')['customer_id']}/edit").get_data(as_text=True)
+    check("a name typed as HTML is shown as the text that was typed, on the list and on the Edit screen - it never runs",
+          "<script>alert(" not in pages and "&lt;script&gt;alert(" in pages and "<b>bold</b>" not in pages)
+
+    # ---- the limits of the form match the database --------------------------------------
+    lengths = dict(q("SELECT column_name, character_maximum_length FROM information_schema.columns WHERE table_name = 'customers'"))
+    mismatched = [field for field, _label, limit in TEXT_FIELDS if field not in lengths or (lengths[field] is not None and limit > lengths[field])]
+    check("no box accepts more text than its column can hold (so a long text can be refused, but can never crash the save)",
+          not mismatched and NAME_MAX_LENGTH <= lengths["name"], str(mismatched))
+
+    _two_people_saving_at_once(org)
+
+    # ---- search again, now that the company has many customers ----------------------------
+    everyone = q("""SELECT name, region, territory, city, category_parent, category, ntn, cnic, lic_number, phone, email, customer_no
+                    FROM customers WHERE organization_id = %s""", (org,))
+
+    def should_find(search):
+        """Worked out here in plain Python: every word is inside one of the eleven searched boxes, or IS the ID."""
+        words = search.lower().split()
+        return sorted(" ".join(row[0].split()) for row in everyone      # (a page shows several spaces as one)
+                      if all(any(word in (value or "").lower() for value in row[:11]) or str(row[11]) == word for word in words))
+
+    wrong = {}
+    for search in ("1", "2", "10", "12", "customer", "CUSTOMER 1", "kasur", "0300", "sahiwal receipt", "a", "same moment"):
+        got = sorted(row["name"] for row in customer_list(browser, search)[0])
+        if got != should_find(search):
+            wrong[search] = (got, should_find(search))
+    check(f"with {len(everyone)} customers in the company, eleven different searches each find exactly the customers they should",
+          not wrong and len(everyone) >= 12, str(wrong)[:600])
+    has_a_1 = lambda row: any("1" in (value or "") for value in row[:11])
+    id_10 = [" ".join(row[0].split()) for row in everyone if row[11] == 10]
+    only_in_a_longer_id = [" ".join(row[0].split()) for row in everyone if row[11] != 1 and "1" in str(row[11]) and not has_a_1(row)]
+    found_by_1 = [row["name"] for row in customer_list(browser, "1")[0]]
+    found_by_10 = [row["name"] for row in customer_list(browser, "10")[0]]
+    check(f"an ID is matched as a whole: '10' finds customer 10, and '1' does NOT find the {len(only_in_a_longer_id)} customers "
+          "whose only 1 is a digit of a longer ID (10, 11, 12...)",
+          len(id_10) == 1 and id_10[0] in found_by_10 and len(only_in_a_longer_id) >= 3 and not set(only_in_a_longer_id) & set(found_by_1),
+          f"10 -> {found_by_10}; wrongly found by 1: {sorted(set(only_in_a_longer_id) & set(found_by_1))}; candidates {len(only_in_a_longer_id)}")
+
+    # ---- records an OLDER copy of the program could have saved ----------------------------
+    # It let two customers share a name, and it let a name be nothing but spaces. Written
+    # here straight into the table, exactly as that older program would have left them.
+    next_no = one("SELECT max(customer_no) FROM customers WHERE organization_id = %s", (org,)) + 1
+    for offset, old_name in enumerate(["Old Twin", "Old Twin", "   "]):
+        q("INSERT INTO customers (organization_id, customer_no, name, nature_of_supply) VALUES (%s, %s, %s, 'Supplies')",
+          (org, next_no + offset, old_name))
+    twin_a, twin_b, nameless = [one("SELECT customer_id FROM customers WHERE organization_id = %s AND customer_no = %s", (org, next_no + offset))
+                                for offset in range(3)]
+    saved_a = browser.post_raw(f"/customers/{twin_a}/edit", [("name", "Old Twin"), ("phone", "042-700-0001"), ("status", "active")]).status_code
+    listed = [row["name"] for row in customer_list(browser, "old twin")[0]]
+    check("two customers who ALREADY share a name (an older copy of the program allowed it) are both still on the list, and each "
+          "can be edited with its name left as it is",
+          saved_a == 302 and listed == ["Old Twin", "Old Twin"]
+          and one("SELECT phone FROM customers WHERE customer_id = %s", (twin_a,)) == "042-700-0001", f"{saved_a} {listed}")
+    refused(browser, "a third 'Old Twin'", "/customers/new", [("name", "Old Twin")], "already exists")
+    renamed = browser.post_raw(f"/customers/{twin_b}/edit", [("name", "Old Twin (Kasur)"), ("status", "active")]).status_code
+    check("...and one of the two can be renamed to tell them apart (it has no entries yet)",
+          renamed == 302 and one("SELECT name FROM customers WHERE customer_id = %s", (twin_b,)) == "Old Twin (Kasur)", str(renamed))
+    check("a customer saved long ago with a blank name can still be opened from the list: its link reads '(no name)'",
+          re.search(rf'<a href="/customers/{nameless}/edit"[^>]*>\s*\(no name\)\s*</a>', customer_list(browser)[3]) is not None)
+    named = browser.post_raw(f"/customers/{nameless}/edit", [("name", "Named At Last"), ("status", "active")]).status_code
+    check("...and there it can be given a name (it has no entries yet)",
+          named == 302 and one("SELECT name FROM customers WHERE customer_id = %s", (nameless,)) == "Named At Last", str(named))
+
+
+def _two_people_saving_at_once(org):
+    """Two saves of the same company at the same moment, on two separate database connections."""
+    import threading
+    from core.validation import ValidationError
+    from customers.services import clean_customer_form, create_customer, update_customer
+
+    def race(first, second):
+        """
+        Person 1 does first(cursor) but has not finished; person 2 does second(cursor) meanwhile.
+        -> (did 2 wait for 1?, what first() returned, what 2 got)
+        """
+        one_conn, two_conn = psycopg2.connect(SCRATCH_URL), psycopg2.connect(SCRATCH_URL)
+        result = {}
+        try:
+            first_result = first(one_conn.cursor())
+
+            def second_person():
+                try:
+                    result["value"] = second(two_conn.cursor())
+                    two_conn.commit()
+                except ValidationError as error:
+                    two_conn.rollback()
+                    result["refused"] = str(error)
+                except Exception as error:      # pragma: no cover - reported by the check below
+                    two_conn.rollback()
+                    result["error"] = repr(error)
+
+            thread = threading.Thread(target=second_person)
+            thread.start()
+            thread.join(1.0)
+            waited = thread.is_alive()
+            one_conn.commit()
+            thread.join(15)
+            return waited and not thread.is_alive(), first_result, result
+        finally:
+            one_conn.close()
+            two_conn.close()
+
+    def typed(editing=False, **boxes):
+        data, problems = clean_customer_form(boxes, editing=editing)
+        assert not problems, problems
+        return data
+
+    def new_customer(name):
+        """-> a save of a new customer with this name, giving its ID"""
+        return lambda cursor: create_customer(cursor, org, typed(name=name))[1]
+
+    def named(name):
+        return one("SELECT count(*) FROM customers WHERE organization_id = %s AND lower(name) = lower(%s)", (org, name))
+
+    waited, first_number, result = race(new_customer("Same Moment One"), new_customer("Same Moment Two"))
+    check("two people saving a new customer at the same moment get two different IDs - the second save waits for the first",
+          waited and result.get("value") == first_number + 1, f"waited={waited} first={first_number} second={result}")
+    waited, first_number, result = race(new_customer("Twin Name"), new_customer("twin name"))
+    check("...and two people saving the SAME new name at the same moment: the first is saved, the second is told the name already exists",
+          waited and "already exists" in result.get("refused", "") and named("twin name") == 1,
+          f"waited={waited} second={result}")
+
+    # Person 1 renames a customer and gives its old name to a new customer. Person 2 is, at
+    # that moment, saving the first customer's card as it looked BEFORE - with the old name.
+    setup = psycopg2.connect(SCRATCH_URL)
+    try:
+        moved_id = create_customer(setup.cursor(), org, typed(name="Moved Name"))[0]
+        setup.commit()
+    finally:
+        setup.close()
+
+    def rename_and_reuse_the_old_name(cursor):
+        update_customer(cursor, org, moved_id, typed(editing=True, name="Moved Name (Lahore)"))
+        return create_customer(cursor, org, typed(name="Moved Name"))[1]
+
+    def save_the_card_as_it_looked_before(cursor):
+        update_customer(cursor, org, moved_id, typed(editing=True, name="Moved Name", phone="042-000-0000"))
+
+    waited, _, result = race(rename_and_reuse_the_old_name, save_the_card_as_it_looked_before)
+    check("...and a card saved while someone else is renaming that same customer is checked against the customer AS IT IS NOW: "
+          "its old name has just gone to a new customer, so the second save is refused and no two customers share the name",
+          waited and "already exists" in result.get("refused", "") and named("Moved Name") == 1 and named("Moved Name (Lahore)") == 1
+          and one("SELECT phone FROM customers WHERE customer_id = %s", (moved_id,)) is None,
+          f"waited={waited} second={result} named 'Moved Name'={named('Moved Name')}")
+    check("no ID is used twice in any company", one("""SELECT count(*) FROM (SELECT organization_id, customer_no FROM customers
+                                                        GROUP BY 1, 2 HAVING count(*) > 1) twice""") == 0)
+
+
+def _customers_of_an_older_database(ids):
+    """A database made BEFORE the customer card (no ID, no new boxes) is started with today's code."""
+    old_name = SCRATCH_NAME + "_oldcards"
+    old_url = _url_for_database(TEST_DATABASE_URL, old_name)
+
+    def old(sql, args=()):
+        conn = psycopg2.connect(old_url)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(sql, args)
+            rows = cursor.fetchall() if cursor.description else None
+            conn.commit()
+            return rows
+        finally:
+            conn.close()
+
+    def start_the_app():
+        return subprocess.run([sys.executable, "-c", "import app"], cwd=REPO_ROOT, capture_output=True, text=True,
+                              env={**os.environ, "DATABASE_URL": old_url})
+
+    new_columns = ["customer_no", "is_company", "email", "phone", "street2", "city", "state", "zip_code", "country", "region",
+                   "territory", "category_parent", "category", "lic_number", "lic_expiry_date"]
+    old_data = "SELECT customer_id, organization_id, name, created_at, nature_of_supply, ntn, strn, cnic, address, credit_limit, is_active FROM customers ORDER BY 1"
+    documents = """SELECT (SELECT count(*) FROM customer_receipts), (SELECT count(*) FROM sales_invoices), (SELECT count(*) FROM journal_headers),
+                          (SELECT md5(string_agg(customer_receipt_id || ':' || customer_id || ':' || amount, '|' ORDER BY customer_receipt_id)) FROM customer_receipts),
+                          (SELECT md5(string_agg(sales_invoice_id || ':' || customer_id, '|' ORDER BY sales_invoice_id)) FROM sales_invoices)"""
+    ids_now = "SELECT customer_id, customer_no FROM customers ORDER BY 1"
+    _admin(f'CREATE DATABASE "{old_name}" TEMPLATE "{SCRATCH_NAME}"')
+    try:
+        ids_given_at_creation = old(ids_now)
+        # exactly the shape an older database has: the same table, without the new columns
+        old("ALTER TABLE customers " + ", ".join(f"DROP COLUMN {column}" for column in new_columns))
+        old("UPDATE customers SET address = E'Shop 4\\nMain Bazaar', ntn = '7654321-0', credit_limit = 125000.50 WHERE customer_id = %s", (int(ids["customer"]),))
+        before = (old(old_data), old(LEDGER_FINGERPRINT), old(documents))
+        started = start_the_app()
+        check("an older database (customers without an ID or the new boxes) starts with today's code", started.returncode == 0, started.stderr[-400:])
+        columns = {name for (name,) in old("SELECT column_name FROM information_schema.columns WHERE table_name = 'customers'")}
+        check(f"...the {len(new_columns)} new columns were added", set(new_columns) <= columns, str(sorted(set(new_columns) - columns)))
+        check("...nothing about any existing customer changed: same names, NTN, STRN, CNIC, address (both lines), credit limits, status, creation times",
+              old(old_data) == before[0])
+        check("...no journal line, receipt or invoice changed", (old(LEDGER_FINGERPRINT), old(documents)) == before[1:])
+        numbered = old(ids_now)
+        check(f"...every one of the {len(numbered)} customers now has an ID: 1, 2, 3... inside its own company, oldest customer first "
+              "- the same IDs they would have been given when they were created",
+              numbered == ids_given_at_creation and all(number is not None for _customer, number in numbered), f"{numbered} vs {ids_given_at_creation}")
+        check("...every existing customer is a Company until someone says otherwise, and every new box starts empty",
+              old("SELECT count(*) FROM customers WHERE NOT is_company OR email IS NOT NULL OR region IS NOT NULL OR lic_expiry_date IS NOT NULL") == [(0,)])
+        check("...and one ID can never be held by two customers of a company (the database itself refuses it)",
+              old("SELECT count(*) FROM pg_indexes WHERE tablename = 'customers' AND indexname = 'customers_id_per_organization' AND indexdef LIKE 'CREATE UNIQUE%%'") == [(1,)])
+        again = start_the_app()
+        check("starting it a second time changes no ID", again.returncode == 0 and old(ids_now) == numbered, again.stderr[-400:])
+
+        # a customer added by an older copy of the program still running on the same database: it has no ID
+        highest = old("SELECT max(customer_no) FROM customers WHERE organization_id = 1")[0][0]
+        old("INSERT INTO customers (organization_id, name) VALUES (1, 'Added By Old Program A'), (1, 'Added By Old Program B')")
+        third = start_the_app()
+        late = old("SELECT name, customer_no FROM customers WHERE name LIKE 'Added By Old Program %%' ORDER BY customer_id")
+        check("customers saved without an ID (by an older copy of the program) are given the company's next IDs at the next start, "
+              "and nobody else's ID moves",
+              third.returncode == 0 and late == [("Added By Old Program A", highest + 1), ("Added By Old Program B", highest + 2)]
+              and old(ids_now)[:len(numbered)] == numbered, f"{late} (highest was {highest})")
+
+        # journal lines written long ago may carry no customer name at all: the receipt or the invoice ITSELF must then lock the name
+        from customers.services import name_lock_reason
+        old("UPDATE journal_lines SET partner_name = NULL")
+        conn = psycopg2.connect(old_url)
+        try:
+            cursor = conn.cursor()
+            reason = {key: name_lock_reason(cursor, ids["card_org"], {"customer_id": customer_id, "name": name})
+                      for key, (customer_id, name) in ids["card_lock_customers"].items()}
+        finally:
+            conn.close()
+        check("where old journal lines carry no customer name, a name is still locked by the receipt itself and by the invoice itself; "
+              "a customer with neither is not locked",
+              bool(reason["receipt"]) and bool(reason["invoice"]) and reason["journal"] is None and reason["nothing"] is None, str(reason))
+    finally:
+        try:
+            _admin(f'DROP DATABASE IF EXISTS "{old_name}" WITH (FORCE)')
+        except Exception as error:
+            print(f"\n(could not drop scratch database {old_name}: {error})")
+
+
+def test_12_ledger_integrity():
+    section("12. The ledger as a whole")
     check("every journal entry balances",
           one("SELECT count(*) FROM (SELECT journal_header_id FROM journal_lines GROUP BY 1 HAVING sum(debit) <> sum(credit)) x") == 0)
     totals = q("""SELECT sum(l.debit), sum(l.credit) FROM journal_lines l
@@ -1492,7 +2137,8 @@ def main():
         test_8_isolation(browser, ids)
         test_9_dashboard(browser, ids)
         test_10_account_kinds(browser, ids)
-        test_11_ledger_integrity()
+        test_11_customer_card(browser, ids)
+        test_12_ledger_integrity()
     finally:
         _drop_scratch_database()
 

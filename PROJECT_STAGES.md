@@ -14,7 +14,7 @@ of the system will be built in is settled early.
 | 2 | Accounting core | 11, 13 (account fields), 14 (step 2) | **In progress** — account kinds done; internal transfer next |
 | 3 | Vendors and purchases | 4, 5, 14 (step 3) | Partly built |
 | 4 | Withholding tax | 7, 8, 14 (step 4) | Partly built |
-| 5 | Sales chain | 3, 6, 14 (step 5) | Partly built |
+| 5 | Sales chain | 3, 6, 14 (step 5) | **In progress** — customer card done (14 Nov 2026); invoice numbers and list next |
 | 6 | Inventory | 3, 4, 8, 14 (step 6) | Not started |
 | 7 | Fixed assets | 9, 14 (step 7) | Not started |
 | 8 | Banking and reconciliation | 12, 14 (step 8) | Not started |
@@ -24,9 +24,12 @@ of the system will be built in is settled early.
 
 ## How every stage is run
 
-1. **Plan** — what will be built, which files change, and the questions only
-   Abdul can answer. Accounting treatment is never guessed: a new entry
-   pattern, account mapping or tax behaviour waits for Abdul's approval.
+1. **Plan** — what will be built and which files change. What Abdul asks for,
+   in words or in screenshots of his own system, is the requirement for both
+   the rules and the look. Since 14 Nov 2026 (decision 16) nothing waits for an
+   approval: where a screenshot does not settle an accounting treatment, the
+   build brief and standard practice decide, and the choice is written in the
+   decision log so that Abdul can change it afterwards.
 2. **Build** — small, additive changes. Database changes only ever add
    (`CREATE TABLE IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`); nothing is
    dropped or renamed.
@@ -36,7 +39,8 @@ of the system will be built in is settled early.
    from **inferences**, and a list of what was *not* tested.
 
 Each new screen is built directly in the new look (stage 1), so stage 11 is a
-final sweep, not a redesign. Nothing is committed to Git until Abdul says so.
+final sweep, not a redesign. Since 14 Nov 2026 (decision 16) every finished
+piece of work goes straight into the main project, `main` on GitHub.
 
 ---
 
@@ -237,11 +241,46 @@ the account can be picked.
 - *To build:* quotations, orders and deliveries (a Delivery posts no journal
   entry) with Delivered and Invoiced running totals; the extra invoice fields;
   Sales Credit Notes for returns and discounts with the "Outstanding debits +
-  ADD" panel; Batch Customer Payments; Region and Territory on the customer;
-  matching receipts to invoices.
+  ADD" panel; Batch Customer Payments; matching receipts to invoices.
 - *The dashboard gains:* invoices overdue, and money expected this week.
 - *Decisions needed:* a discount credit note posts to Sales, or to a separate
   Discount Allowed account (the brief recommends the second).
+
+### Done on 14 Nov 2026 — the customer card (step 1)
+
+Built from Abdul's pictures of his own customers screens. Only the
+`customers` table is written; no journal entry is created or changed.
+
+- **The card** has: ID, Person / Company, Name, Email, Phone, the address in
+  parts (Street, Street 2, City, State, ZIP, Country), Region, Territory,
+  Category Parent, Category, LIC Number, LIC Expiry Date, NTN, STRN, CNIC,
+  Nature of supply, Credit limit. There is now an **Edit** screen, with
+  Active / Inactive.
+- **The ID** is a running number inside each company (1, 2, 3…), given when
+  the customer is saved. It never changes. Customers that already existed are
+  numbered oldest first the first time this version starts.
+- **Wrong input is refused with a message** — a missing name, text too long
+  for its box, a wrong email, a wrong date, a credit limit that is negative or
+  above 999,999,999,999.99. All mistakes are listed together and nothing that
+  was typed is lost.
+- **Two name rules**, both because a journal line remembers its customer by
+  name: a second customer with the same name in the same company is refused,
+  and the name is locked once the customer has a receipt, an invoice or a
+  journal line. Both rules can go when journal lines store the customer's ID.
+- **The list** has 19 columns, a search box, and a **Columns** button: a menu
+  of tick-boxes that shows or hides each column. The choice is remembered in
+  that browser. Search looks in the name, region, territory, city, both
+  categories, NTN, CNIC, LIC number, phone, email and the ID.
+- An **inactive** customer stays on the list (marked Inactive) with its
+  history, and is no longer offered on a new receipt, invoice or journal entry.
+
+*Not built yet from his customer form:* Tags, Is Vendor, Currency, Website,
+the contact cards, the totals on top (Sales, Invoiced, Due), the tabs.
+
+*The order after this step* (no go-ahead needed, decision 16): invoice numbers
+and the invoices list → the invoice form → one payments list with PRV / VPV
+numbers → matching receipts to invoices → credit notes → products with price
+and stock.
 
 ## Stage 6 — Inventory
 
@@ -312,8 +351,9 @@ the subscription renewal screen and the two platform-administrator screens.
 
 ## Decisions — who decided what
 
-Only Abdul approves an accounting treatment. A point marked **Proposal** is
-NOT approved and nothing has been built from it.
+Abdul can overrule any point at any time; it is then changed and re-tested.
+Until 14 Nov 2026 an accounting treatment waited for his approval; point 16
+ended that. A point still marked **Proposal** has not been built.
 
 | # | Point | Who decided | State |
 |---|---|---|---|
@@ -322,12 +362,17 @@ NOT approved and nothing has been built from it.
 | 3 | Customers and vendors are picked **by name**; the system posts to 1100 / 2000. Directors and employees get **one account each**, marked Non-trading receivable / payable. | Abdul, 13 Nov 2026 | Built |
 | 4 | "Available" bank accounts means **active** ones. An inactive account keeps its balance and is still counted in every total. | Assumed by the agent. Abdul to confirm. | Built |
 | 5 | **Bank Internal Transfer:** two entries dated the same day, meeting in one dedicated asset account, "Internal Transfers in Transit". Out: Dr Transit / Cr source. In: Dr destination / Cr Transit. | **Proposal** by the agent | Not approved. Not built. |
-| 6 | **Voucher numbers:** `BPV/2026/0001` style (BPV, CPV, BRV, CRV, JV), given when the voucher is posted. | **Proposal** by the agent | Not approved. Not built. |
+| 6 | **Document numbers** follow the scheme of Abdul's own system, seen in his pictures of 14 Nov 2026: `INV/2026/01749` for an invoice, `PRV/00300` for a receipt, `VPV/00164` for a payment. (This replaces the agent's earlier `BPV/2026/0001` proposal.) | The agent's plan, told to Abdul on 14 Nov 2026. Abdul to confirm when that step is proposed. | Not built. |
 | 7 | The **Analytic Distribution** column is left out. | **Proposal** by the agent | Nothing built either way. |
 | 8 | **Colours:** the palette in `static/tokens.css` is used (teal `#278C83`, charcoal `#243448`, ivory `#FAFAF6`); the brief gives slightly different shades. | Existing colours kept. Abdul to confirm. | No change made. |
 | 9 | A **negative line on a vendor bill** is refused. | Existing behaviour kept. Abdul to confirm. | No change made. |
 | 10 | **Roles and the add-user screen** are built in stage 10, before going live. | **Proposal** by the agent | Not built. |
-| 11 | A **vendor bill line** may use Expense accounts, Stock accounts and Fixed asset accounts, picked through filter boxes. | Abdul, 14 Nov 2026 | Not built. How the filter boxes should look is still open. |
+| 11 | A **vendor bill line** may use Expense accounts, Stock accounts and Fixed asset accounts, picked through filter boxes. "Filter boxes" are the menu of tick-boxes that shows or hides columns. | Abdul, 14 Nov 2026 | Not built. The layout waits for Abdul's pictures of his vendor screens. |
+| 12 | **Customer card:** the boxes and the list columns follow Abdul's own customers screens. The ID is a running number inside each company, given automatically. | Proposed by the agent; approved by Abdul ("Go"), 14 Nov 2026 | Built |
+| 13 | A customer's **name is locked** once the customer has entries, and a **second customer with the same name** in the same company is refused. | Stated by the agent as the rule of the step; approved with it by Abdul, 14 Nov 2026 | Built. Both rules can go when journal lines store the customer's ID. |
+| 14 | An **inactive customer** stays on the list and keeps its history; it is no longer offered on a new receipt, invoice or journal entry. | Assumed by the agent (the same rule as point 4). Abdul to confirm. | Built |
+| 15 | **LIC Number and LIC Expiry Date** are on the customer card of every company. | Open: Abdul was asked whether they are for Hextar only. | Built for every company for now. |
+| 16 | **Work goes straight into the main project.** Whatever Abdul has asked for, or asks for later, is built and put into `main` on GitHub without a preview to check or an approval to wait for. He says afterwards if something must be changed. His screenshots are the requirement, for the rules behind a screen as much as for its look. | Abdul, 14 Nov 2026 | In force. It replaces "nothing is committed until Abdul says so". |
 
 **Still with Abdul:**
 
@@ -340,18 +385,26 @@ NOT approved and nothing has been built from it.
 3. Is there a newer copy of the project than the one on GitHub? The owner's
    `AGENTS.md` describes modules (reports, credit notes, batch payments, bank
    transfers, a `tests/` folder, `PROJECT.md`) that this repository does not
-   have.
+   have. *14 Nov 2026:* Abdul checks his project by running it from this
+   GitHub repository, so all work now goes into its `main`. A copy kept only
+   on a computer cannot be reached from here.
 4. The product's name. Abdul's last commit renamed the project to `zyro-erp`
    (the README title); the build brief and every screen say LedgerPulse.
    Nothing was changed either way.
 5. Is a posted document reversed on its original date or on today's date?
    Should a payment that makes cash negative be blocked, or only warned?
+6. Are LIC Number and LIC Expiry Date wanted for every company, or for Hextar
+   only?
+7. Pictures of the vendor screens, with one vendor bill showing its tick-box
+   menu open (needed for point 11).
 
 ---
 
-## Known problems — found 14 Nov 2026, NOT fixed
+## Known problems — found 14 Nov 2026
 
-Each was reproduced on a throwaway copy of the demo database.
+Each was reproduced on a throwaway copy of the demo database. **None is fixed
+unless its line says so.** The customer card (stage 5, step 1) fixed the
+customers part of points 5, 6, 7, 11 and 12; everything else is as found.
 
 1. **Vendor bill total is not checked.** Quantity 2 × rate 50 with 999 in the
    Total box was saved as 999.
@@ -364,12 +417,22 @@ Each was reproduced on a throwaway copy of the demo database.
    holding 90,000; invoices dated 1990 and 2099 were posted.
 5. **Partners are known by name only.** Two customers with the same name can
    be saved, and journal lines record only the name.
+   *Customers, 14 Nov 2026:* a second customer with the same name is now
+   refused, and the name is locked once the customer has entries. *Still
+   open:* the same for vendors; journal lines still record only the name.
 6. **Ordinary typing can crash a form** ("Internal Server Error"): payment
    terms over 50 characters, a memo over 255, a journal entry reference over
    100, an NTN over 30, an amount of 13 digits. In all, 194 of 1,411 wrong
    inputs crashed, on 9 of 13 forms.
+   *Customer form, 14 Nov 2026:* fixed. New Customer, Edit Customer and the
+   search box were sent 1,864 odd or wrong inputs and none crashed (New
+   Customer had 14 of the 194). *Still open:* the other 8 forms. For amounts the cause is
+   shared, in `core/validation.py`: a number too long to round (`1e400`)
+   still crashed all 6 other amount boxes when tried again on 14 Nov 2026.
+   It was not changed, because every form uses that file.
 7. **A refused form comes back empty.** Invoice lines, bill lines and the
    payment memo are lost after one wrong value.
+   *Customer form, 14 Nov 2026:* fixed, it keeps everything that was typed.
 8. **A failed posting shows no message** (tested on a sales invoice).
 9. **Screens break at laptop width.** New Vendor Bill runs 253 px off a
    1366 px screen; on New Sales Invoice the Account and Unit boxes are cut
@@ -378,9 +441,27 @@ Each was reproduced on a throwaway copy of the demo database.
     screen's arithmetic and is saved as 83.33.
 11. **Switched-off records are still accepted** by the server (customer,
     vendor, product, tax rate), and no screen can edit or switch them off.
+    *Customers, 14 Nov 2026:* there is now an Edit screen with Active /
+    Inactive, and an inactive customer is no longer offered. *Still open:*
+    a receipt or an invoice sent for a customer that was made inactive while
+    the form was open is still saved (those two screens were not part of the
+    step); vendors and products have no Edit screen.
 12. Smaller: a customer whose name is only spaces is saved; lists show
     amounts without thousands separators; `accounting/routes.py` totals a
     journal entry's detail page with `float`.
+    *14 Nov 2026:* the customer name is fixed, and the customer list writes
+    amounts with separators. The other lists and the `float` are unchanged.
+13. **New, a limit of the name lock:** the lock looks at the entries that
+    exist at the moment of saving. If one person renames a brand-new customer
+    in the same instant that another person posts that customer's very first
+    document, the document can keep the old name. It closes for good when
+    journal lines store the customer's ID.
+14. **New, customers saved before 14 Nov 2026:** two that already share a
+    name both stay and can still be edited; a third with that name is refused.
+    One saved with a blank name shows as "(no name)" on the list and can be
+    given a name on its Edit screen — unless it already has entries, because
+    then its name is locked. No such customer is known to exist; if one does,
+    it needs a one-off correction in the database.
 
 **Missing in Sales:** quotation, sales order, delivery, credit note, invoice
 number, print, paid / unpaid status.
@@ -388,3 +469,25 @@ number, print, paid / unpaid status.
 batch payment, the vendor's bill number, sales tax on a bill.
 **Roles:** Admin, Accountant and Viewer exist in the database; no screen
 checks them.
+
+---
+
+## Session log
+
+One line for each piece of work, the newest last.
+
+- **14 Nov 2026 — stage 5, step 1, the customer card.** ID, the new boxes, an
+  Edit screen, the list with search and the tick-box column menu; rules in the
+  new `customers/services.py`. Checks run: `test_customers.py` passed;
+  `test_workflows.py` passed all 346 checks, 107 of them on the customer card.
+- **14 Nov 2026 — into the main project.** On Abdul's instruction (decision
+  16) everything built so far was put into `main`: the foundation fixes, the
+  dashboard, the account kinds and the customer card. Before that, the upgrade
+  was rehearsed on a database built and filled by the 19 Oct 2026 version
+  itself (2 companies, 12 customers, invoices, receipts, bills, payments and
+  journal entries, some left as drafts). Result: the new version started on
+  it; not one of its 220 existing rows changed; 16 columns were added (the
+  Kind of an account and the 15 new customer boxes) and no table; all 93
+  screens opened with the old documents in them; new documents posted and
+  the ledger balanced; and the 19 Oct version still ran on the upgraded
+  database. *Not done:* a run on the real (Neon) database.
