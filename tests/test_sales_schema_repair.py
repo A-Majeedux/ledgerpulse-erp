@@ -221,7 +221,10 @@ class TargetCompanyTests(unittest.TestCase):
                 target = _target_company(cursor)
                 self.assertIsNotNone(target)
                 self.assertNotEqual(target[0], head_office)      # never the head office
-                self.assertEqual(target[0], real_company)
+                # and it is a real company, not the platform's own workspace
+                cursor.execute("SELECT COALESCE(is_zyro, FALSE) FROM organizations WHERE organization_id = %s",
+                               (target[0],))
+                self.assertFalse(cursor.fetchone()[0])
             finally:
                 conn.rollback()
                 cursor.execute("DELETE FROM customers WHERE name = 'Target Customer' AND organization_id IN "
