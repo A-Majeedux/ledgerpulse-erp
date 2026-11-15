@@ -47,12 +47,35 @@ def trial_balance():
         conn.close()
 
     tb = compute_trial_balance(rows)
+
+    # Two small figures for the charts at the top of the page (14 Nov 2026):
+    # how the balance is split between the five account types, and the largest
+    # single balances. Both are read from the same lines the table shows, so a
+    # chart can never disagree with the table underneath it.
+    type_order = ["Asset", "Liability", "Equity", "Revenue", "Expense"]
+    type_sums = {name: 0.0 for name in type_order}
+    for line in tb["lines"]:
+        net = float(line["debit_balance"] or 0) - float(line["credit_balance"] or 0)
+        key = line.get("account_type") or "Asset"
+        type_sums[key if key in type_sums else "Asset"] += abs(net)
+    type_totals = [[name, round(type_sums[name], 2)] for name in type_order if type_sums[name] > 0]
+
+    balances = []
+    for line in tb["lines"]:
+        net = abs(float(line["debit_balance"] or 0) - float(line["credit_balance"] or 0))
+        if net > 0:
+            balances.append([f'{line["code"]} · {line["name"]}', round(net, 2)])
+    balances.sort(key=lambda row: row[1], reverse=True)
+    top_accounts = balances[:9]
+
     return render_template(
         "reports/trial_balance.html",
         tb=tb,
         unbalanced=unbalanced,
         as_at=as_at,
         include_drafts=include_drafts,
+        type_totals=type_totals,
+        top_accounts=top_accounts,
     )
 
 

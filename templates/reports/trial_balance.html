@@ -2,6 +2,16 @@
 {% block title %}Trial Balance{% endblock %}
 {% block active_nav %}reports{% endblock %}
 {% block content %}
+{% macro chart_points(rows) -%}
+[{% for r in rows %}[{{ r[0]|tojson }}, {{ r[1]|float }}]{% if not loop.last %},{% endif %}{% endfor %}]
+{%- endmacro %}
+<nav class="lp-crumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('dashboard.home') }}">Dashboard</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <span>Reports</span>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <span>Trial balance</span>
+</nav>
 <div class="lp-page-header">
   <div>
     <h1 class="lp-page-title">Trial Balance</h1>
@@ -24,9 +34,60 @@
     </label>
   </div>
   <div>
-    <button type="submit" class="lp-btn primary" style="padding:7px 16px;">Show</button>
+    <button type="submit" class="lp-btn primary" style="padding:7px 16px;">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-filter"/></svg> Show
+    </button>
   </div>
 </form>
+
+{# ---- Two figures at a glance, then the charts, then the detail ---- #}
+<div class="kpi-grid" style="margin-bottom:16px;">
+  <article class="kpi" style="--kpi-tint:#0EA5A0; --kpi-soft:#E6F7F5;">
+    <div class="kpi-top"><span class="kpi-label">Total debits</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-arrow-right"/></svg></span></div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(tb.debit_balance) }}</div>
+    <div class="kpi-note">{{ tb.lines|length }} account{{ '' if tb.lines|length == 1 else 's' }} with activity</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#7C5CF0; --kpi-soft:#F0ECFE;">
+    <div class="kpi-top"><span class="kpi-label">Total credits</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-arrow-left"/></svg></span></div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(tb.credit_balance) }}</div>
+    <div class="kpi-note">As at {{ as_at.strftime('%d %b %Y') }}</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:{{ '#0F8A5F' if tb.is_balanced else '#C0392B' }}; --kpi-soft:{{ '#E7F7EF' if tb.is_balanced else '#FDECEA' }};">
+    <div class="kpi-top"><span class="kpi-label">Difference</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-{{ 'check' if tb.is_balanced else 'alert' }}"/></svg></span></div>
+    <div class="kpi-value" style="color:{{ '#0F8A5F' if tb.is_balanced else '#B4331F' }};"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(tb.difference|abs) }}</div>
+    <div class="kpi-note">{{ 'The books balance.' if tb.is_balanced else 'Debits and credits do not match.' }}</div>
+  </article>
+</div>
+
+{% if type_totals or top_accounts %}
+<div class="chart-grid" style="margin-bottom:16px;">
+  <section class="chart-card">
+    <div class="chart-head">
+      <div>
+        <h3>Where the balance sits</h3>
+        <p class="chart-sub">Every account's balance, gathered by its type</p>
+      </div>
+    </div>
+    <div class="zyro-chart" data-chart="donut" data-unit="{{ active_currency }}">
+      <script type="application/json">{{ chart_points(type_totals) }}</script>
+    </div>
+  </section>
+  <section class="chart-card">
+    <div class="chart-head">
+      <div>
+        <h3>Largest balances</h3>
+        <p class="chart-sub">The nine accounts carrying the most, whichever side they sit on</p>
+      </div>
+    </div>
+    <div class="zyro-chart" data-chart="hbar" data-unit="{{ active_currency }}">
+      <script type="application/json">{{ chart_points(top_accounts) }}</script>
+    </div>
+  </section>
+</div>
+{% endif %}
 
 {# ---- Health check banner ---- #}
 {% if tb.is_balanced %}

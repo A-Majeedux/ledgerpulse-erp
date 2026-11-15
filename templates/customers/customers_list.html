@@ -11,7 +11,7 @@
     <h1 class="lp-page-title">Customers</h1>
     <p class="lp-page-subtitle">Customer directory for sales invoicing, receipts and receivables.</p>
   </div>
-  <a href="{{ url_for('customers.new_customer') }}" class="lp-btn primary sm">+ New Customer</a>
+  <a href="{{ url_for('customers.new_customer') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Customer</a>
 </div>
 
 <div class="lp-card">
@@ -19,8 +19,8 @@
     <form method="GET" action="{{ url_for('customers.customers_list') }}" class="lp-list-search">
       <input type="search" name="q" value="{{ search }}" maxlength="100" class="form-control"
              placeholder="Search name, ID, region, territory..." aria-label="Search customers">
-      <button type="submit" class="lp-btn primary sm">Search</button>
-      {% if search %}<a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary sm">Clear</a>{% endif %}
+      <button type="submit" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-search"/></svg> Search</button>
+      {% if search %}<a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-x"/></svg> Clear</a>{% endif %}
     </form>
 
     <span class="lp-list-count">

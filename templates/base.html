@@ -2,158 +2,245 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#F6F9FB">
   <title>{% block title %}Dashboard{% endblock %} — ZYRO ERP</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='ui.css') }}">
 </head>
 <body>
-  <!-- Fixed Animated ZYRO Infinity Watermark Background -->
+  {% include "_icons.html" %}
+
+  {# The destinations, in one place: the menus below are drawn from this list,
+     and so is the command palette (Ctrl/Cmd + K), so the two can never drift
+     apart. Each entry: (label, endpoint, icon). #}
+  {% set NAV_GROUPS = [
+      ('Home', [('Dashboard', 'dashboard.home', 'dashboard')]),
+      ('Sales', [
+        ('Sales Invoices', 'sales.sales_invoices_list', 'invoice'),
+        ('Products', 'sales.products_list', 'product'),
+        ('Customers', 'customers.customers_list', 'customers'),
+        ('Customer Receipts', 'customers.customer_receipts_list', 'receipt'),
+        ('Sales Tax Rates', 'sales.sales_tax_rates_list', 'percent')
+      ]),
+      ('Purchases', [
+        ('Vendors', 'vendors.vendors_list', 'vendor'),
+        ('Vendor Bills', 'vendors.vendor_bills_list', 'bill'),
+        ('Vendor Credit Notes', 'vendors.vendor_credit_notes_list', 'credit-note'),
+        ('Vendor Payments', 'vendors.vendor_payments_list', 'payment'),
+        ('Batch Vendor Payments', 'vendors.batch_vendor_payments_list', 'batch'),
+        ('Own Cheques Report', 'vendors.own_cheques_report', 'cheque'),
+        ('Vendor Partner Ledger', 'vendors.vendor_ledger', 'ledger'),
+        ('Vendor Aging Report', 'vendors.vendor_aging', 'aging'),
+        ('WHT Rates', 'wht.tax_rates_list', 'percent')
+      ]),
+      ('Accounting', [
+        ('Chart of Accounts', 'accounting.chart_of_accounts_list', 'accounts'),
+        ('Journal Entries', 'accounting.journal_entries_list', 'journal'),
+        ('New Journal Entry (AI)', 'accounting.new_journal_entry', 'ai'),
+        ('Trial Balance', 'reports.trial_balance', 'trial'),
+        ('General Ledger', 'reports.general_ledger', 'gl')
+      ]),
+      ('Setup & Admin', [
+        ('Organizations', 'organizations.manage_organizations', 'org'),
+        ('Subscription', 'organizations.renew_subscription', 'subscription')
+      ])
+  ] %}
+
+  {# A thin line across the top while a page is loading - see app.js #}
+  <div id="lp-progress" class="lp-progress" aria-hidden="true"></div>
+
+  <!-- The moving ZYRO infinity mark, behind everything ----------------------
+       A real lemniscate (one continuous figure of eight), drawn slowly and
+       drifting a few pixels - never a shape that changes what it is. -->
   <div class="zyro-bg-watermark" aria-hidden="true">
     <div class="zyro-watermark-logo">
-      <svg width="520" height="520" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 12C9.5 8.5 6.5 8.5 4.5 10.5C2.5 12.5 2.5 15.5 4.5 17.5C6.5 19.5 9.5 19.5 12 15C14.5 19.5 17.5 19.5 19.5 17.5C21.5 15.5 21.5 12.5 19.5 10.5C17.5 8.5 14.5 8.5 12 12Z" stroke="url(#zyro-watermark-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      <svg width="560" height="560" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path class="infinity-stroke"
+              d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"
+              stroke="url(#zyro-watermark-grad)" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>
         <defs>
-          <linearGradient id="zyro-watermark-grad" x1="3" y1="12" x2="21" y2="12" gradientUnits="userSpaceOnUse">
-            <stop stop-color="#20B8A9"/>
-            <stop offset="1" stop-color="#A5F3E8"/>
+          <linearGradient id="zyro-watermark-grad" x1="1" y1="12" x2="23" y2="12" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#0EA5A0"/><stop offset="0.5" stop-color="#7BE0D8"/><stop offset="1" stop-color="#38BDF8"/>
           </linearGradient>
         </defs>
       </svg>
     </div>
   </div>
 
-  <div class="lp-page-wrapper" style="position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100vh;">
+  <div class="lp-page-wrapper" style="display: flex; flex-direction: column; min-height: 100vh;">
     <!-- Top Navigation Bar -->
     <header class="lp-topnav">
-    <div class="lp-topnav-brand">
-      <a href="{{ url_for('dashboard.home') }}" style="display: flex; align-items: center; gap: 8px; text-decoration: none; color: var(--zyro-deep-navy);">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 12C9.5 8.5 6.5 8.5 4.5 10.5C2.5 12.5 2.5 15.5 4.5 17.5C6.5 19.5 9.5 19.5 12 15C14.5 19.5 17.5 19.5 19.5 17.5C21.5 15.5 21.5 12.5 19.5 10.5C17.5 8.5 14.5 8.5 12 12Z" stroke="url(#zyro-base-grad)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-          <defs>
-            <linearGradient id="zyro-base-grad" x1="3" y1="12" x2="21" y2="12" gradientUnits="userSpaceOnUse">
-              <stop stop-color="#20B8A9"/>
-              <stop offset="1" stop-color="#A5F3E8"/>
-            </linearGradient>
-          </defs>
-        </svg>
-        <span style="font-weight: 800; letter-spacing: -0.02em; font-size: 18px;">ZYRO</span>
-      </a>
-    </div>
-
-    <nav class="lp-topnav-nav">
-      <a class="lp-topnav-item {{ 'active' if active_nav() == 'dashboard' }}" href="{{ url_for('dashboard.home') }}">Dashboard</a>
-
-      <!-- Sales Dropdown -->
-      <div class="lp-dropdown">
-        <button type="button" class="lp-dropdown-btn {{ 'active' if active_nav() in ['invoices', 'products', 'customers', 'customer_receipts', 'salestax'] }}">
-          Sales ▾
-        </button>
-        <div class="lp-dropdown-menu">
-          <a href="{{ url_for('sales.sales_invoices_list') }}">Sales Invoices</a>
-          <a href="{{ url_for('sales.products_list') }}">Products</a>
-          <a href="{{ url_for('customers.customers_list') }}">Customers</a>
-          <a href="{{ url_for('customers.customer_receipts_list') }}">Customer Receipts</a>
-          <a href="{{ url_for('sales.sales_tax_rates_list') }}">Sales Tax Rates</a>
-        </div>
+      <div class="lp-topnav-brand">
+        <a href="{{ url_for('dashboard.home') }}">
+          <svg class="brand-mark" width="27" height="27" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z"
+                  stroke="url(#zyro-base-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="zyro-base-grad" x1="1" y1="12" x2="23" y2="12" gradientUnits="userSpaceOnUse">
+                <stop stop-color="#0EA5A0"/><stop offset="1" stop-color="#7BE0D8"/>
+              </linearGradient>
+            </defs>
+          </svg>
+          <span style="font-weight: 800; letter-spacing: -0.03em; font-size: 18px;">ZYRO</span>
+        </a>
       </div>
 
-      <!-- Purchases Dropdown -->
-      <div class="lp-dropdown">
-        <button type="button" class="lp-dropdown-btn {{ 'active' if active_nav() in ['vendors', 'vendor_bills', 'vendor_payments', 'taxrates'] }}">
-          Purchases ▾
-        </button>
-        <div class="lp-dropdown-menu">
-          <a href="{{ url_for('vendors.vendors_list') }}">Vendors</a>
-          <a href="{{ url_for('vendors.vendor_bills_list') }}">Vendor Bills</a>
-          <a href="{{ url_for('vendors.vendor_credit_notes_list') }}">Vendor Credit Notes</a>
-          <a href="{{ url_for('vendors.vendor_payments_list') }}">Vendor Payments</a>
-          <a href="{{ url_for('vendors.batch_vendor_payments_list') }}">Batch Vendor Payments</a>
-          <a href="{{ url_for('vendors.own_cheques_report') }}">Own Cheques Report</a>
-          <a href="{{ url_for('vendors.vendor_ledger') }}">Vendor Partner Ledger</a>
-          <a href="{{ url_for('vendors.vendor_aging') }}">Vendor Aging Report</a>
-          <a href="{{ url_for('wht.tax_rates_list') }}">WHT Rates</a>
-        </div>
-      </div>
+      <nav class="lp-topnav-nav" aria-label="Main">
+        <a class="lp-topnav-item {{ 'active' if active_nav() == 'dashboard' }}" href="{{ url_for('dashboard.home') }}">
+          <svg class="ico sm" aria-hidden="true"><use href="#i-dashboard"/></svg><span class="nav-label">Dashboard</span>
+        </a>
 
-      <!-- Accounting Dropdown -->
-      <div class="lp-dropdown">
-        <button type="button" class="lp-dropdown-btn {{ 'active' if active_nav() in ['chart', 'journals'] }}">
-          Accounting ▾
-        </button>
-        <div class="lp-dropdown-menu">
-          <a href="{{ url_for('accounting.chart_of_accounts_list') }}">Chart of Accounts</a>
-          <a href="{{ url_for('accounting.journal_entries_list') }}">Journal Entries</a>
-          <a href="{{ url_for('accounting.new_journal_entry') }}">New Journal Entry (AI Assisted)</a>
-          <a href="{{ url_for('reports.trial_balance') }}">Trial Balance</a>
-          <a href="{{ url_for('reports.general_ledger') }}">General Ledger</a>
-        </div>
-      </div>
+        {% set GROUP_ICONS = {'Sales': 'invoice', 'Purchases': 'vendor', 'Accounting': 'journal', 'Setup & Admin': 'org'} %}
+        {% set GROUP_ACTIVE = {'Sales': ['invoices', 'products', 'customers', 'customer_receipts', 'salestax'],
+                               'Purchases': ['vendors', 'vendor_bills', 'vendor_payments', 'taxrates'],
+                               'Accounting': ['chart', 'journals', 'reports'],
+                               'Setup & Admin': ['organizations', 'subscriptions', 'admin_dashboard', 'admin_tenants', 'admin_plans', 'admin_users_list', 'admin_payments_list']} %}
+        {% for group, items in NAV_GROUPS %}
+          {% if group != 'Home' %}
+          <div class="lp-dropdown">
+            <button type="button" class="lp-dropdown-btn {{ 'active' if active_nav() in GROUP_ACTIVE[group] }}"
+                    aria-haspopup="true" aria-expanded="false">
+              <svg class="ico sm" aria-hidden="true"><use href="#i-{{ GROUP_ICONS[group] }}"/></svg>
+              <span class="nav-label">{{ group }}</span>
+              <svg class="ico sm chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+            </button>
+            <div class="lp-dropdown-menu" role="menu">
+              {% for label, endpoint, icon in items %}
+                <a href="{{ url_for(endpoint) }}" role="menuitem">
+                  <svg class="ico sm" aria-hidden="true"><use href="#i-{{ icon }}"/></svg>{{ label }}
+                </a>
+              {% endfor %}
 
-      <!-- Setup & Admin Dropdown -->
-      <div class="lp-dropdown">
-        <button type="button" class="lp-dropdown-btn {{ 'active' if active_nav() in ['organizations', 'subscriptions', 'admin_dashboard', 'admin_tenants', 'admin_plans', 'admin_users_list', 'admin_payments_list'] }}">
-          Setup &amp; Admin ▾
-        </button>
-        <div class="lp-dropdown-menu">
-          <a href="{{ url_for('organizations.manage_organizations') }}">Organizations</a>
-          <a href="{{ url_for('organizations.renew_subscription') }}">Subscription</a>
-          {% if active_organization_id %}
-            <div style="border-top: 1px solid var(--lp-border); margin: 4px 0;"></div>
-            <a href="{{ url_for('organizations.users_organization_shortcut' if False else 'organizations.users_list', organization_id=active_organization_id) }}">Business Users</a>
-            <a href="{{ url_for('organizations.roles_list', organization_id=active_organization_id) }}">Roles &amp; Permissions</a>
+              {% if group == 'Setup & Admin' %}
+                {% if active_organization_id %}
+                  <div style="border-top: 1px solid var(--lp-hairline); margin: 6px 4px;"></div>
+                  <a href="{{ url_for('organizations.users_list', organization_id=active_organization_id) }}" role="menuitem">
+                    <svg class="ico sm" aria-hidden="true"><use href="#i-users"/></svg>Business Users
+                  </a>
+                  <a href="{{ url_for('organizations.roles_list', organization_id=active_organization_id) }}" role="menuitem">
+                    <svg class="ico sm" aria-hidden="true"><use href="#i-shield"/></svg>Roles &amp; Permissions
+                  </a>
+                {% endif %}
+                {% if session.get('is_platform_admin') %}
+                  <div style="border-top: 1px solid var(--lp-hairline); margin: 6px 4px;"></div>
+                  <a href="{{ url_for('auth.admin_clients_list') }}" role="menuitem">
+                    <svg class="ico sm" aria-hidden="true"><use href="#i-clients"/></svg>Clients Management
+                  </a>
+                  <a href="{{ url_for('auth.admin_dashboard') }}" role="menuitem">
+                    <svg class="ico sm" aria-hidden="true"><use href="#i-platform"/></svg>Platform Dashboard
+                  </a>
+                  <a href="{{ url_for('auth.admin_tenants') }}" role="menuitem">
+                    <svg class="ico sm" aria-hidden="true"><use href="#i-health"/></svg>Tenant Health
+                  </a>
+                  <a href="{{ url_for('auth.admin_plans') }}" role="menuitem">
+                    <svg class="ico sm" aria-hidden="true"><use href="#i-batch"/></svg>Subscription Plans
+                  </a>
+                  <a href="{{ url_for('auth.admin_users_list') }}" role="menuitem">
+                    <svg class="ico sm" aria-hidden="true"><use href="#i-users"/></svg>Platform Users
+                  </a>
+                  <a href="{{ url_for('auth.admin_payments_list') }}" role="menuitem">
+                    <svg class="ico sm" aria-hidden="true"><use href="#i-payment"/></svg>Platform Payments
+                  </a>
+                {% endif %}
+              {% endif %}
+            </div>
+          </div>
           {% endif %}
-          {% if session.get('is_platform_admin') %}
-            <div style="border-top: 1px solid var(--lp-border); margin: 4px 0;"></div>
-            <a href="{{ url_for('auth.admin_clients_list') }}">Clients Management</a>
-            <a href="{{ url_for('auth.admin_dashboard') }}">Platform Dashboard</a>
-            <a href="{{ url_for('auth.admin_tenants') }}">Tenant Health</a>
-            <a href="{{ url_for('auth.admin_plans') }}">Subscription Plans</a>
-            <a href="{{ url_for('auth.admin_users_list') }}">Platform Users</a>
-            <a href="{{ url_for('auth.admin_payments_list') }}">Platform Payments</a>
-          {% endif %}
-        </div>
+        {% endfor %}
+      </nav>
+
+      <div class="lp-topnav-right">
+        <button type="button" class="nav-search" data-cmdk-open title="Jump to any screen (Ctrl / Cmd + K)">
+          <svg class="ico sm" aria-hidden="true"><use href="#i-search"/></svg>
+          <span class="nav-search-text">Jump to…</span>
+          <kbd>⌘K</kbd>
+        </button>
+
+        <form class="lp-org-switcher" method="POST" onsubmit="this.action = '/organizations/switch/' + this.org_id.value; return true;">
+          {{ csrf_field() }}
+          <select name="org_id" onchange="this.form.requestSubmit()" title="Company">
+            {% for org in organizations %}
+              <option value="{{ org[0] }}" {{ 'selected' if org[0] == active_organization_id }}>{{ org[1] }}</option>
+            {% endfor %}
+          </select>
+        </form>
+
+        {% if session.get('user_name') %}
+          <span class="lp-user-badge">{{ session.get('user_name') }}{% if session.get('is_platform_admin') %} (Admin){% endif %}</span>
+        {% endif %}
+        <a href="{{ url_for('auth.logout') }}" class="lp-btn ghost sm" title="Sign out">
+          <svg class="ico sm" aria-hidden="true"><use href="#i-signout"/></svg><span class="nav-label">Sign out</span>
+        </a>
       </div>
-    </nav>
+    </header>
 
-    <div class="lp-topnav-right">
-      <form class="lp-org-switcher" method="POST" onsubmit="this.action = '/organizations/switch/' + this.org_id.value; return true;">
-        {{ csrf_field() }}
-        <select name="org_id" onchange="this.form.requestSubmit()">
-          {% for org in organizations %}
-            <option value="{{ org[0] }}" {{ 'selected' if org[0] == active_organization_id }}>{{ org[1] }}</option>
-          {% endfor %}
-        </select>
-      </form>
-      {% if session.get('user_name') %}
-        <span class="lp-user-badge">{{ session.get('user_name') }}{% if session.get('is_platform_admin') %} (Admin){% endif %}</span>
-      {% endif %}
-      <a href="{{ url_for('auth.logout') }}" class="lp-btn secondary sm">Sign Out</a>
-    </div>
-  </header>
-
-    <div class="lp-content" style="flex: 1;">
+    <main class="lp-content" id="lp-content" style="flex: 1;">
       {% if session.get('is_platform_admin') and active_organization_id and active_organization_id != zyro_org_id %}
-        <div style="background: #20B8A9; color: #142B3A; padding: 10px 20px; font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-radius: 6px;">
-          <span>⚠️ <strong>SUPPORT MODE:</strong> You are currently viewing a client business workspace. All actions apply to this client's books.</span>
-          <a href="{{ url_for('auth.admin_return_to_zyro') }}" class="lp-btn sm" style="background: #142B3A; color: #fff; text-decoration: none; padding: 6px 14px; border-radius: 4px;">Return to ZYRO Head Office</a>
+        <div style="background: linear-gradient(180deg, #FFF7E6, #FFF1D6); color: #8A5A00; padding: 12px 18px; font-weight: 600; font-size: 13px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-radius: 12px; border: 1px solid #F5DFA8;">
+          <span style="display:flex; align-items:center; gap:8px;">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-alert"/></svg>
+            <span><strong>Support mode:</strong> you are inside a client business. Everything you do here is written to that client's books.</span>
+          </span>
+          <a href="{{ url_for('auth.admin_return_to_zyro') }}" class="lp-btn sm">Return to the head office</a>
         </div>
       {% endif %}
       {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <!-- The command palette -------------------------------------------------- -->
+  <div id="cmdk-backdrop" class="cmdk-backdrop" aria-hidden="true"></div>
+  <div id="cmdk" class="cmdk" role="dialog" aria-modal="true" aria-label="Jump to a screen" aria-hidden="true">
+    <div class="cmdk-input-row">
+      <svg class="ico" aria-hidden="true"><use href="#i-search"/></svg>
+      <input id="cmdk-input" type="text" placeholder="Where do you want to go?  invoices, customers, trial balance…"
+             autocomplete="off" spellcheck="false" aria-label="Search screens">
+      <kbd>Esc</kbd>
+    </div>
+    <div id="cmdk-list" class="cmdk-list"></div>
+    <div class="cmdk-foot">
+      <span><kbd>↑</kbd> <kbd>↓</kbd> to move</span>
+      <span><kbd>↵</kbd> to open</span>
+      <span style="margin-left:auto;">Type a few letters — it finds the screen.</span>
     </div>
   </div>
 
+  <button type="button" id="lp-backtop" class="lp-backtop" title="Back to the top" aria-label="Back to the top">
+    <svg class="ico" aria-hidden="true"><use href="#i-arrow-up"/></svg>
+  </button>
+
   <script>
-    document.addEventListener('mousemove', (e) => {
-      if (window.matchMedia('(pointer: coarse)').matches) return;
-      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-      const card = e.target.closest('.lp-card');
-      if (card) {
-        const rect = card.getBoundingClientRect();
-        card.style.setProperty('--mouse-x', `${e.clientX - rect.left}px`);
-        card.style.setProperty('--mouse-y', `${e.clientY - rect.top}px`);
-      }
-    }, { passive: true });
+    window.ZYRO_NAV = [
+      {%- set comma = namespace(first=true) -%}
+      {%- for group, items in NAV_GROUPS -%}{%- for label, endpoint, icon in items -%}
+        {%- if not comma.first %},{% endif %}{% set comma.first = false -%}
+        {"label": {{ label|tojson }}, "url": {{ url_for(endpoint)|tojson }}, "group": {{ group|tojson }}, "icon": {{ icon|tojson }}}
+      {%- endfor -%}{%- endfor %}
+    ];
+
+    // The things you create most often, so the palette can start them too.
+    window.ZYRO_ACTIONS = [
+      {%- set done = namespace(first=true) -%}
+      {%- for label, endpoint, icon in [
+            ('New sales invoice', 'sales.new_sales_invoice', 'invoice'),
+            ('New customer receipt', 'customers.new_customer_receipt', 'receipt'),
+            ('New vendor bill', 'vendors.new_vendor_bill', 'bill'),
+            ('New vendor payment', 'vendors.new_vendor_payment', 'payment'),
+            ('New journal entry', 'accounting.new_journal_entry', 'journal'),
+            ('New customer', 'customers.new_customer', 'customers'),
+            ('New vendor', 'vendors.new_vendor', 'vendor'),
+            ('Trial balance', 'reports.trial_balance', 'trial')] -%}
+        {%- if not done.first %},{% endif %}{% set done.first = false -%}
+        {"label": {{ label|tojson }}, "url": {{ url_for(endpoint)|tojson }}, "group": "Create", "icon": {{ icon|tojson }}}
+      {%- endfor %}
+    ];
   </script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script src="{{ url_for('static', filename='charts.js') }}"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

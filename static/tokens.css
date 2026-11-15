@@ -27,11 +27,30 @@
   /* Aliases / Semantic mapping */
   --lp-teal: var(--zyro-electric-teal);
   --lp-navy: var(--zyro-deep-navy);
-  --lp-canvas: var(--zyro-clean-ivory);
+  --lp-canvas: #F6F9FB;
   --lp-white: #ffffff;
-  --lp-text: var(--zyro-deep-navy);
-  --lp-text-muted: var(--zyro-slate-blue);
-  --lp-border: #d4dedc;
+  --lp-text: #17313F;
+  --lp-text-muted: #64798B;
+  --lp-border: #E4EBEF;
+
+  /* --- The lighter layer (14 Nov 2026 redesign) -----------------------
+     Surfaces, hairlines and accents used by ui.css. Every name is new, so
+     any screen that does not use them looks exactly as it did. */
+  --lp-surface: #ffffff;
+  --lp-surface-2: #FBFDFE;
+  --lp-hairline: #EDF2F5;
+  --lp-accent: #0EA5A0;
+  --lp-accent-600: #0B8F8A;
+  --lp-accent-soft: #E6F7F5;
+  --lp-accent-ring: rgba(14, 165, 160, 0.28);
+  --lp-ink-2: #33505F;
+  --lp-radius: 14px;
+  --lp-shadow-1: 0 1px 2px rgba(23, 49, 63, 0.04), 0 2px 8px rgba(23, 49, 63, 0.04);
+  --lp-shadow-2: 0 2px 6px rgba(23, 49, 63, 0.06), 0 12px 28px rgba(23, 49, 63, 0.08);
+  --lp-shadow-lift: 0 10px 30px rgba(23, 49, 63, 0.12);
+  --lp-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --lp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --lp-nav-h: 62px;
 
   /* Status colors (soft background + strong text, for pills) */
   --lp-green-bg: #DDEFE8;   --lp-green-text: #1d6e66;
@@ -63,7 +82,10 @@
 * { box-sizing: border-box; }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  /* Inter if the machine has it; otherwise the system's own UI font, which is
+     what most people will see when the font CDN is not reachable. */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+               'Helvetica Neue', Arial, sans-serif;
   background: var(--lp-canvas);
   color: var(--lp-text);
   margin: 0;
@@ -1340,3 +1362,19 @@ a:hover { text-decoration: underline; }
 .lp-invoice-info td { color: var(--lp-text); overflow-wrap: anywhere; }
 .lp-invoice-info tr:last-child th,
 .lp-invoice-info tr:last-child td { border-bottom: none; }
+
+/* --- Sign-in screen: the drawn trend line and the small badge (14 Nov 2026) --- */
+.lp-spark { width: 100%; height: 96px; display: block; }
+.lp-spark-axis {
+  display: flex; justify-content: space-between;
+  margin-top: 8px; font-size: 10.5px; letter-spacing: .06em;
+  text-transform: uppercase; color: #7E98A4;
+}
+.lp-login-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-bottom: 10px; padding: 5px 11px; border-radius: 999px;
+  background: var(--lp-accent-soft, #E6F7F5);
+  border: 1px solid rgba(14, 165, 160, .22);
+  color: var(--lp-accent-600, #0B8F8A);
+  font-size: 10.5px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase;
+}

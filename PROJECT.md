@@ -145,6 +145,9 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
   cards** with Price and On hand and a search box, the **receipt screen** with Payment Type / Journal / Voucher
   Number / Payment Method and the **Cheques** tab, and the **customer card finished** - a Type on every contact and
   a **Purchases** figure from a linked vendor (see section 15)
+- 2026-11-14 — Look and feel, seventh round: a lighter palette, real icons everywhere, an infinity mark that is
+  actually an infinity mark, charts on the dashboard and the two reports, a Ctrl+K jump-to box, and page
+  transitions instead of blinks (see section 16)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -443,3 +446,92 @@ additive: new columns are added, never removed or renamed, and every screen that
 - The **dashboard** still lists invoices without their numbers.
 - **On hand** is a figure he keeps, not a stock ledger.
 - The printed invoice has no company logo or bank details block beyond what the vendor print frame already shows.
+
+## 16. The new look, and getting around without scrolling (built 14 Nov 2026)
+
+This round changed **how the program looks and how you move through it**. It changed no figure, no rule and no
+screen's job. Every page that existed before still exists at the same address, with the same boxes and the same
+buttons; the buttons now carry a small drawing beside their words.
+
+### A. The colours and the paper
+
+- Four files now sit under the look: `static/tokens.css` (the colours and sizes), `static/ui.css` (the new pieces),
+  `static/app.js` (the small behaviours) and `static/charts.js` (the graphs). `templates/_icons.html` holds the
+  drawings as one hidden block of shapes, so no page has to fetch an icon from the internet — the preview window has
+  no internet, and neither may a customer's server.
+- Lighter paper (`#F6F9FB`), softer ink (`#17313F`), one accent (`#0EA5A0`) and one rounded corner size (14px).
+  Shadows are two very light layers instead of one grey blur. The old rules are still underneath, so any screen I did
+  not touch keeps working exactly as before.
+- Nothing animates unless the machine says it can: every movement in `ui.css` is switched off under
+  `prefers-reduced-motion`. Nothing loops on its own except the faint background mark, which drifts once every 26
+  seconds and draws itself once on arrival.
+
+### B. The background mark
+
+The old shape was wrong — it read as a pair of glasses. It is now a true infinity sign
+(`M18.178 8c5.096 0 5.096 8 0 8-5.095 0-7.133-8-12.739-8-4.585 0-4.585 8 0 8 5.606 0 7.644-8 12.74-8z`) used in
+three places: the faint mark behind every page, the small mark in the top bar, and the sign-in screen. The sign-in
+screen's pretend bar chart is now a real drawn line.
+
+### C. Icons
+
+- `templates/_icons.html` has 53 drawings drawn as thin outlines that take the colour of the text around them
+  (`currentColor`), so the same invoice drawing is grey in a menu and white on a dark button.
+- The top bar, every menu, the palette, the buttons that create something (`New Invoice`, `New Customer`,
+  `New Vendor Bill`, `New Receipt`, `New Journal Entry`, `New Product`, `New Account`, `New Vendor`), `Search`,
+  `Clear`, `Edit` and `Show` all have their drawing.
+
+### D. Getting around without scrolling ("flying through")
+
+- **Jump to…** in the top bar, or **Ctrl+K** (⌘K on a Mac): a box opens, you type three letters — `inv`, `cus`,
+  `jrn` — and press Enter. It lists every screen from the menu, plus the eight screens you start new work on
+  (`New sales invoice`, `New customer receipt`, `New vendor bill`, `New vendor payment`, `New journal entry`,
+  `New customer`, `New vendor`, `Trial balance`). Your last five visits are remembered at the top.
+- Two-key shortcuts: press `g` then `d` (dashboard), `i` (invoices), `p` (products), `c` (customers), `v` (vendors),
+  `r` (trial balance), `s` (customer receipts). `/` jumps to the search box on the page you are on. `Esc` closes
+  whatever is open.
+- A thin line runs across the top while a page is loading, the old page lifts and fades, and table headings stay
+  stuck to the top as you scroll, so you never lose the column names.
+- A round arrow appears at the bottom-right once you have scrolled, to take you back.
+
+### E. Charts
+
+- `static/charts.js` draws four kinds of graph as plain SVG: `area`, `bars`, `donut` and `hbar` (a ranking of bars).
+  A page supplies the numbers in a small `application/json` block; the drawing happens when the card scrolls into
+  view. Hovering any point shows the exact figure and the period. No library, no internet.
+- **Dashboard** — six cards: Sales revenue and Cash & bank as areas, Profit & loss and Purchases as bars, Biggest
+  customers and Biggest vendors as rankings. Each keeps the filter it had (`Monthly / Weekly / Daily`, and the
+  customer or vendor chooser). The six figures at the top (Sales, Net profit, Cash & bank, Receivables, Payables,
+  Journals) are now cards with a coloured icon, the period chooser at the bottom, and a plain warning when a figure
+  is negative or something is overdue.
+- **Trial balance** — three figures (total debits, total credits, the difference with a tick or a warning), a ring
+  showing how the balance splits between Asset / Liability / Equity / Revenue / Expense, and a ranking of the nine
+  largest balances. Both read the same lines as the table underneath, so they cannot disagree with it.
+- **Vendor payables aging** — the total owed, the largest single balance, the average, a ranking of the eight
+  biggest vendors, and a share bar next to each row.
+- `reports/routes.py` now hands the trial balance page two small lists (`type_totals`, `top_accounts`) for those two
+  graphs. Nothing else in that file changed.
+
+### F. The dashboard's own tick boxes
+
+The three "Show on this page" boxes (Summary / Charts / Recent activity) work as before and are remembered per user
+through `dashboard.save_preferences`. The box now sends its own CSRF token, so the "Remember my choice" button is no
+longer refused.
+
+### Checks
+
+- Whole suite: **123 passed**, with only the vendor print case failing that already failed
+  (`test_10_all_print_templates_and_routes`, "INVOICE LINES" vs "Invoice Lines").
+- Browser-free checks with jsdom (not committed): every page's charts either draw or say "Nothing has been entered
+  for this chart yet"; the palette opens on Ctrl+K, filters as you type and closes on Escape; the progress line,
+  the back-to-top arrow and the `g`-then-`d` shortcut all fire; every `#i-…` drawing a page asks for exists in the
+  hidden block (`53` shapes, `34` in use); every address the palette offers answers 200.
+- Every GET screen was requested with a real login on a database with sample invoices, journals and vendors: all
+  answered 200 (the `/auth/admin/…` screens answer 403 for a normal company user, as they should, and 200 for the
+  platform administrator).
+
+### Known gaps in this round
+
+- The look was checked by reading the markup and running the scripts without a browser; nobody has yet looked at it
+  on a real screen at a real size.
+- The printed pages (invoice, vendor bill, receipts) were deliberately left alone.

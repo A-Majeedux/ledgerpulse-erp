@@ -7,13 +7,13 @@
     <h1 class="lp-page-title">Vendors</h1>
     <p class="lp-page-subtitle">Vendor master directory for purchasing, bills, and withholding tax tracking.</p>
   </div>
-  <a href="{{ url_for('vendors.new_vendor') }}" class="lp-btn primary sm">+ New Vendor</a>
+  <a href="{{ url_for('vendors.new_vendor') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Vendor</a>
 </div>
 
 <!-- Search Bar -->
 <form method="GET" action="{{ url_for('vendors.vendors_list') }}" style="margin-bottom: 20px; display: flex; gap: 10px;">
   <input type="text" name="q" value="{{ search }}" placeholder="Search by name, phone, NTN, STRN, CNIC..." class="form-control" style="flex: 1; padding: 8px 12px; border: 1px solid var(--lp-border); border-radius: 6px;">
-  <button type="submit" class="lp-btn primary sm">Search</button>
+  <button type="submit" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-search"/></svg> Search</button>
   {% if search %}
   <a href="{{ url_for('vendors.vendors_list') }}" class="lp-btn secondary sm">Clear</a>
   {% endif %}

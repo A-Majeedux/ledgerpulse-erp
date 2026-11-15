@@ -2,28 +2,117 @@
 {% block title %}Vendor Aging Report{% endblock %}
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Vendor Payables Aging Report</h2>
+{% macro chart_points(rows) -%}
+[{% for r in rows %}[{{ r[0]|tojson }}, {{ r[1]|float }}]{% if not loop.last %},{% endif %}{% endfor %}]
+{%- endmacro %}
+
+<nav class="lp-crumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('dashboard.home') }}">Dashboard</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <a href="{{ url_for('vendors.vendors_list') }}">Purchases</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <span>Aging</span>
+</nav>
+
+<div class="lp-page-header" style="display:flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;">
+  <div>
+    <h1 class="lp-page-title">Vendor payables aging</h1>
+    <p class="lp-page-subtitle">What is still owed to each vendor, oldest money first — posted bills only.</p>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a href="{{ url_for('vendors.vendor_bills_list') }}" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-bill"/></svg> All bills
+    </a>
+    <a href="{{ url_for('vendors.vendor_ledger') }}" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-ledger"/></svg> Partner ledger
+    </a>
+  </div>
 </div>
 
-<div class="lp-card">
-  <table class="lp-table">
-    <thead>
-      <tr>
-        <th>Vendor Name</th>
-        <th class="amount">Total Due (PKR)</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for row in aging_data %}
-      <tr>
-        <td><a href="{{ url_for('vendors.vendor_detail', vendor_id=row[0]) }}">{{ row[1] }}</a></td>
-        <td class="amount">{{ "%.2f"|format(row[2]) }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="2" style="text-align:center; color: var(--lp-text-muted);">No outstanding vendor payables.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+{% set total_due = aging_data | map(attribute=2) | sum if aging_data else 0 %}
+{% set top_vendors = aging_data[:8] if aging_data else [] %}
+
+<div class="kpi-grid" style="margin-bottom: 18px;">
+  <article class="kpi" style="--kpi-tint:#E8833A; --kpi-soft:#FDF0E6;">
+    <div class="kpi-top">
+      <span class="kpi-label">Total still owed</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-vendor"/></svg></span>
+    </div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(total_due) }}</div>
+    <div class="kpi-note">Across {{ aging_data|length }} vendor{{ '' if aging_data|length == 1 else 's' }}</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#0EA5A0; --kpi-soft:#E6F7F5;">
+    <div class="kpi-top">
+      <span class="kpi-label">Largest single balance</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-trending-up"/></svg></span>
+    </div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(aging_data[0][2] if aging_data else 0) }}</div>
+    <div class="kpi-note">{{ aging_data[0][1] if aging_data else 'Nothing outstanding' }}</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#4B7CB8; --kpi-soft:#EAF1F9;">
+    <div class="kpi-top">
+      <span class="kpi-label">Average owed</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-coins"/></svg></span>
+    </div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format((total_due / aging_data|length) if aging_data else 0) }}</div>
+    <div class="kpi-note">Per vendor with something due</div>
+  </article>
+</div>
+
+{% if top_vendors %}
+<section class="chart-card" style="margin-bottom: 18px;">
+  <div class="chart-head">
+    <div>
+      <h3>Who is owed the most</h3>
+      <p class="chart-sub">The eight biggest balances; the table below has every vendor</p>
+    </div>
+  </div>
+  <div class="zyro-chart" data-chart="hbar" data-unit="{{ active_currency }}">
+    <script type="application/json">[{% for row in top_vendors %}[{{ row[1]|tojson }}, {{ row[2]|float }}]{% if not loop.last %},{% endif %}{% endfor %}]</script>
+  </div>
+</section>
+{% endif %}
+
+<div class="lp-card" style="padding: 0;">
+  <div class="lp-table-wrapper">
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th>Vendor</th>
+          <th class="amount">Total due ({{ active_currency }})</th>
+          <th style="width: 34%;">Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in aging_data %}
+        <tr>
+          <td>
+            <a href="{{ url_for('vendors.vendor_detail', vendor_id=row[0]) }}" style="font-weight:600; display:inline-flex; align-items:center; gap:7px;">
+              <svg class="ico sm" aria-hidden="true"><use href="#i-vendor"/></svg>{{ row[1] }}
+            </a>
+          </td>
+          <td class="amount">{{ "{:,.2f}".format(row[2]) }}</td>
+          <td>
+            <div style="height: 8px; border-radius: 999px; background: #F2F7F9; overflow: hidden;">
+              <div style="height: 100%; width: {{ ((row[2] / total_due) * 100) if total_due else 0 }}%;
+                          border-radius: 999px; background: linear-gradient(90deg, #12B0A9, #7BE0D8);"></div>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3"><div class="lp-empty-state" style="padding: 24px; text-align:center;">No outstanding vendor payables — every bill is settled.</div></td></tr>
+        {% endfor %}
+      </tbody>
+      {% if aging_data %}
+      <tfoot>
+        <tr style="font-weight: 700;">
+          <td>Total</td>
+          <td class="amount">{{ "{:,.2f}".format(total_due) }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
 </div>
 {% endblock %}

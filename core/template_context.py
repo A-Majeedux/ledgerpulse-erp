@@ -164,6 +164,9 @@ def register_context_processors(app):
                     return "subscriptions"
                 else:
                     return "organizations"
+            elif endpoint.startswith("reports."):
+                # Trial balance and general ledger live under Accounting in the nav.
+                return "journals"
             elif endpoint.startswith("auth."):
                 if "admin" in endpoint:
                     if "user" in endpoint:
