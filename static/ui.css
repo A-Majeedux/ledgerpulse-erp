@@ -757,3 +757,153 @@ label { color: var(--lp-ink-2); }
 /* The activity tables on the dashboard are six cards in a column; on a wide
    screen two of them fit side by side, which is a lot less scrolling. */
 #activity-section .lp-table-wrapper { max-height: 420px; }
+
+/* ==========================================================================
+   20. Tabs, used on the receipt screens (and anywhere a page has two views)
+   ========================================================================== */
+
+.lp-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: #EDF4F6;
+  border: 1px solid var(--lp-hairline);
+}
+.lp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 15px;
+  border-radius: 9px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--lp-ink-2);
+  text-decoration: none;
+  border: none;
+  background: none;
+  cursor: pointer;
+  transition: background .16s ease, color .16s ease, box-shadow .2s ease;
+}
+.lp-tab:hover { background: rgba(255, 255, 255, .7); text-decoration: none; }
+.lp-tab.on {
+  background: #fff;
+  color: var(--lp-accent-600);
+  box-shadow: var(--lp-shadow-1);
+}
+.lp-tab .count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--lp-accent-soft);
+  color: var(--lp-accent-600);
+}
+
+/* A key/value list, like the rows of a receipt */
+.lp-rows { display: grid; gap: 0; }
+.lp-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) 1fr;
+  gap: 14px;
+  padding: 9px 0;
+  border-bottom: 1px solid #F3F7F9;
+  font-size: 13.5px;
+}
+.lp-row:last-child { border-bottom: none; }
+.lp-row > span:first-child { color: var(--lp-text-muted); }
+.lp-row > span:last-child { font-weight: 550; }
+
+/* The big money figure on a receipt or voucher */
+.lp-big-amount {
+  font-size: 30px;
+  font-weight: 780;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
+  color: var(--lp-text);
+  line-height: 1.1;
+}
+.lp-big-amount .cur { font-size: 14px; font-weight: 700; color: var(--lp-text-muted); margin-right: 7px; letter-spacing: 0; }
+
+/* ==========================================================================
+   21. The invoice entry table: optional columns and a tidy totals box
+   ========================================================================== */
+
+.col-picker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  border: 1px dashed var(--lp-border);
+  background: rgba(255, 255, 255, .6);
+  font-size: 12.5px;
+  color: var(--lp-text-muted);
+}
+.col-picker-label {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-weight: 700; color: var(--lp-ink-2);
+  letter-spacing: .02em;
+}
+.col-picker .switch { font-size: 12.5px; }
+.col-picker-note { margin-left: auto; font-size: 11.5px; font-style: italic; }
+
+.lines-wrapper { margin-bottom: 18px; }
+
+/* No fixed percentages anywhere: the browser gives each column what it needs,
+   and a hidden column simply hands its width to the others. */
+.lines-table { table-layout: auto; width: 100%; }
+.lines-table th { white-space: nowrap; }
+.lines-table td { vertical-align: middle; }
+.lines-table .form-control,
+.lines-table .form-select { min-width: 84px; }
+.lines-table .col-product { min-width: 180px; }
+.lines-table .col-product .form-select { min-width: 170px; }
+.lines-table .col-account .form-select { min-width: 150px; }
+.lines-table .col-desc { min-width: 130px; }
+.lines-table .col-unit .form-select { min-width: 76px; }
+.lines-table .col-qty .form-control,
+.lines-table .col-rate .form-control { min-width: 82px; }
+.lines-table .col-disc .form-control { min-width: 70px; }
+.lines-table .col-tax .form-select { min-width: 120px; }
+.lines-table .col-total { white-space: nowrap; min-width: 96px; }
+.lines-table .col-actions { width: 46px; }
+
+.invoice-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.invoice-summary {
+  min-width: 268px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--lp-hairline);
+  background: #FBFDFE;
+  box-shadow: var(--lp-shadow-1);
+}
+.invoice-summary .sum-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 26px;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--lp-text-muted);
+}
+.invoice-summary .sum-row strong { color: var(--lp-text); font-variant-numeric: tabular-nums; }
+.invoice-summary .sum-row.grand {
+  margin-top: 6px;
+  padding-top: 9px;
+  border-top: 1px solid var(--lp-hairline);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--lp-text);
+}
+.invoice-summary .sum-row.grand strong { font-size: 19px; letter-spacing: -0.02em; color: var(--lp-accent-600); }
+.invoice-summary .cur { font-size: 11px; font-weight: 700; color: var(--lp-text-muted); }

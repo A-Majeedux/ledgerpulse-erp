@@ -1,81 +1,135 @@
 {% extends "base.html" %}
-{% block title %}Customer Receipt{% endblock %}
+{% block title %}Receipt {{ receipt[10] or '' }}{% endblock %}
 {% block active_nav %}customers{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px;">
-  <h2 style="margin:0;">Receipt from {{ receipt[1] }}</h2>
-  <div style="font-size: 14px;">
-    <span style="color: var(--lp-text-muted);">Voucher Number</span>
-    <strong>{{ receipt[10] or '—' }}</strong>
+
+{% set method = receipt[13] or 'Cash' %}
+{% set amount = receipt[2] or 0 %}
+{% set withheld = receipt[8] or 0 if receipt[6] else 0 %}
+{% set net = amount - withheld %}
+
+<nav class="lp-crumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('dashboard.home') }}">Dashboard</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <a href="{{ url_for('customers.customer_receipts_list') }}">Customer receipts</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <span>{{ receipt[10] or 'Receipt' }}</span>
+</nav>
+
+<div class="lp-page-header" style="display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap;">
+  <div>
+    <h1 class="lp-page-title">Receipt from {{ receipt[1] }}</h1>
+    <p class="lp-page-subtitle">
+      Voucher <strong>{{ receipt[10] or '—' }}</strong> · {{ receipt[3].strftime('%d %b %Y') }} · paid by {{ method }}
+    </p>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a href="{{ url_for('customers.customer_receipt_print', customer_receipt_id=receipt[0]) }}"
+       class="lp-btn primary" target="_blank" rel="noopener">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Print voucher
+    </a>
+    <a href="{{ url_for('customers.customer_receipts_list') }}" class="lp-btn secondary">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-arrow-left"/></svg> All receipts
+    </a>
   </div>
 </div>
 
-<div style="display:flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--lp-border);">
-  <button type="button" id="tab-receipt" onclick="showTab('receipt')"
-          style="padding: 8px 16px; background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--lp-text); border-bottom: 2px solid var(--lp-accent); margin-bottom: -1px;">
-    Receipt
+<div class="lp-tabs" role="tablist">
+  <button type="button" role="tab" id="tab-receipt" class="lp-tab on" onclick="showTab('receipt')" aria-selected="true">
+    <svg class="ico sm" aria-hidden="true"><use href="#i-receipt"/></svg> Receipt
   </button>
-  <button type="button" id="tab-cheques" onclick="showTab('cheques')"
-          style="padding: 8px 16px; background: none; border: none; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--lp-text-muted);">
-    Cheques
+  <button type="button" role="tab" id="tab-cheques" class="lp-tab" onclick="showTab('cheques')" aria-selected="false">
+    <svg class="ico sm" aria-hidden="true"><use href="#i-cheque"/></svg> Cheques
   </button>
 </div>
 
 <div id="panel-receipt">
-  <div class="lp-card">
-    <table class="lp-table">
-      <tr><td style="width:220px; color:var(--lp-text-muted);">Payment Type</td><td>{{ receipt[11] or 'Customer Payment' }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Journal</td><td>{{ receipt[12] or 'Customer Receipts' }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Voucher Number</td><td style="font-weight:600;">{{ receipt[10] or '—' }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Payment Method</td><td>{{ receipt[13] or 'Cash' }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Amount (gross)</td><td class="amount">{{ "%.2f"|format(receipt[2]) }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Date</td><td>{{ receipt[3].strftime('%d %b %Y') }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Memo</td><td>{{ receipt[4] or '—' }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Deposited to</td><td>{{ receipt[5] }}</td></tr>
-      {% if receipt[6] %}
-      <tr><td style="color:var(--lp-text-muted);">WHT rate</td><td>{{ receipt[7] }}%</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">WHT amount (recoverable)</td><td class="amount">{{ "%.2f"|format(receipt[8]) }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Net received</td><td class="amount">{{ "%.2f"|format(receipt[2] - receipt[8]) }}</td></tr>
+  <div style="display:grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap:16px; align-items:start;">
+
+    <section class="lp-card">
+      <h2 style="margin:0 0 10px; font-size:15px;">Receipt details</h2>
+      <div class="lp-rows">
+        <div class="lp-row"><span>Payment Type</span><span>{{ receipt[11] or 'Customer Payment' }}</span></div>
+        <div class="lp-row"><span>Payment Method</span><span>{{ method }}</span></div>
+        <div class="lp-row"><span>Voucher Number</span><span style="font-family:ui-monospace,Menlo,monospace;">{{ receipt[10] or '—' }}</span></div>
+        <div class="lp-row"><span>Journal</span><span>{{ receipt[12] or 'Customer Receipts' }}</span></div>
+        <div class="lp-row"><span>Deposited to</span><span>{{ receipt[5] }}</span></div>
+        <div class="lp-row"><span>Date</span><span>{{ receipt[3].strftime('%d %b %Y') }}</span></div>
+        <div class="lp-row"><span>Memo</span><span>{{ receipt[4] or '—' }}</span></div>
+      </div>
+      {% if receipt[9] %}
+        <p style="margin:12px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
+          Posted to the books as journal entry #{{ receipt[9] }}.
+        </p>
       {% endif %}
-    </table>
+    </section>
+
+    <section class="lp-card">
+      <h2 style="margin:0 0 10px; font-size:15px;">Amount</h2>
+      <div class="lp-big-amount"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(amount) }}</div>
+      <p style="margin:6px 0 0; font-size:12.5px; color:var(--lp-text-muted);">Amount received (gross)</p>
+
+      {% if receipt[6] %}
+      <div class="lp-rows" style="margin-top:14px;">
+        <div class="lp-row"><span>WHT rate</span><span>{{ receipt[7] }}%</span></div>
+        <div class="lp-row"><span>WHT withheld (recoverable)</span><span>{{ "{:,.2f}".format(withheld) }}</span></div>
+        <div class="lp-row"><span>Net received</span><span style="color:var(--lp-accent-600);">{{ "{:,.2f}".format(net) }}</span></div>
+      </div>
+      {% else %}
+      <p style="margin:12px 0 0; font-size:12.5px; color:var(--lp-text-muted);">No withholding tax on this receipt.</p>
+      {% endif %}
+
+      <a href="{{ url_for('customers.customer_receipt_print', customer_receipt_id=receipt[0]) }}"
+         class="lp-btn secondary sm" style="margin-top:14px;" target="_blank" rel="noopener">
+        <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Open the printable voucher
+      </a>
+    </section>
   </div>
 </div>
 
 <div id="panel-cheques" style="display:none;">
-  <div class="lp-card">
-    {% if receipt[13] == 'Cheque' %}
-    <table class="lp-table">
-      <tr><td style="width:220px; color:var(--lp-text-muted);">Cheque Number</td><td style="font-weight:600;">{{ receipt[14] or '—' }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Bank</td><td>{{ receipt[15] or '—' }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Cheque Date</td><td>{{ receipt[16].strftime('%d %b %Y') if receipt[16] else '—' }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Amount</td><td class="amount">{{ "%.2f"|format(receipt[2]) }}</td></tr>
-      <tr><td style="color:var(--lp-text-muted);">Customer</td><td>{{ receipt[1] }}</td></tr>
-    </table>
-    {% else %}
-    <p style="margin:0; color: var(--lp-text-muted);">
-      This receipt was paid by {{ receipt[13] or 'Cash' }}, not by cheque, so there are no cheque details to show.
-    </p>
-    {% endif %}
+  {% if method == 'Cheque' %}
+  <div style="display:grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap:16px; align-items:start;">
+    <section class="lp-card">
+      <h2 style="margin:0 0 10px; font-size:15px;">Cheque details</h2>
+      <div class="lp-rows">
+        <div class="lp-row"><span>Cheque Number</span><span>{{ receipt[14] or '—' }}</span></div>
+        <div class="lp-row"><span>Bank</span><span>{{ receipt[15] or '—' }}</span></div>
+        <div class="lp-row"><span>Cheque Date</span><span>{{ receipt[16].strftime('%d %b %Y') if receipt[16] else '—' }}</span></div>
+        <div class="lp-row"><span>Customer</span><span>{{ receipt[1] }}</span></div>
+      </div>
+    </section>
+    <section class="lp-card">
+      <h2 style="margin:0 0 10px; font-size:15px;">Cheque amount</h2>
+      <div class="lp-big-amount"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(amount) }}</div>
+      <p style="margin:6px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
+        The cheque is subject to realisation. The receipt is already in the books.
+      </p>
+    </section>
   </div>
+  {% else %}
+  <div class="lp-card" style="display:flex; gap:14px; align-items:center;">
+    <span style="width:38px; height:38px; border-radius:11px; background:var(--lp-accent-soft); color:var(--lp-accent-600); display:grid; place-items:center;">
+      <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
+    </span>
+    <p style="margin:0; font-size:13.5px;">
+      This receipt was paid by {{ method }}, not by cheque, so there are no cheque details to show.
+    </p>
+  </div>
+  {% endif %}
 </div>
 
-<p style="margin-top:16px;"><a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=receipt[9]) }}" class="lp-btn">View journal entry</a></p>
-
 <script>
-function showTab(which) {
-  const receipt = document.getElementById('panel-receipt');
-  const cheques = document.getElementById('panel-cheques');
-  const receiptTab = document.getElementById('tab-receipt');
-  const chequesTab = document.getElementById('tab-cheques');
-  const on = 'var(--lp-text)', off = 'var(--lp-text-muted)';
-  receipt.style.display = which === 'receipt' ? 'block' : 'none';
-  cheques.style.display = which === 'cheques' ? 'block' : 'none';
-  receiptTab.style.color = which === 'receipt' ? on : off;
-  chequesTab.style.color = which === 'cheques' ? on : off;
-  receiptTab.style.borderBottom = which === 'receipt' ? '2px solid var(--lp-accent)' : 'none';
-  chequesTab.style.borderBottom = which === 'cheques' ? '2px solid var(--lp-accent)' : 'none';
-  receiptTab.style.marginBottom = which === 'receipt' ? '-1px' : '0';
-  chequesTab.style.marginBottom = which === 'cheques' ? '-1px' : '0';
-}
+  function showTab(which) {
+    const isReceipt = which === 'receipt';
+    document.getElementById('panel-receipt').style.display = isReceipt ? 'block' : 'none';
+    document.getElementById('panel-cheques').style.display = isReceipt ? 'none' : 'block';
+    const receiptTab = document.getElementById('tab-receipt');
+    const chequeTab = document.getElementById('tab-cheques');
+    receiptTab.classList.toggle('on', isReceipt);
+    chequeTab.classList.toggle('on', !isReceipt);
+    receiptTab.setAttribute('aria-selected', isReceipt ? 'true' : 'false');
+    chequeTab.setAttribute('aria-selected', isReceipt ? 'false' : 'true');
+  }
 </script>
 {% endblock %}

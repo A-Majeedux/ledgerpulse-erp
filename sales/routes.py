@@ -5,7 +5,7 @@ from core.db import get_conn
 from core.context import current_organization_id, require_organization
 from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
 from sales.schema import UOM_CHOICES
-from sales.services import clean_date, clean_lc_reference, give_invoice_a_number
+from sales.services import clean_date, give_invoice_a_number
 from core.money import to_decimal, money_round
 
 bp = Blueprint("sales", __name__, url_prefix="/sales")
@@ -387,11 +387,12 @@ def new_sales_invoice():
         discount_percents = request.form.getlist("discount_percent[]")
         tax_rate_ids = request.form.getlist("sales_tax_rate_id[]")
 
-        # The two boxes his own invoice screen has. A date that is not a date,
-        # or an LC Reference that is too long, stops the invoice before it is
-        # saved, and the message says what to correct.
+        # The Delivery Date box. A date that is not a date stops the invoice
+        # before it is saved, and the message says what to correct.
+        # (A letter of credit is a purchase reference - imports - so a sales
+        # invoice neither asks for one nor stores one. The column stays in the
+        # table so invoices entered earlier keep their history.)
         try:
-            lc_reference = clean_lc_reference(request.form.get("lc_reference"))
             delivery_date = clean_date(request.form.get("delivery_date"))
         except ValueError as error:
             return render_template(
@@ -442,8 +443,8 @@ def new_sales_invoice():
         cursor.execute("""
             INSERT INTO sales_invoices
                 (organization_id, customer_id, invoice_date, due_date, payment_terms, journal_name,
-                 lc_reference, delivery_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                 delivery_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             RETURNING sales_invoice_id
         """, (
             org_id,
@@ -452,7 +453,6 @@ def new_sales_invoice():
             request.form.get("due_date") or None,
             request.form.get("payment_terms", "").strip() or None,
             request.form.get("journal_name", "Customer Invoices").strip(),
-            lc_reference,
             delivery_date,
         ))
         sales_invoice_id = cursor.fetchone()[0]

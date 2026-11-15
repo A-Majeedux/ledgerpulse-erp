@@ -1188,3 +1188,142 @@ def clean_date(text):
         return date.fromisoformat(text)
     except ValueError:
         raise ValueError("Please give a real date.")
+
+
+# -------------------------------------------------------------------------
+# The Customer Partner Ledger (Reports > Customer Partner Ledger)
+#
+# Same shape as the Vendor Partner Ledger: the documents, oldest first, with a
+# running balance. Invoices add to what he owes; receipts take it away. Only
+# posted invoices count - a draft is not a debt yet - and every receipt counts,
+# because the money did come in.
+# -------------------------------------------------------------------------
+def partner_ledger(cursor, organization_id, customer_id, start_date=None, end_date=None):
+    """Every posted invoice (debit) and receipt (credit) for one customer.
+
+    Returns None when the customer is not this company's, otherwise a dict with
+    the rows already written as text, the opening figure, and the closing one.
+    """
+    cursor.execute(
+        "SELECT name FROM customers WHERE customer_id = %s AND organization_id = %s",
+        (customer_id, organization_id))
+    row = cursor.fetchone()
+    if not row:
+        return None
+    name = row[0]
+
+    invoices = """
+        SELECT invoice.invoice_date AS tx_date, COALESCE(invoice.invoice_no, '') AS ref,
+               'Invoice' AS kind, COALESCE(SUM(line.total), 0) AS debit, 0 AS credit
+        FROM sales_invoices invoice
+        LEFT JOIN sales_invoice_lines line ON line.sales_invoice_id = invoice.sales_invoice_id
+        WHERE invoice.organization_id = %s AND invoice.customer_id = %s AND invoice.status = 'Posted'
+        GROUP BY invoice.sales_invoice_id, invoice.invoice_date, invoice.invoice_no
+    """
+    receipts = """
+        SELECT receipt.receipt_date AS tx_date, COALESCE(receipt.voucher_no, '') AS ref,
+               'Receipt' AS kind, 0 AS debit, receipt.amount AS credit
+        FROM customer_receipts receipt
+        WHERE receipt.organization_id = %s AND receipt.customer_id = %s
+    """
+    params = [organization_id, customer_id, organization_id, customer_id]
+    # `when` is a reserved word in Postgres, so the column is called tx_date.
+    everything = f"SELECT * FROM ({invoices} UNION ALL {receipts}) t ORDER BY tx_date ASC, ref ASC"
+    cursor.execute(everything, params)
+
+    opening = Decimal("0")
+    rows, debit_total, credit_total = [], Decimal("0"), Decimal("0")
+    running = Decimal("0")
+    for when, ref, kind, debit, credit in cursor.fetchall():
+        debit, credit = money_round(debit or 0), money_round(credit or 0)
+        if start_date and when < start_date:
+            opening += debit - credit
+            continue
+        if end_date and when > end_date:
+            continue
+        running += debit - credit
+        if debit:
+            debit_total += debit
+        if credit:
+            credit_total += credit
+        rows.append({
+            "date": when,
+            "date_text": format_date(when),
+            "reference": ref,
+            "kind": kind,
+            "debit": debit,
+            "credit": credit,
+            "debit_text": format_amount(debit) if debit else "",
+            "credit_text": format_amount(credit) if credit else "",
+            "balance_text": format_amount(opening + running),
+        })
+
+    closing = opening + running
+    return {
+        "name": name,
+        "rows": rows,
+        "opening": opening,
+        "opening_text": format_amount(opening),
+        "debit_total": debit_total,
+        "debit_total_text": format_amount(debit_total),
+        "credit_total": credit_total,
+        "credit_total_text": format_amount(credit_total),
+        "closing": closing,
+        "closing_text": format_amount(closing),
+    }
+
+
+# -------------------------------------------------------------------------
+# The words on a voucher ("Rupees Three Thousand Only")
+# -------------------------------------------------------------------------
+_WORDS_ONES = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+               "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen",
+               "Eighteen", "Nineteen"]
+_WORDS_TENS = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+
+def _words_below_thousand(number):
+    """1..999 as words; 0 gives an empty string."""
+    words = []
+    hundreds, rest = divmod(number, 100)
+    if hundreds:
+        words.append(f"{_WORDS_ONES[hundreds]} Hundred")
+    if rest:
+        if rest < 20:
+            words.append(_WORDS_ONES[rest])
+        else:
+            tens, ones = divmod(rest, 10)
+            words.append(_WORDS_TENS[tens] + (f"-{_WORDS_ONES[ones]}" if ones else ""))
+    return " ".join(words)
+
+
+def amount_in_words(value, currency="Rupees", subunit="Paisa"):
+    """3500.50 -> 'Rupees Three Thousand Five Hundred and Paisa Fifty Only'.
+
+    Used on the receipt voucher, where the amount is written in words as well
+    as figures. Grouping is thousands / millions / billions, in English.
+    """
+    amount = money_round(value or 0)
+    negative = amount < 0
+    amount = abs(amount)
+    whole = int(amount)
+    cents = int((amount - whole) * 100 + Decimal("0.5"))
+
+    if whole == 0:
+        words = "Zero"
+    else:
+        groups = []
+        for unit in ("", "Thousand", "Million", "Billion"):
+            whole, chunk = divmod(whole, 1000)
+            if chunk:
+                groups.insert(0, (_words_below_thousand(chunk) + (" " + unit if unit else "")).strip())
+            if not whole:
+                break
+        words = " ".join(groups)
+
+    text = f"{currency} {words}"
+    if cents:
+        text += f" and {subunit} {_words_below_thousand(cents)}"
+    if negative:
+        text = "Minus " + text
+    return text + " Only"

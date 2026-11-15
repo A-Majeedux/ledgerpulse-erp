@@ -43,11 +43,6 @@
         <label class="form-label">Delivery Date</label>
         <input type="date" name="delivery_date" class="form-control">
       </div>
-      <div class="lp-form-group">
-        <label class="form-label">LC Reference</label>
-        <input type="text" name="lc_reference" maxlength="100" placeholder="Only if there is a letter of credit"
-               class="form-control">
-      </div>
     </div>
     <p style="margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--lp-text-muted);">
       The invoice number (INV/2026/00001) is given when you save, and never changes after that.
@@ -81,38 +76,61 @@
     {% endfor %}
   </select>
 
-  <div class="lp-table-wrapper" style="margin-bottom: 20px;">
-    <table class="lp-table" id="lines-table">
+  {# Which columns this invoice needs. Tick a box and the column appears;
+     untick it and the other columns take the width - nothing is squashed.
+     The choice is remembered in this browser. #}
+  <div class="col-picker" id="column-picker">
+    <span class="col-picker-label">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-columns"/></svg> Columns
+    </span>
+    <label class="switch"><input type="checkbox" data-col="desc" checked> Description</label>
+    <label class="switch"><input type="checkbox" data-col="account" checked> Account</label>
+    <label class="switch"><input type="checkbox" data-col="unit" checked> Unit</label>
+    <label class="switch"><input type="checkbox" data-col="disc"> Discount %</label>
+    <label class="switch"><input type="checkbox" data-col="tax" checked> Tax</label>
+    <span class="col-picker-note">Widths adjust themselves to what you tick.</span>
+  </div>
+
+  <div class="lp-table-wrapper lines-wrapper">
+    <table class="lp-table lines-table" id="lines-table">
       <thead>
         <tr>
-          <th style="width:20%;">Product</th>
-          <th style="width:14%;">Label / Desc</th>
-          <th style="width:12%;">Account</th>
-          <th style="width:8%;">UoM</th>
-          <th style="width:8%;" class="amount">Qty</th>
-          <th style="width:10%;" class="amount">Rate ({{ active_currency|default('PKR') }})</th>
-          <th style="width:8%;" class="amount">Disc %</th>
-          <th style="width:12%;">Tax</th>
-          <th style="width:10%;" class="amount">Total</th>
-          <th style="width:40px;"></th>
+          <th class="col-product">Product</th>
+          <th class="col-desc">Label / Desc</th>
+          <th class="col-account">Account</th>
+          <th class="col-unit">UoM</th>
+          <th class="amount col-qty">Qty</th>
+          <th class="amount col-rate">Rate ({{ active_currency|default('PKR') }})</th>
+          <th class="amount col-disc">Disc %</th>
+          <th class="col-tax">Tax</th>
+          <th class="amount col-total">Total</th>
+          <th class="col-actions"></th>
         </tr>
       </thead>
       <tbody id="lines-body"></tbody>
     </table>
   </div>
 
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <button type="button" onclick="addLine()" class="lp-btn secondary sm">+ Add line</button>
-    <div style="display: flex; gap: 24px; background: var(--lp-white); padding: 16px 20px; border-radius: var(--lp-radius-md); border: 1px solid var(--lp-border); font-size: 14px;">
-      <div>Subtotal: <strong id="summary-gross">0.00</strong></div>
-      <div>Discount: <strong id="summary-discount" style="color:var(--lp-coral-text);">0.00</strong></div>
-      <div>Tax: <strong id="summary-tax" style="color:var(--lp-blue-text);">0.00</strong></div>
-      <div style="font-size: 16px;">Grand Total: <strong id="summary-total" style="color:var(--lp-teal);">0.00</strong></div>
+  <div class="invoice-foot">
+    <button type="button" onclick="addLine()" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> Add line
+    </button>
+
+    <div class="invoice-summary">
+      <div class="sum-row"><span>Subtotal</span><strong id="summary-gross">0.00</strong></div>
+      <div class="sum-row" id="sum-discount-row"><span>Discount</span><strong id="summary-discount" style="color:var(--lp-coral-text);">0.00</strong></div>
+      <div class="sum-row" id="sum-tax-row"><span>Tax</span><strong id="summary-tax" style="color:var(--lp-blue-text);">0.00</strong></div>
+      <div class="sum-row grand"><span>Grand total</span>
+        <strong><span class="cur">{{ active_currency|default('PKR') }}</span> <span id="summary-total-value">0.00</span></strong>
+      </div>
     </div>
   </div>
 
-  <div>
-    <button type="submit" class="lp-btn primary">Save Draft Invoice</button>
+  <div style="display:flex; gap:10px; align-items:center; margin-top: 6px;">
+    <button type="submit" class="lp-btn primary">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Save draft invoice
+    </button>
+    <a href="{{ url_for('sales.sales_invoices_list') }}" class="lp-btn ghost">Cancel</a>
   </div>
 </form>
 
@@ -182,7 +200,7 @@ function recalcGrandTotals() {
   document.getElementById('summary-gross').textContent = grossSum.toFixed(2);
   document.getElementById('summary-discount').textContent = discSum.toFixed(2);
   document.getElementById('summary-tax').textContent = taxSum.toFixed(2);
-  document.getElementById('summary-total').textContent = grandTotal.toFixed(2);
+  document.getElementById('summary-total-value').textContent = grandTotal.toFixed(2);
 }
 
 function addLine() {
@@ -194,21 +212,72 @@ function addLine() {
   const tbody = document.getElementById('lines-body');
   const row = document.createElement('tr');
   row.innerHTML = `
-    <td><select name="product_id[]" class="form-select" required onchange="onProductChange(this)">${prodOptions}</select></td>
-    <td><input type="text" name="label[]" class="form-control" placeholder="Optional label"></td>
-    <td><select name="account_id[]" class="form-select" required>${accOptions}</select></td>
-    <td><select name="unit[]" class="form-select">${uomOptions}</select></td>
-    <td><input type="number" step="0.01" name="quantity[]" value="1" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
-    <td><input type="number" step="0.01" name="rate[]" value="0" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
-    <td><input type="number" step="0.01" name="discount_percent[]" value="0" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
-    <td><select name="sales_tax_rate_id[]" class="form-select" onchange="recalcRow(this.closest('tr'))">${taxOptions}</select></td>
-    <td class="amount row-total-display" style="font-weight:600;">0.00</td>
-    <td><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotals();" class="lp-btn danger sm" title="Remove line">✕</button></td>
+    <td class="col-product"><select name="product_id[]" class="form-select" required onchange="onProductChange(this)">${prodOptions}</select></td>
+    <td class="col-desc"><input type="text" name="label[]" class="form-control" placeholder="Optional label"></td>
+    <td class="col-account"><select name="account_id[]" class="form-select" required>${accOptions}</select></td>
+    <td class="col-unit"><select name="unit[]" class="form-select">${uomOptions}</select></td>
+    <td class="col-qty"><input type="number" step="0.01" name="quantity[]" value="1" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
+    <td class="col-rate"><input type="number" step="0.01" name="rate[]" value="0" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
+    <td class="col-disc"><input type="number" step="0.01" name="discount_percent[]" value="0" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
+    <td class="col-tax"><select name="sales_tax_rate_id[]" class="form-select" onchange="recalcRow(this.closest('tr'))">${taxOptions}</select></td>
+    <td class="amount col-total row-total-display" style="font-weight:600;">0.00</td>
+    <td class="col-actions"><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotals();" class="lp-btn ghost sm" title="Remove line" aria-label="Remove line"><svg class="ico sm" aria-hidden="true"><use href="#i-trash"/></svg></button></td>
   `;
   tbody.appendChild(row);
+  applyColumns();
+  recalcRow(row);
 }
 
-// Initialize with one line
+/* ---------- which columns are shown ---------- */
+
+var COLUMN_KEY = 'zyro.invoiceColumns';
+var columnState = { desc: true, account: true, unit: true, disc: false, tax: true };
+
+function readColumnChoice() {
+  try {
+    var saved = JSON.parse(localStorage.getItem(COLUMN_KEY) || 'null');
+    if (saved) {
+      ['desc', 'account', 'unit', 'disc', 'tax'].forEach(function (key) {
+        if (typeof saved[key] === 'boolean') columnState[key] = saved[key];
+      });
+    }
+  } catch (e) { /* private mode: just use the defaults */ }
+}
+
+function applyColumns() {
+  var table = document.getElementById('lines-table');
+  if (!table) return;
+  Object.keys(columnState).forEach(function (key) {
+    var on = columnState[key];
+    table.querySelectorAll('.col-' + key).forEach(function (cell) {
+      cell.style.display = on ? '' : 'none';
+    });
+    var box = document.querySelector('#column-picker input[data-col="' + key + '"]');
+    if (box) box.checked = on;
+  });
+
+  // The discount is only worth a line in the totals when its column is on.
+  var discountRow = document.getElementById('sum-discount-row');
+  if (discountRow) discountRow.style.display = columnState.disc ? '' : 'none';
+  var taxRow = document.getElementById('sum-tax-row');
+  if (taxRow) taxRow.style.display = columnState.tax ? '' : 'none';
+}
+
+function rememberColumns() {
+  try { localStorage.setItem(COLUMN_KEY, JSON.stringify(columnState)); } catch (e) { /* ignore */ }
+}
+
+document.querySelectorAll('#column-picker input[data-col]').forEach(function (box) {
+  box.addEventListener('change', function () {
+    columnState[box.getAttribute('data-col')] = box.checked;
+    applyColumns();
+    rememberColumns();
+  });
+});
+
+readColumnChoice();
+
+// Start with one empty line, and the columns this user last chose.
 addLine();
 </script>
 {% endblock %}

@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Customer Partner Ledger{% endblock %}
+{% block active_nav %}reports{% endblock %}
+{% block content %}
+
+<nav class="lp-crumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('dashboard.home') }}">Dashboard</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <span>Reports</span>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <span>Customer Partner Ledger</span>
+</nav>
+
+<div class="lp-page-header" style="display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap;">
+  <div>
+    <h1 class="lp-page-title">Customer Partner Ledger</h1>
+    <p class="lp-page-subtitle">One customer at a time: every posted invoice and every receipt, oldest first, with the balance after each one.</p>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-customers"/></svg> All customers
+    </a>
+    <a href="{{ url_for('vendors.vendor_ledger') }}" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-ledger"/></svg> Vendor ledger
+    </a>
+  </div>
+</div>
+
+{% if error %}<div class="alert alert-danger">{{ error }}</div>{% endif %}
+
+<form method="GET" class="lp-card" style="margin-bottom:18px; display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap;">
+  <div>
+    <label class="form-label" for="customer_id">Customer</label>
+    <select name="customer_id" id="customer_id" class="form-select" style="min-width:260px;" required>
+      <option value="">Select customer…</option>
+      {% for c in customers %}
+        <option value="{{ c[0] }}" {{ 'selected' if selected_customer == c[0] }}>{{ c[1] }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="form-label" for="start_date">From</label>
+    <input type="date" name="start_date" id="start_date" value="{{ start_date }}" class="form-control">
+  </div>
+  <div>
+    <label class="form-label" for="end_date">To</label>
+    <input type="date" name="end_date" id="end_date" value="{{ end_date }}" class="form-control">
+  </div>
+  <div style="display:flex; gap:8px;">
+    <button type="submit" class="lp-btn primary">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-filter"/></svg> Show ledger
+    </button>
+    {% if selected_customer %}
+      <a href="{{ url_for('customers.customer_partner_ledger', customer_id=selected_customer) }}" class="lp-btn secondary">
+        <svg class="ico sm" aria-hidden="true"><use href="#i-x"/></svg> All dates
+      </a>
+    {% endif %}
+  </div>
+</form>
+
+{% if ledger %}
+  <div class="kpi-grid" style="margin-bottom:18px;">
+    <article class="kpi" style="--kpi-tint:#0EA5A0; --kpi-soft:#E6F7F5;">
+      <div class="kpi-top">
+        <span class="kpi-label">Invoiced in this period</span>
+        <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-invoice"/></svg></span>
+      </div>
+      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ ledger.debit_total_text }}</div>
+      <div class="kpi-note">Posted invoices only</div>
+    </article>
+    <article class="kpi" style="--kpi-tint:#0F8A5F; --kpi-soft:#E7F7EF;">
+      <div class="kpi-top">
+        <span class="kpi-label">Received in this period</span>
+        <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-receipt"/></svg></span>
+      </div>
+      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ ledger.credit_total_text }}</div>
+      <div class="kpi-note">Every receipt, whatever the method</div>
+    </article>
+    <article class="kpi" style="--kpi-tint:{{ '#C0392B' if ledger.closing > 0 else '#4B7CB8' }}; --kpi-soft:{{ '#FDECEA' if ledger.closing > 0 else '#EAF1F9' }};">
+      <div class="kpi-top">
+        <span class="kpi-label">{{ ledger.name }} still owes</span>
+        <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-coins"/></svg></span>
+      </div>
+      <div class="kpi-value" style="color:{{ '#B4331F' if ledger.closing > 0 else 'var(--lp-text)' }};">
+        <span class="cur">{{ active_currency }}</span>{{ ledger.closing_text }}
+      </div>
+      <div class="kpi-note">
+        {% if selected_customer and start_date %}Opening {{ ledger.opening_text }} on {{ start_date }}{% else %}From the beginning of the books{% endif %}
+      </div>
+    </article>
+  </div>
+
+  <div class="lp-card" style="padding:0;">
+    <div class="lp-table-wrapper">
+      <table class="lp-table">
+        <thead>
+          <tr>
+            <th style="width:130px;">Date</th>
+            <th>Reference</th>
+            <th style="width:110px;">Type</th>
+            <th class="amount">Invoice (Dr)</th>
+            <th class="amount">Receipt (Cr)</th>
+            <th class="amount">Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if ledger.opening %}
+          <tr>
+            <td colspan="5" style="color:var(--lp-text-muted);">Balance brought forward</td>
+            <td class="amount" style="color:var(--lp-text-muted);">{{ ledger.opening_text }}</td>
+          </tr>
+          {% endif %}
+          {% for row in ledger.rows %}
+          <tr>
+            <td>{{ row.date_text }}</td>
+            <td>{{ row.reference or '—' }}</td>
+            <td>
+              <span class="lp-pill {{ 'posted' if row.kind == 'Invoice' else 'draft' }}">{{ row.kind }}</span>
+            </td>
+            <td class="amount">{{ row.debit_text or '—' }}</td>
+            <td class="amount">{{ row.credit_text or '—' }}</td>
+            <td class="amount" style="font-weight:600;">{{ row.balance_text }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" style="text-align:center; color:var(--lp-text-muted); padding:26px;">
+              Nothing has been invoiced or received for {{ ledger.name }} in this period.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:700;">
+            <td colspan="3">Closing balance</td>
+            <td class="amount">{{ ledger.debit_total_text }}</td>
+            <td class="amount">{{ ledger.credit_total_text }}</td>
+            <td class="amount">{{ ledger.closing_text }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <p style="margin-top:12px; font-size:12.5px; color:var(--lp-text-muted);">
+    This report reads the documents and changes nothing. A draft invoice is not a debt yet, so it is not counted here
+    until it is posted; the customer's own card still lists every invoice, draft or not.
+  </p>
+{% else %}
+  <div class="lp-card" style="text-align:center; padding:40px 24px;">
+    <svg class="ico" style="width:34px; height:34px; color:var(--lp-accent); margin-bottom:10px;" aria-hidden="true"><use href="#i-ledger"/></svg>
+    <p style="margin:0; font-weight:600;">Choose a customer above to see the ledger.</p>
+    <p style="margin:6px 0 0; color:var(--lp-text-muted); font-size:13px;">Every posted invoice and every receipt, with a running balance.</p>
+  </div>
+{% endif %}
+{% endblock %}

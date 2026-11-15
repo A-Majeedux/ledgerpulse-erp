@@ -285,7 +285,6 @@ class InvoiceNumberDatabaseTests(unittest.TestCase):
             "rate[]": "500",
             "discount_percent[]": "0",
             "sales_tax_rate_id[]": "",
-            "lc_reference": "LC 123/2026",
             "delivery_date": "2026-11-12",
         }
         form.update(overrides)
@@ -300,21 +299,24 @@ class InvoiceNumberDatabaseTests(unittest.TestCase):
         conn.close()
         return row
 
-    def test_saving_an_invoice_gives_it_a_number_and_keeps_the_two_new_boxes(self):
+    def test_saving_an_invoice_gives_it_a_number_and_keeps_the_delivery_date(self):
         from datetime import date
         response = self.post_invoice()
         self.assertEqual(response.status_code, 302)
         invoice_id = int(response.headers["Location"].rsplit("/", 1)[-1])
         number, lc_reference, delivery_date, status = self.read_invoice(invoice_id)
         self.assertEqual(number, "INV/2026/00001")
-        self.assertEqual(lc_reference, "LC 123/2026")
+        # A letter of credit belongs to a purchase, not a sale: the box is
+        # gone and nothing is stored, but the column is still in the table so
+        # invoices entered before this change keep what they had.
+        self.assertIsNone(lc_reference)
         self.assertEqual(delivery_date, date(2026, 11, 12))
         self.assertEqual(status, "Draft")
 
-        # the page shows it, and so does the list
+        # the page shows the number and the delivery date, and no LC Reference
         page = self.client.get(f"/sales/invoices/{invoice_id}").get_data(as_text=True)
         self.assertIn("INV/2026/00001", page)
-        self.assertIn("LC 123/2026", page)
+        self.assertNotIn("LC Reference", page)
         self.assertIn("12 Nov 2026", page)                  # the delivery date
         page = self.client.get("/sales/invoices").get_data(as_text=True)
         self.assertIn("INV/2026/00001", page)
@@ -345,11 +347,13 @@ class InvoiceNumberDatabaseTests(unittest.TestCase):
         self.assertEqual(self.read_invoice(first_id)[0], "INV/2026/00001")
         self.assertEqual(self.read_invoice(second_id)[0], "INV/2026/00002")
 
-    def test_a_bad_date_or_a_long_lc_reference_is_refused(self):
+    def test_a_bad_date_is_refused_and_there_is_no_lc_box_left(self):
         page = self.post_invoice(delivery_date="next week").get_data(as_text=True)
         self.assertIn("Please give a real date", page)
-        page = self.post_invoice(lc_reference="x" * 101).get_data(as_text=True)
-        self.assertIn("LC Reference is too long", page)
+        # the entry screen has no LC Reference box at all now
+        form = self.client.get("/sales/invoices/new").get_data(as_text=True)
+        self.assertNotIn('name="lc_reference"', form)
+        self.assertNotIn("LC Reference", form)
         conn, cursor = self.raw_cursor()
         cursor.execute("SELECT COUNT(*) FROM sales_invoices WHERE organization_id = %s", (self.org_id,))
         self.assertEqual(cursor.fetchone()[0], 0)           # nothing was saved

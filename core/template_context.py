@@ -141,12 +141,20 @@ def register_context_processors(app):
                 else:
                     return "invoices"
             elif endpoint.startswith("customers."):
-                if "receipt" in endpoint:
+                if endpoint == "customers.customer_partner_ledger":
+                    return "reports"
+                elif "receipt" in endpoint:
                     return "customer_receipts"
                 else:
                     return "customers"
             elif endpoint.startswith("vendors."):
-                if "bill" in endpoint:
+                # The three vendor reports now sit under Reports in the menu.
+                if endpoint in ("vendors.vendor_ledger", "vendors.vendor_aging",
+                                "vendors.own_cheques_report"):
+                    return "reports"
+                elif "credit" in endpoint:
+                    return "vendor_credit_notes"
+                elif "bill" in endpoint:
                     return "vendor_bills"
                 elif "payment" in endpoint:
                     return "vendor_payments"
@@ -165,8 +173,8 @@ def register_context_processors(app):
                 else:
                     return "organizations"
             elif endpoint.startswith("reports."):
-                # Trial balance and general ledger live under Accounting in the nav.
-                return "journals"
+                # Trial balance and general ledger are reports; so is the tab.
+                return "reports"
             elif endpoint.startswith("auth."):
                 if "admin" in endpoint:
                     if "user" in endpoint:

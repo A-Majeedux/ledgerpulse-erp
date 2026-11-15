@@ -148,6 +148,9 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 - 2026-11-14 — Look and feel, seventh round: a lighter palette, real icons everywhere, an infinity mark that is
   actually an infinity mark, charts on the dashboard and the two reports, a Ctrl+K jump-to box, and page
   transitions instead of blinks (see section 16)
+- 2026-11-15 — The customer receipt voucher, and the four corrections after it: LC removed from the sales
+  invoice, tick-box columns on the invoice lines, the menu split into Reports and Business Settings, and the
+  Customer Partner Ledger (see section 17)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -535,3 +538,107 @@ longer refused.
 - The look was checked by reading the markup and running the scripts without a browser; nobody has yet looked at it
   on a real screen at a real size.
 - The printed pages (invoice, vendor bill, receipts) were deliberately left alone.
+
+## 17. The receipt voucher, and four corrections (built 15 Nov 2026)
+
+### A. The printable voucher for a customer receipt
+
+There was no printed voucher for a customer receipt - the receipt page had a Print button nowhere, and printing
+the page itself gave the menu and the buttons on paper. There is now a proper voucher:
+
+- **Where it is:** the receipt's own page has a **Print voucher** button at the top right, and every row of
+  Customer Receipts has a small printer button. Both open `GET /customers/receipts/<id>/print` in a new tab.
+- **What is on it:** the company's printed head (name, address, NTN/STRN, logo) from the same A4 frame every other
+  printed document uses, the voucher number (CPV/2026/00007), the customer with his address, city, NTN and phone,
+  the date, payment method, payment type, the account the money went into, the journal, and the memo.
+- **The title follows the money:** CASH RECEIPT VOUCHER, CHEQUE RECEIPT VOUCHER, or RECEIPT VOUCHER for a transfer.
+- **Cheque details** (number, bank, date, amount) appear only when the method is Cheque. **Withholding tax** (rate,
+  the amount withheld, and the net received) appears only when tax was withheld - and it says plainly that the
+  withheld amount is a recoverable tax, not a discount.
+- **The amount is written in words** as well as figures ("Rupees Five Hundred Ninety-Two Thousand Two Hundred
+  Seventy-Seven and Paisa Sixty-Eight Only"), from `customers.services.amount_in_words`. Thousands / millions /
+  billions, in English.
+- A **Signature of the customer** line, the four signature boxes (Prepared / Checked / Approved / Authorized), and
+  a short note that cheques are subject to realisation.
+- The voucher is read-only: it looks at the receipt and prints it. Nothing is posted, nothing is numbered here.
+
+The receipt's own screen was tidied at the same time: the two tabs (Receipt / Cheques) are now the same tabs the
+receipts list uses, the details sit in a card with the amount beside them as a large figure, and the cheque tab
+says plainly when the money did not come by cheque.
+
+### B. LC Reference is gone from the sales invoice
+
+A letter of credit is an **import** reference - it belongs to buying raw material and to landed cost, not to a
+sale. So the box is gone from:
+
+- the **New Sales Invoice** screen (the row of boxes under the customer),
+- the **invoice's own page** (the Delivery Address row now has the full width instead of being paired with it),
+- the **printed invoice** (the Delivery Date row now pairs with Payment Terms, and the Status row with Journal).
+
+The invoice no longer reads or stores it. **The database column stays** (`sales_invoices.lc_reference`) so every
+invoice entered before today keeps whatever it had; nothing is dropped or renamed. `sales.services.clean_lc_reference`
+is kept, ready for the purchase screens where it belongs.
+
+### C. The sale invoice's columns
+
+The line table had ten columns squeezed into fixed percentages (20%, 14%, 12%, 8%, 8%, 10%, 8%, 12%, 10%), which is
+why the widths looked wrong. Now:
+
+- A **Columns** strip sits above the table with a tick box for each optional column: **Description, Account, Unit,
+  Discount %, Tax**. Product, Qty, Rate, Total and the remove button are always there.
+- The widths are **not fixed any more**: the browser gives each visible column the space it needs, and an unticked
+  column hands its width to the others. Minimum widths keep a box from collapsing to a sliver.
+- The choice is **remembered in that browser** (`zyro.invoiceColumns`), so the next invoice opens the way the last
+  one was set up. The Discount and Tax lines in the totals box follow their columns.
+- Hiding a column never changes the money: the figures already typed stay in the invoice.
+
+### D. Where the screens sit in the menu
+
+- **Reports** is now its own menu: Trial Balance, General Ledger, **Customer Partner Ledger**, Vendor Partner Ledger,
+  Vendor Aging Report, Own Cheques Report.
+- **Business Settings** is now its own menu: Sales Tax Rates and WHT Rates. (There is no settings module behind it
+  yet - this is the shelf they belong on, as the owner asked.)
+- **Accounting** keeps Chart of Accounts, Journal Entries and New Journal Entry. **Purchases** keeps Vendors, Vendor
+  Bills, Vendor Credit Notes, Vendor Payments and Batch Vendor Payments. **Sales** keeps Sales Invoices, Products,
+  Customers and Customer Receipts.
+- Nothing was removed: every screen that had a place still has one, one menu further along. The Ctrl+K jump-to box
+  lists all of them again, and each menu lights up on its own screens.
+
+### E. Customer Partner Ledger (new)
+
+`GET /customers/reports/partner-ledger` - one customer at a time, laid out like the Vendor Partner Ledger:
+
+- Every **posted** invoice (adds to what he owes) and every **receipt** (takes it away), oldest first, with the
+  balance after each line.
+- A **From / To** pair of dates. The balance before the first date is shown as "Balance brought forward", so a
+  part-period never looks like the whole story.
+- Three figures at the top: invoiced in the period, received in the period, and what the customer still owes.
+- A draft invoice is **not** a debt yet, so it is not counted; the customer's own card still lists it. The screen
+  says this in one line underneath.
+- Read-only, like every report: it reads documents and writes nothing. Another company's customer gives 404.
+
+The figures come from the documents themselves (`customers.services.partner_ledger`), not from the 1100 ledger
+lines - the same basis as the vendor ledger, so the two reports can be read side by side.
+
+### Checks
+
+- `tests/test_receipt_voucher_and_columns.py` (19 checks): the words on a voucher; the voucher page and what it
+  carries; a cheque voucher showing the cheque and a cash voucher not showing one; withholding tax appearing only
+  when it happened; another company getting 404; the receipt page and the list both leading to the voucher; the
+  partner ledger's running balance, drafts excluded, dates narrowing the period, the stranger's customer refused and
+  the screen opening without a customer; the invoice screen having no LC box and having the five column boxes; the
+  line header having no fixed percentages; an invoice saving with no LC field; and the menu putting the two tax
+  screens under Business Settings and both ledgers under Reports.
+- Whole suite: **142 passed**, with only the vendor print case failing that already failed before this work
+  (`test_10_all_print_templates_and_routes`, "INVOICE LINES" vs "Invoice Lines").
+- Every GET screen was requested with a real login against the demo database: 53 routes, none returning an error.
+- The invoice entry screen's column boxes were exercised without a browser: the default columns, ticking Discount,
+  unticking Account, the choice being remembered, and the totals still adding up (3 x 250 = 750.00).
+
+### Known gaps
+
+- The owner sent a screenshot of the bad formatting; it did not reach the workspace, so the voucher was laid out in
+  the same house style as the printed invoice and the vendor payment voucher. If it still does not match, the
+  screenshot is needed.
+- The partner ledger reads documents, not the 1100 ledger lines: a hand-written journal entry against a customer
+  does not appear on it (it does appear on the customer's own Accounting tab).

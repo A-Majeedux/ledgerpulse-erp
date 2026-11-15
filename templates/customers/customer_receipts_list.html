@@ -7,16 +7,15 @@
   <a href="{{ url_for('customers.new_customer_receipt') }}" class="lp-btn primary"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Receipt</a>
 </div>
 
-<div style="display:flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--lp-border);">
-  <a href="{{ url_for('customers.customer_receipts_list') }}"
-     style="padding: 8px 16px; text-decoration: none; font-size: 14px; font-weight: 600;
-            {% if tab != 'cheques' %}color: var(--lp-text); border-bottom: 2px solid var(--lp-accent); margin-bottom: -1px;{% else %}color: var(--lp-text-muted);{% endif %}">
-    Receipts
+<div class="lp-tabs" role="tablist">
+  <a href="{{ url_for('customers.customer_receipts_list') }}" role="tab"
+     class="lp-tab {{ 'on' if tab != 'cheques' }}" aria-selected="{{ 'true' if tab != 'cheques' else 'false' }}">
+    <svg class="ico sm" aria-hidden="true"><use href="#i-receipt"/></svg> Receipts
   </a>
-  <a href="{{ url_for('customers.customer_receipts_list', tab='cheques') }}"
-     style="padding: 8px 16px; text-decoration: none; font-size: 14px; font-weight: 600;
-            {% if tab == 'cheques' %}color: var(--lp-text); border-bottom: 2px solid var(--lp-accent); margin-bottom: -1px;{% else %}color: var(--lp-text-muted);{% endif %}">
-    Cheques{% if cheque_count %} <span class="lp-pill draft" style="margin-left: 4px;">{{ cheque_count }}</span>{% endif %}
+  <a href="{{ url_for('customers.customer_receipts_list', tab='cheques') }}" role="tab"
+     class="lp-tab {{ 'on' if tab == 'cheques' }}" aria-selected="{{ 'true' if tab == 'cheques' else 'false' }}">
+    <svg class="ico sm" aria-hidden="true"><use href="#i-cheque"/></svg> Cheques
+    {% if cheque_count %}<span class="count">{{ cheque_count }}</span>{% endif %}
   </a>
 </div>
 
@@ -31,6 +30,7 @@
         <th>Cheque</th>
         <th class="amount">Amount</th>
         <th>WHT</th>
+        <th style="width:52px;"></th>
       </tr>
     </thead>
     <tbody>
@@ -47,10 +47,17 @@
         </td>
         <td class="amount">{{ "%.2f"|format(r[2]) }}</td>
         <td>{% if r[4] %}<span class="lp-pill posted">Yes</span>{% else %}—{% endif %}</td>
+        <td>
+          <a href="{{ url_for('customers.customer_receipt_print', customer_receipt_id=r[0]) }}"
+             class="lp-btn ghost sm" target="_blank" rel="noopener" title="Print this voucher"
+             onclick="event.stopPropagation();">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg>
+          </a>
+        </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="7" style="text-align:center; color: var(--lp-text-muted); padding: 30px;">
+        <td colspan="8" style="text-align:center; color: var(--lp-text-muted); padding: 30px;">
           {% if tab == 'cheques' %}No cheques have been received yet.{% else %}No receipts recorded yet.{% endif %}
         </td>
       </tr>

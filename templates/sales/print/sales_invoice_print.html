@@ -9,7 +9,7 @@
               [0] sales_invoice_id   [1] invoice_no      [2] customer name
               [3] address            [4] city            [5] NTN
               [6] invoice_date       [7] due_date        [8] delivery_date
-              [9] status             [10] payment terms  [11] LC reference
+              [9] status             [10] payment terms  [11] (unused - LC belongs to purchases)
               [12] journal name
    lines    one row per line: product name, label, account code, account name,
             unit, quantity, rate, discount %, discount amount, tax label,
@@ -47,14 +47,14 @@
   <tr>
     <th>Delivery Date</th>
     <td>{{ invoice[8] | fmt_date_print }}</td>
-    <th>LC Reference</th>
-    <td>{{ invoice[11] | safe_str }}</td>
-  </tr>
-  <tr>
     <th>Payment Terms</th>
     <td>{{ invoice[10] | safe_str }}</td>
+  </tr>
+  <tr>
     <th>Status</th>
     <td>{{ invoice[9] | safe_str }}</td>
+    <th>Journal</th>
+    <td>{{ invoice[12] | safe_str }}</td>
   </tr>
 </table>
 

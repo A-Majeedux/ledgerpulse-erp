@@ -27,9 +27,9 @@
   </div>
 </div>
 
-{# The details of the invoice, laid out the way his own invoice screen shows
-   them: the customer and his NTN, the delivery address, the three dates, the
-   LC Reference, and the currency everything is kept in. #}
+{# The details of the invoice: the customer and his NTN, the delivery address,
+   the dates, the journal and the currency. A letter of credit is a purchase
+   reference (imports), so it is not shown on a sales invoice. #}
 <table class="lp-invoice-info">
   <tr>
     <th>Customer</th>
@@ -39,9 +39,7 @@
   </tr>
   <tr>
     <th>Delivery Address</th>
-    <td>{{ invoice[11] or invoice[1] }}</td>
-    <th>LC Reference</th>
-    <td>{{ invoice[8] or '—' }}</td>
+    <td colspan="3">{{ invoice[11] or invoice[1] }}</td>
   </tr>
   <tr>
     <th>Invoice Date</th>

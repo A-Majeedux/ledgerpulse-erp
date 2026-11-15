@@ -15,7 +15,7 @@ from customers.services import (
     list_contacts, list_customer_invoices, list_customer_receipts, list_customers, list_row,
     make_primary_contact, name_lock_reason, save_notes, tag_list, update_contact, update_customer,
     PAYMENT_METHOD_OPTIONS, PAYMENT_TYPE_OPTIONS, give_receipt_a_voucher_number,
-    ADDRESS_TYPE_OPTIONS, list_vendors_for_link, linked_vendor,
+    ADDRESS_TYPE_OPTIONS, list_vendors_for_link, linked_vendor, partner_ledger, amount_in_words,
     clean_date as clean_receipt_date,
 )
 
@@ -443,6 +443,51 @@ def customer_receipts_list():
     )
 
 
+@bp.route("/reports/partner-ledger")
+@require_organization
+def customer_partner_ledger():
+    """Reports > Customer Partner Ledger.
+
+    One customer at a time: every posted invoice (he owes more) and every
+    receipt (he owes less), oldest first, with a running balance. Read-only -
+    it looks at the documents that already exist and writes nothing.
+    """
+    org_id = current_organization_id()
+    customer_id = request.args.get("customer_id", type=int)
+    start_text = (request.args.get("start_date") or "").strip()
+    end_text = (request.args.get("end_date") or "").strip()
+
+    error = None
+    start_date = end_date = None
+    try:
+        start_date = clean_receipt_date(start_text) if start_text else None
+        end_date = clean_receipt_date(end_text) if end_text else None
+    except ValueError as problem:
+        error = str(problem)
+
+    ledger = None
+    if customer_id and not error:
+        conn = get_conn()
+        cursor = conn.cursor()
+        try:
+            ledger = partner_ledger(cursor, org_id, customer_id, start_date, end_date)
+        finally:
+            cursor.close()
+            conn.close()
+        if ledger is None:
+            abort(404)
+
+    return render_template(
+        "customers/customer_partner_ledger.html",
+        customers=_get_customers(org_id),
+        selected_customer=customer_id,
+        ledger=ledger,
+        start_date=start_text,
+        end_date=end_text,
+        error=error,
+    )
+
+
 @bp.route("/receipts/new", methods=["GET", "POST"])
 @require_organization
 def new_customer_receipt():
@@ -607,3 +652,47 @@ def customer_receipt_detail(customer_receipt_id):
     if not receipt:
         abort(404)
     return render_template("customers/customer_receipt_detail.html", receipt=receipt)
+
+
+@bp.route("/receipts/<int:customer_receipt_id>/print")
+@require_organization
+def customer_receipt_print(customer_receipt_id):
+    """The printable voucher for one customer receipt (CPV/2026/00001).
+
+    A receipt voucher is the piece of paper the customer signs when he hands
+    the money over, so it carries the figures, the words, the method and the
+    cheque details - and nothing that is not on the receipt itself.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT cr.customer_receipt_id, c.name, cr.amount, cr.receipt_date, cr.memo,
+               coa.name, cr.has_wht, cr.wht_rate, cr.wht_amount, cr.journal_header_id,
+               cr.voucher_no, cr.payment_type, cr.journal_name, cr.payment_method,
+               cr.cheque_no, cr.cheque_bank, cr.cheque_date,
+               c.address, c.city, c.ntn, c.phone
+        FROM customer_receipts cr
+        JOIN customers c ON c.customer_id = cr.customer_id
+        JOIN chart_of_accounts coa ON coa.account_id = cr.deposit_to_account_id
+        WHERE cr.customer_receipt_id = %s AND cr.organization_id = %s
+    """, (customer_receipt_id, org_id))
+    receipt = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    if not receipt:
+        abort(404)
+
+    amount = money_round(receipt[2] or 0)
+    withheld = money_round(receipt[8] or 0) if receipt[6] else Decimal("0")
+    net = amount - withheld
+    return render_template(
+        "customers/print/customer_receipt_print.html",
+        receipt=receipt,
+        amount=amount,
+        withheld=withheld,
+        net=net,
+        amount_words=amount_in_words(amount),
+        net_words=amount_in_words(net),
+        is_draft=False,
+    )

@@ -158,7 +158,9 @@ class SalesInvoicePrintTests(_OneCompanyPerTest):
         self.assertIn("Gulf Agro Chemicals", page)
         self.assertIn("4900884-2", page)                  # NTN
         self.assertIn("Band road Pindi bhattian", page)   # delivery address
-        self.assertIn("LC 123/2026", page)
+        # a sales invoice carries no LC Reference - that is a purchase reference
+        self.assertNotIn("LC 123/2026", page)
+        self.assertNotIn("LC Reference", page)
         self.assertIn("12/11/2026", page)                 # invoice date
         self.assertIn("30 days", page)                    # payment terms
         # the line and its money, printed the way the vendor bills print
