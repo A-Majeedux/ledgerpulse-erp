@@ -80,6 +80,12 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS rate NUMERIC(14, 2) DEFAULT 0")
     cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS line_order INTEGER NOT NULL DEFAULT 0")
     cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS discount_pct NUMERIC(5, 2) DEFAULT 0")
+    # Which product a line brings in, and whether the line is goods or a
+    # landed-cost charge (freight, duty, clearing) that is spread over the goods.
+    cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS product_id INTEGER")
+    cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS line_kind VARCHAR(20) DEFAULT 'Goods'")
+    # How the LC charges are spread: by the value of the goods, or by quantity.
+    cursor.execute("ALTER TABLE vendor_bills ADD COLUMN IF NOT EXISTS landed_cost_basis VARCHAR(10) DEFAULT 'value'")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS payment_voucher_counters (

@@ -53,7 +53,27 @@
           <span style="font-size: 12px; font-weight: 600; color: var(--lp-text-muted);">{{ p[2] }}</span>
         </div>
       </div>
+      <div>
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--lp-text-muted);">Last landed cost</div>
+        <div style="font-size: 16px; font-weight: 700; {% if p[8] is none %}color: var(--lp-text-muted);{% endif %}">
+          {% if p[8] is none %}
+            &mdash;
+          {% else %}
+            {{ '%.2f'|format(p[8]) }}
+            <span style="font-size: 12px; font-weight: 600; color: var(--lp-text-muted);">Rs</span>
+          {% endif %}
+        </div>
+      </div>
     </div>
+    {% if p[8] is not none and p[6] %}
+    <div style="font-size: 12px; color: var(--lp-text-muted);">
+      Margin at the sale price:
+      <strong style="color: {{ 'var(--lp-green-text)' if (p[6] - p[8]) > 0 else 'var(--lp-coral-text)' }};">
+        {{ '%.2f'|format(p[6] - p[8]) }} Rs
+      </strong>
+      ({{ '%.1f'|format(((p[6] - p[8]) / p[6] * 100) if p[6] else 0) }}%)
+    </div>
+    {% endif %}
 
     <div>
       <a href="{{ url_for('sales.edit_product', product_id=p[0]) }}" class="lp-btn sm"><svg class="ico sm" aria-hidden="true"><use href="#i-edit"/></svg> Edit</a>

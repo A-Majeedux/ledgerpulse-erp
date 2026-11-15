@@ -94,6 +94,10 @@ def ensure_schema(cursor):
     """)
     cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS default_account_id INTEGER REFERENCES chart_of_accounts(account_id)")
     cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE")
+    # The landed unit cost of the last posted purchase of this product (goods +
+    # its share of the LC charges). A figure kept for reference - it does not
+    # change On hand or any posting.
+    cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS last_landed_cost NUMERIC(15, 2)")
     # A products table left over from an earlier version may be missing even
     # the columns written above - CREATE TABLE IF NOT EXISTS never touches a
     # table that already exists, which is how his own products table ended up
@@ -172,6 +176,11 @@ def ensure_schema(cursor):
     # The two boxes his invoice screen has and ZYRO had no place for.
     cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS lc_reference VARCHAR(100)")
     cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS delivery_date DATE")
+    # What the invoice still owes, and how much of it the customer receipts
+    # have been applied to (customers/services.py). Kept on the invoice so a
+    # list can show what is left without adding up every allocation.
+    cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS amount_due NUMERIC(15, 2)")
+    cursor.execute("ALTER TABLE sales_invoices ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(15, 2) DEFAULT 0")
     # Two invoices of one company can never carry the same number. Invoices
     # made before numbering existed have none yet, and many "none"s are fine.
     cursor.execute("""
@@ -179,6 +188,37 @@ def ensure_schema(cursor):
         ON sales_invoices (organization_id, invoice_no)
         WHERE invoice_no IS NOT NULL
     """)
+
+    # Which invoices a receipt knocked off (customers/services.py). The same
+    # idea as vendor_payment_allocations on the purchase side: one receipt may
+    # settle several invoices, one invoice may be settled by several receipts,
+    # and what is left on each invoice is then a real figure rather than a
+    # guess. Nothing is posted from here - the receipt's own journal entry has
+    # already credited Trade Receivables with the whole amount.
+    #
+    # It lives in this file rather than customers/schema.py because it points
+    # at both sales_invoices and customer_receipts, and this file runs after
+    # both of them exist (app.py creates the schemas in dependency order).
+    # Both tables it points at must already exist: this file is also run on
+    # its own, against a database that has only the sales tables in it.
+    cursor.execute("""
+        SELECT to_regclass('public.customer_receipts') IS NOT NULL
+           AND to_regclass('public.sales_invoices') IS NOT NULL
+    """)
+    if cursor.fetchone()[0]:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS customer_receipt_allocations (
+                allocation_id SERIAL PRIMARY KEY,
+                customer_receipt_id INTEGER NOT NULL REFERENCES customer_receipts(customer_receipt_id) ON DELETE CASCADE,
+                sales_invoice_id INTEGER NOT NULL REFERENCES sales_invoices(sales_invoice_id) ON DELETE CASCADE,
+                allocated_amount NUMERIC(14, 2) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS customer_receipt_allocations_invoice
+            ON customer_receipt_allocations (sales_invoice_id)
+        """)
 
     # -----------------------------------------------------------------
     # 4. Sales Invoice Lines

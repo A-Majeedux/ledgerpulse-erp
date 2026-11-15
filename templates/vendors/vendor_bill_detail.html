@@ -25,21 +25,90 @@
 <div class="lp-card">
   <h3 style="margin-top:0; font-size:16px;">Invoice Lines</h3>
   <table class="lp-table">
-    <thead><tr><th>Label</th><th>Account</th><th class="amount">Qty</th><th class="amount">Rate</th><th class="amount">Total</th></tr></thead>
+    <thead><tr><th>Label</th><th>Product</th><th>Kind</th><th>Account</th><th class="amount">Qty</th><th class="amount">Rate</th><th class="amount">Total</th></tr></thead>
     <tbody>
       {% for line in lines %}
       <tr>
         <td>{{ line[0] or '—' }}</td>
+        <td>{{ line[7] or '—' }}</td>
+        <td>
+          {% if line[6] == 'Landed Cost' %}
+            <span class="lp-pill pending">Landed cost</span>
+          {% else %}
+            <span class="lp-pill draft">Goods</span>
+          {% endif %}
+        </td>
         <td>{{ line[1] }} — {{ line[2] }}</td>
         <td class="amount">{{ "%.2f"|format(line[3]) }}</td>
         <td class="amount">{{ "%.2f"|format(line[4]) }}</td>
         <td class="amount">{{ "%.2f"|format(line[5]) }}</td>
       </tr>
       {% endfor %}
-      <tr style="font-weight:700;"><td colspan="4">Total Amount Due</td><td class="amount">Rs. {{ "%.2f"|format(total) }}</td></tr>
+      <tr style="font-weight:700;"><td colspan="6">Total Amount Due</td><td class="amount">Rs. {{ "%.2f"|format(total) }}</td></tr>
     </tbody>
   </table>
 </div>
+
+{% if landed_summary and landed_summary.cost_total %}
+<div class="lp-card" style="margin-top: 20px;">
+  <div style="display:flex; justify-content:space-between; align-items:baseline; gap:16px; flex-wrap:wrap;">
+    <h3 style="margin:0; font-size:16px;">What these goods really cost</h3>
+    <span style="font-size:12.5px; color:var(--lp-text-muted);">
+      {% if bill[13] %}{{ bill[13] }} · {% endif %}{{ landed_summary.basis_label }}
+    </span>
+  </div>
+
+  <div class="kpi-grid" style="margin: 14px 0 16px;">
+    <article class="kpi" style="--kpi-tint:#4B7CB8; --kpi-soft:#EAF1F9;">
+      <div class="kpi-top"><span class="kpi-label">Goods</span>
+        <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-vendor"/></svg></span></div>
+      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(landed_summary.goods_total) }}</div>
+    </article>
+    <article class="kpi" style="--kpi-tint:#E8833A; --kpi-soft:#FDF0E6;">
+      <div class="kpi-top"><span class="kpi-label">LC charges</span>
+        <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-coins"/></svg></span></div>
+      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(landed_summary.cost_total) }}</div>
+    </article>
+    <article class="kpi" style="--kpi-tint:#0EA5A0; --kpi-soft:#E6F7F5;">
+      <div class="kpi-top"><span class="kpi-label">Landed value</span>
+        <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span></div>
+      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(landed_summary.grand_total) }}</div>
+    </article>
+  </div>
+
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Goods line</th>
+        <th>Product</th>
+        <th class="amount">Qty</th>
+        <th class="amount">Goods value</th>
+        <th class="amount">Share of LC</th>
+        <th class="amount">Landed value</th>
+        <th class="amount">Cost per unit</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in landed_rows %}
+      <tr>
+        <td>{{ row.label or '—' }}{% if row.account %}<div style="font-size:11.5px; color:var(--lp-text-muted);">{{ row.account }}</div>{% endif %}</td>
+        <td>{{ row.product_name or '—' }}</td>
+        <td class="amount">{{ "{:,.2f}".format(row.quantity) }}</td>
+        <td class="amount">{{ "{:,.2f}".format(row.total) }}</td>
+        <td class="amount">{{ "{:,.2f}".format(row.allocated) }}</td>
+        <td class="amount">{{ "{:,.2f}".format(row.landed_total) }}</td>
+        <td class="amount" style="font-weight:700; color:var(--lp-accent-600);">{{ "{:,.2f}".format(row.unit_cost) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p style="margin: 10px 0 0; font-size: 12.5px; color: var(--lp-text-muted);">
+    The charges are already lines of this bill, so they are in the journal once — this table only spreads them over the
+    goods to show the true cost of each unit. When the bill is posted, each product's <strong>last landed cost</strong>
+    is updated on its card. On hand is not changed.
+  </p>
+</div>
+{% endif %}
 
 {% if journal_lines %}
 <div class="lp-card" style="margin-top: 20px;">

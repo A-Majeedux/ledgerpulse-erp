@@ -1015,6 +1015,281 @@ def list_customer_invoices(cursor, organization_id, customer_id):
     return [_invoice_row(*row) for row in cursor.fetchall()]
 
 
+# ---------------------------------------------------------------------
+# Matching a receipt to the invoices it settles
+#
+# A receipt credits Trade Receivables with the whole amount and says nothing
+# about WHICH invoices it settles. Without that, every invoice looks unpaid
+# forever and an ageing report is guesswork. These helpers keep the answer:
+# customer_receipt_allocations - one row per invoice a receipt knocked off -
+# and the paid/remaining figure on the invoice derived from those rows.
+#
+# The allocation rows are the truth. sales_invoices.paid_amount and
+# sales_invoices.amount_due are a cache of them, rewritten by
+# refresh_invoice_balance() whenever an allocation changes. Nothing here
+# posts a journal entry: the money is already in the ledger.
+# ---------------------------------------------------------------------
+
+AGEING_BUCKETS = [
+    ("0-30", "0-30 days", 0, 30),
+    ("31-60", "31-60 days", 31, 60),
+    ("61-90", "61-90 days", 61, 90),
+    ("older", "Over 90 days", 91, None),
+]
+
+
+def invoice_total(cursor, sales_invoice_id):
+    """What the invoice is worth: the sum of its own lines, tax included."""
+    cursor.execute(
+        "SELECT COALESCE(SUM(total), 0) FROM sales_invoice_lines WHERE sales_invoice_id = %s",
+        (sales_invoice_id,))
+    return money_round(cursor.fetchone()[0] or 0)
+
+
+def invoice_paid(cursor, sales_invoice_id):
+    """How much of the invoice the receipts have knocked off."""
+    cursor.execute(
+        "SELECT COALESCE(SUM(allocated_amount), 0) FROM customer_receipt_allocations "
+        "WHERE sales_invoice_id = %s", (sales_invoice_id,))
+    return money_round(cursor.fetchone()[0] or 0)
+
+
+def refresh_invoice_balance(cursor, sales_invoice_id):
+    """Rewrite the invoice's paid and still-due figures from its allocations."""
+    total = invoice_total(cursor, sales_invoice_id)
+    paid = invoice_paid(cursor, sales_invoice_id)
+    due = money_round(total - paid)
+    cursor.execute(
+        "UPDATE sales_invoices SET paid_amount = %s, amount_due = %s WHERE sales_invoice_id = %s",
+        (paid, due, sales_invoice_id))
+    return {"total": total, "paid": paid, "due": due}
+
+
+def open_invoices(cursor, organization_id, customer_id):
+    """The invoices a receipt may be applied to, oldest first.
+
+    Only posted invoices with something still owed: a draft is not yet in the
+    ledger, so money cannot honestly be matched to it. Oldest first, because
+    that is the order money is normally applied in.
+    """
+    cursor.execute("""
+        SELECT invoice.sales_invoice_id, invoice.invoice_no, invoice.invoice_date,
+               invoice.due_date, invoice.status,
+               COALESCE(SUM(line.total), 0) AS total,
+               COALESCE(invoice.paid_amount, 0) AS paid
+        FROM sales_invoices invoice
+        LEFT JOIN sales_invoice_lines line ON line.sales_invoice_id = invoice.sales_invoice_id
+        WHERE invoice.organization_id = %s AND invoice.customer_id = %s
+          AND invoice.status = 'Posted'
+        GROUP BY invoice.sales_invoice_id, invoice.invoice_no, invoice.invoice_date,
+                 invoice.due_date, invoice.status, invoice.paid_amount
+        ORDER BY COALESCE(invoice.due_date, invoice.invoice_date), invoice.sales_invoice_id
+    """, (organization_id, customer_id))
+    rows = []
+    for invoice_id, invoice_no, invoice_date, due_date, status, total, paid in cursor.fetchall():
+        total = money_round(total or 0)
+        paid = money_round(paid or 0)
+        remaining = money_round(total - paid)
+        if remaining <= 0:
+            continue
+        rows.append({
+            "invoice_id": invoice_id,
+            "invoice_no": invoice_no,
+            "status": status,
+            "date_text": format_date(invoice_date),
+            "due_date": due_date,
+            "due_text": format_date(due_date),
+            "total": total,
+            "paid": paid,
+            "remaining": remaining,
+            "total_text": format_amount(total),
+            "paid_text": format_amount(paid),
+            "remaining_text": format_amount(remaining),
+        })
+    return rows
+
+
+def receipt_allocations(cursor, organization_id, customer_receipt_id):
+    """The invoices one receipt was applied to."""
+    cursor.execute("""
+        SELECT allocation.sales_invoice_id, invoice.invoice_no,
+               allocation.allocated_amount, invoice.invoice_date
+        FROM customer_receipt_allocations allocation
+        JOIN sales_invoices invoice ON invoice.sales_invoice_id = allocation.sales_invoice_id
+        JOIN customer_receipts receipt ON receipt.customer_receipt_id = allocation.customer_receipt_id
+        WHERE allocation.customer_receipt_id = %s AND receipt.organization_id = %s
+        ORDER BY invoice.invoice_date, allocation.allocation_id
+    """, (customer_receipt_id, organization_id))
+    rows = []
+    for invoice_id, invoice_no, amount, invoice_date in cursor.fetchall():
+        rows.append({
+            "invoice_id": invoice_id,
+            "invoice_no": invoice_no,
+            "amount": money_round(amount or 0),
+            "amount_text": format_amount(amount),
+            "date_text": format_date(invoice_date),
+        })
+    return rows
+
+
+def apply_receipt_to_invoices(cursor, organization_id, customer_receipt_id, customer_id,
+                              receipt_amount, wanted):
+    """Match a receipt to the invoices it settles.
+
+    `wanted` is a list of (invoice_id, amount) as typed. Every line is checked
+    before anything is written, so a receipt is either applied completely or
+    not at all, and the message says which invoice is at fault:
+
+      - the invoice must belong to this company and this customer
+      - it must be posted, and not already settled in full
+      - an amount must be more than zero and not more than what is still owed
+        on that invoice, and not more than what is still unapplied on the
+        receipt
+    """
+    receipt_amount = money_round(receipt_amount or 0)
+    cleaned = []
+    for invoice_id, raw_amount in wanted:
+        if not invoice_id:
+            continue
+        try:
+            amount = money_round(raw_amount or 0)
+        except ValueError:
+            raise ValueError("One of the amounts applied to an invoice is not a number.")
+        if amount <= 0:
+            continue
+        cleaned.append((int(invoice_id), amount))
+
+    if not cleaned:
+        return []
+
+    total_applied = money_round(sum((amount for _, amount in cleaned), Decimal("0")))
+    if total_applied > receipt_amount:
+        raise ValueError(
+            "The receipt is for %s but %s has been applied to invoices. "
+            "Lower the amounts so they do not add up to more than the receipt."
+            % (format_amount(receipt_amount), format_amount(total_applied)))
+
+    cursor.execute("SELECT customer_id FROM customer_receipts WHERE customer_receipt_id = %s "
+                   "AND organization_id = %s", (customer_receipt_id, organization_id))
+    row = cursor.fetchone()
+    if not row or int(row[0]) != int(customer_id):
+        raise ValueError("That receipt does not belong to this customer.")
+
+    applied = []
+    for invoice_id, amount in cleaned:
+        cursor.execute("""
+            SELECT invoice.customer_id, invoice.status, invoice.invoice_no,
+                   COALESCE(SUM(line.total), 0)
+            FROM sales_invoices invoice
+            LEFT JOIN sales_invoice_lines line ON line.sales_invoice_id = invoice.sales_invoice_id
+            WHERE invoice.sales_invoice_id = %s AND invoice.organization_id = %s
+            GROUP BY invoice.sales_invoice_id, invoice.customer_id, invoice.status, invoice.invoice_no
+        """, (invoice_id, organization_id))
+        found = cursor.fetchone()
+        if not found:
+            raise ValueError("That invoice is not one of this company's invoices.")
+        owner_id, status, invoice_no, invoice_total_raw = found
+        if int(owner_id) != int(customer_id):
+            raise ValueError("Invoice %s belongs to another customer." % (invoice_no or invoice_id))
+        if status != "Posted":
+            raise ValueError("Invoice %s is still a draft, so money cannot be applied to it yet."
+                             % (invoice_no or invoice_id))
+        remaining = money_round(money_round(invoice_total_raw or 0) - invoice_paid(cursor, invoice_id))
+        if remaining <= 0:
+            raise ValueError("Invoice %s is already settled." % (invoice_no or invoice_id))
+        if amount > remaining:
+            raise ValueError(
+                "Invoice %s still owes %s, so %s cannot be applied to it."
+                % (invoice_no or invoice_id, format_amount(remaining), format_amount(amount)))
+
+        cursor.execute("""
+            INSERT INTO customer_receipt_allocations
+                (customer_receipt_id, sales_invoice_id, allocated_amount)
+            VALUES (%s, %s, %s)
+        """, (customer_receipt_id, invoice_id, amount))
+        refresh_invoice_balance(cursor, invoice_id)
+        applied.append({"invoice_id": invoice_id, "invoice_no": invoice_no,
+                        "amount": amount, "amount_text": format_amount(amount)})
+
+    return applied
+
+
+def customer_ageing(cursor, organization_id, as_of=None):
+    """What each customer still owes, split 0-30 / 31-60 / 61-90 / older.
+
+    Days are counted from the invoice's due date, or from the invoice date
+    when it has none, to `as_of` (today by default). Only posted invoices with
+    something still owed are counted, which is what the partner ledger shows
+    as money owed by that customer - so the totals tie.
+    """
+    as_of = as_of or date.today()
+    cursor.execute("""
+        SELECT customer.customer_id, customer.name,
+               invoice.sales_invoice_id, invoice.invoice_no, invoice.invoice_date,
+               invoice.due_date,
+               COALESCE(SUM(line.total), 0) AS total,
+               COALESCE(invoice.paid_amount, 0) AS paid
+        FROM customers customer
+        JOIN sales_invoices invoice ON invoice.customer_id = customer.customer_id
+        LEFT JOIN sales_invoice_lines line ON line.sales_invoice_id = invoice.sales_invoice_id
+        WHERE customer.organization_id = %s AND invoice.status = 'Posted'
+        GROUP BY customer.customer_id, customer.name, invoice.sales_invoice_id,
+                 invoice.invoice_no, invoice.invoice_date, invoice.due_date, invoice.paid_amount
+        ORDER BY customer.name
+    """, (organization_id,))
+
+    customers = {}
+    for customer_id, name, invoice_id, invoice_no, invoice_date, due_date, total, paid in cursor.fetchall():
+        remaining = money_round(money_round(total or 0) - money_round(paid or 0))
+        if remaining <= 0:
+            continue
+        start = due_date or invoice_date
+        days = (as_of - start).days if start else 0
+        if days <= 30:
+            bucket = "0-30"
+        elif days <= 60:
+            bucket = "31-60"
+        elif days <= 90:
+            bucket = "61-90"
+        else:
+            bucket = "older"
+
+        entry = customers.setdefault(customer_id, {
+            "customer_id": customer_id,
+            "name": name,
+            "buckets": {"0-30": Decimal("0"), "31-60": Decimal("0"),
+                        "61-90": Decimal("0"), "older": Decimal("0")},
+            "total": Decimal("0"),
+            "invoices": [],
+        })
+        entry["buckets"][bucket] += remaining
+        entry["total"] += remaining
+        entry["invoices"].append({
+            "invoice_id": invoice_id,
+            "invoice_no": invoice_no,
+            "date_text": format_date(invoice_date),
+            "due_text": format_date(due_date),
+            "days": days,
+            "remaining": remaining,
+            "remaining_text": format_amount(remaining),
+            "bucket": bucket,
+        })
+
+    rows = []
+    for entry in customers.values():
+        entry["total"] = money_round(entry["total"])
+        entry["total_text"] = format_amount(entry["total"])
+        for key in entry["buckets"]:
+            entry["buckets"][key] = money_round(entry["buckets"][key])
+        rows.append(entry)
+    rows.sort(key=lambda row: row["total"], reverse=True)
+
+    totals = {key: money_round(sum((row["buckets"][key] for row in rows), Decimal("0")))
+              for key, _, _, _ in AGEING_BUCKETS}
+    totals["total"] = money_round(sum((row["total"] for row in rows), Decimal("0")))
+    return rows, totals
+
+
 def _receipt_row(receipt_id, receipt_date, amount, memo):
     return {
         "receipt_id": receipt_id,

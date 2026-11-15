@@ -19,6 +19,7 @@
         <th style="width: 130px;">Invoice Date</th>
         <th style="width: 130px;">Due Date</th>
         <th class="amount">Grand Total</th>
+        <th class="amount">Still due</th>
         <th style="width: 120px;">Status</th>
       </tr>
     </thead>
@@ -30,6 +31,9 @@
         <td>{{ inv[2].strftime('%d %b %Y') if inv[2] else '—' }}</td>
         <td>{{ inv[3].strftime('%d %b %Y') if inv[3] else '—' }}</td>
         <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(inv[5]) }}</td>
+        <td class="amount" style="{% if (inv[5] - (inv[8] or 0)) <= 0 %}color: var(--lp-text-muted);{% endif %}">
+          {{ active_currency|default('PKR') }} {{ "%.2f"|format(inv[5] - (inv[8] or 0)) }}
+        </td>
         <td>
           {% if inv[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
           {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
@@ -37,7 +41,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="6">
+        <td colspan="7">
           <div class="lp-empty-state">No invoices created yet. Click "+ New Invoice" to start.</div>
         </td>
       </tr>

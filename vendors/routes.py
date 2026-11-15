@@ -22,6 +22,8 @@ from core.context import current_organization_id, require_organization
 from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
 from wht.routes import get_active_tax_rates
 from core.money import to_decimal, money_round
+from vendors.landed_cost import (BASIS_LABELS, landed_unit_cost_by_product, normalise_basis,
+                                 split_landed_cost)
 
 bp = Blueprint("vendors", __name__, url_prefix="/vendors")
 
@@ -36,6 +38,36 @@ def _get_account_id_by_code(cursor, org_id, code):
     )
     row = cursor.fetchone()
     return row[0] if row else None
+
+
+def _trade_payables_account_id(cursor, org_id):
+    """The company's Trade Payables account, whatever it is numbered.
+
+    The default chart numbers it 2000 Trade Creditors, but a chart carried over
+    from the owner's own books numbers it 2100 Trade Payables - and a bill
+    posted against nothing is not a bill. So: the usual codes first, then any
+    liability that calls itself payables or creditors.
+    """
+    for code in ("2000", "2100"):
+        account_id = _get_account_id_by_code(cursor, org_id, code)
+        if account_id:
+            return account_id
+    cursor.execute("""
+        SELECT account_id FROM chart_of_accounts
+        WHERE organization_id = %s
+          AND (name ILIKE '%%trade payable%%' OR name ILIKE '%%trade creditor%%'
+               OR name ILIKE '%%accounts payable%%' OR name ILIKE '%%sundry creditor%%')
+        ORDER BY account_id
+        LIMIT 1
+    """, (org_id,))
+    row = cursor.fetchone()
+    if row:
+        return row[0]
+    raise ValueError(
+        "This company has no Trade Payables account, so the entry cannot be posted. "
+        "Add one in Chart of Accounts (2000 Trade Creditors, or 2100 Trade Payables), "
+        "then save again."
+    )
 
 
 def _get_accounts(org_id):
@@ -63,6 +95,20 @@ def _get_bank_accounts(org_id):
     cursor.close()
     conn.close()
     return accounts
+
+
+def _get_products_for_bill(org_id):
+    """The products a purchase line can point at, for the landed-cost maths."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT product_id, name, unit FROM products
+        WHERE organization_id = %s AND COALESCE(is_active, TRUE) = TRUE ORDER BY name
+    """, (org_id,))
+    products = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return products
 
 
 def _get_vendors(org_id):
@@ -497,6 +543,13 @@ def new_vendor_bill():
         quantities = request.form.getlist("quantity[]")
         rates = request.form.getlist("rate[]")
         totals = request.form.getlist("total[]")
+        # A line either brings goods in (and can name the product) or is one of
+        # the LC's own charges, which are spread over the goods afterwards.
+        line_products = request.form.getlist("product_id[]")
+        # One value per row, always sent (the tick box writes into it), so the
+        # kinds stay lined up with the lines even when only some are ticked.
+        line_kinds = request.form.getlist("line_kind[]")
+        landed_cost_basis = normalise_basis(request.form.get("landed_cost_basis", "value"))
 
         conn = get_conn()
         cursor = conn.cursor()
@@ -508,13 +561,30 @@ def new_vendor_bill():
             conn.close()
             abort(400)
 
+        # The company's Trade Payables account, asked for before anything is
+        # written: a chart without one is then reported on the form instead of
+        # leaving a half-saved bill behind.
+        try:
+            trade_creditors_id = _trade_payables_account_id(cursor, org_id)
+        except ValueError as error:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return render_template(
+                "vendors/new_vendor_bill.html",
+                vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
+                products=_get_products_for_bill(org_id), basis_options=BASIS_LABELS,
+                error=str(error), today=date.today().isoformat(),
+            )
+
         bill_number = request.form.get("bill_number", "").strip() or _generate_bill_number(cursor, org_id)
 
         cursor.execute("""
             INSERT INTO vendor_bills
                 (organization_id, vendor_id, bill_number, bill_date, due_date, receipt_date, accounting_date,
-                 payment_terms, payment_reference, recipient_bank, lc_reference, journal_name, status, amount_due)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Draft', 0)
+                 payment_terms, payment_reference, recipient_bank, lc_reference, journal_name, status, amount_due,
+                 landed_cost_basis)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Draft', 0, %s)
             RETURNING vendor_bill_id
         """, (
             org_id,
@@ -529,6 +599,7 @@ def new_vendor_bill():
             request.form.get("recipient_bank", "").strip() or None,
             request.form.get("lc_reference", "").strip() or None,
             request.form.get("journal_name", "Expenses").strip(),
+            landed_cost_basis,
         ))
         vendor_bill_id = cursor.fetchone()[0]
 
@@ -544,11 +615,14 @@ def new_vendor_bill():
             line_total_sum += total
             cursor.execute("""
                 INSERT INTO vendor_bill_lines
-                    (vendor_bill_id, label, account_id, quantity, rate, total, line_order)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    (vendor_bill_id, label, account_id, quantity, rate, total, line_order,
+                     product_id, line_kind)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 vendor_bill_id, labels[i].strip() or None, int(account_ids[i]),
                 qty, rate, total, i,
+                int(line_products[i]) if i < len(line_products) and line_products[i] else None,
+                "Landed Cost" if (i < len(line_kinds) and line_kinds[i] == "Landed Cost") else "Goods",
             ))
             je_lines.append({
                 "account_id": int(account_ids[i]),
@@ -559,7 +633,7 @@ def new_vendor_bill():
 
         cursor.execute("SELECT name FROM vendors WHERE vendor_id = %s", (vendor_id,))
         vendor_name = cursor.fetchone()[0]
-        trade_creditors_id = _get_account_id_by_code(cursor, org_id, "2000")
+        # (trade_creditors_id was found before the bill was written.)
         je_lines.append({
             "account_id": trade_creditors_id,
             "partner_name": vendor_name,
@@ -584,13 +658,14 @@ def new_vendor_bill():
                 (journal_header_id, vendor_bill_id)
             )
             conn.commit()
-        except UnbalancedEntryError as error:
+        except (UnbalancedEntryError, ValueError) as error:
             conn.rollback()
             cursor.close()
             conn.close()
             return render_template(
                 "vendors/new_vendor_bill.html",
                 vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
+                products=_get_products_for_bill(org_id), basis_options=BASIS_LABELS,
                 error=str(error), today=date.today().isoformat(),
             )
 
@@ -607,6 +682,7 @@ def new_vendor_bill():
     return render_template(
         "vendors/new_vendor_bill.html",
         vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
+        products=_get_products_for_bill(org_id), basis_options=BASIS_LABELS,
         auto_number=auto_num, error=None, today=date.today().isoformat(),
     )
 
@@ -620,7 +696,8 @@ def vendor_bill_detail(vendor_bill_id):
     cursor.execute("""
         SELECT vb.vendor_bill_id, vb.bill_number, v.name, vb.bill_date, vb.due_date, vb.receipt_date,
                vb.accounting_date, vb.status, vb.journal_header_id, vb.amount_due, vb.paid_amount,
-               vb.payment_reference, vb.recipient_bank, vb.lc_reference, vb.journal_name, v.vendor_id
+               vb.payment_reference, vb.recipient_bank, vb.lc_reference, vb.journal_name, v.vendor_id,
+               vb.landed_cost_basis
         FROM vendor_bills vb JOIN vendors v ON v.vendor_id = vb.vendor_id
         WHERE vb.vendor_bill_id = %s AND vb.organization_id = %s
     """, (vendor_bill_id, org_id))
@@ -631,8 +708,11 @@ def vendor_bill_detail(vendor_bill_id):
         abort(404)
 
     cursor.execute("""
-        SELECT vbl.label, coa.code, coa.name, vbl.quantity, vbl.rate, vbl.total
-        FROM vendor_bill_lines vbl JOIN chart_of_accounts coa ON coa.account_id = vbl.account_id
+        SELECT vbl.label, coa.code, coa.name, vbl.quantity, vbl.rate, vbl.total,
+               COALESCE(vbl.line_kind, 'Goods'), product.name, vbl.product_id
+        FROM vendor_bill_lines vbl
+        JOIN chart_of_accounts coa ON coa.account_id = vbl.account_id
+        LEFT JOIN products product ON product.product_id = vbl.product_id
         WHERE vbl.vendor_bill_id = %s ORDER BY vbl.line_order
     """, (vendor_bill_id,))
     lines = cursor.fetchall()
@@ -650,9 +730,31 @@ def vendor_bill_detail(vendor_bill_id):
     conn.close()
 
     total = sum((to_decimal(line[5]) for line in lines), to_decimal(0))
+
+    # The landed cost: the LC's own lines spread over the goods lines, so the
+    # bill shows what each unit really cost once freight, duty and clearing are
+    # on it. Every figure is already on the bill - nothing new is posted.
+    goods_lines, landed_total = [], to_decimal(0)
+    for label, code, account_name, quantity, rate, line_total, kind, product_name, product_id in lines:
+        if kind == "Landed Cost":
+            landed_total += to_decimal(line_total)
+        else:
+            goods_lines.append({
+                "label": label or account_name or "",
+                "account": f"{code} {account_name}" if code else (account_name or ""),
+                "product_name": product_name or "",
+                "product_id": product_id,
+                "quantity": quantity,
+                "total": line_total,
+            })
+    basis = normalise_basis(bill[16]) if len(bill) > 16 else "value"
+    landed_rows, landed_summary = split_landed_cost(goods_lines, landed_total, basis)
+
     return render_template(
         "vendors/vendor_bill_detail.html",
-        bill=bill, lines=lines, total=total, allocations=allocations
+        bill=bill, lines=lines, total=total, allocations=allocations,
+        landed_rows=landed_rows, landed_summary=landed_summary,
+        landed_basis_options=BASIS_LABELS,
     )
 
 
@@ -721,12 +823,44 @@ def post_vendor_bill(vendor_bill_id):
     try:
         post_journal_entry(cursor, journal_header_id)
         cursor.execute("UPDATE vendor_bills SET status = 'Posted' WHERE vendor_bill_id = %s", (vendor_bill_id,))
+        _remember_landed_cost(cursor, org_id, vendor_bill_id)
         conn.commit()
     except UnbalancedEntryError:
         conn.rollback()
     cursor.close()
     conn.close()
     return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
+
+
+def _remember_landed_cost(cursor, org_id, vendor_bill_id):
+    """Write each product's landed unit cost after its bill is posted.
+
+    A reference figure only: it shows on the product card so the owner can see
+    what the goods really cost once the LC charges are on them. Nothing is
+    posted, and On hand is untouched.
+    """
+    cursor.execute("SELECT COALESCE(landed_cost_basis, 'value') FROM vendor_bills "
+                   "WHERE vendor_bill_id = %s AND organization_id = %s", (vendor_bill_id, org_id))
+    row = cursor.fetchone()
+    if not row:
+        return
+    basis = normalise_basis(row[0])
+
+    cursor.execute("""
+        SELECT COALESCE(line_kind, 'Goods'), product_id, quantity, total
+        FROM vendor_bill_lines WHERE vendor_bill_id = %s ORDER BY line_order
+    """, (vendor_bill_id,))
+    goods, charges = [], to_decimal(0)
+    for kind, product_id, quantity, line_total in cursor.fetchall():
+        if kind == "Landed Cost":
+            charges += to_decimal(line_total)
+        else:
+            goods.append({"product_id": product_id, "quantity": quantity, "total": line_total})
+
+    for product_id, unit_cost in landed_unit_cost_by_product(goods, charges, basis).items():
+        cursor.execute("UPDATE products SET last_landed_cost = %s "
+                       "WHERE product_id = %s AND organization_id = %s",
+                       (unit_cost, product_id, org_id))
 
 
 @bp.route("/bills/<int:vendor_bill_id>/delete", methods=["POST"])
@@ -835,7 +969,19 @@ def new_vendor_credit_note():
 
         cursor.execute("SELECT name FROM vendors WHERE vendor_id = %s", (vendor_id,))
         vendor_name = cursor.fetchone()[0]
-        trade_creditors_id = _get_account_id_by_code(cursor, org_id, "2000")
+
+        try:
+            trade_creditors_id = _trade_payables_account_id(cursor, org_id)
+        except ValueError as err:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return render_template(
+                "vendors/new_vendor_credit_note.html",
+                vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
+                error=str(err), today=date.today().isoformat(),
+            )
+
         # Debit Trade Creditors
         je_lines.append({
             "account_id": trade_creditors_id,
@@ -856,7 +1002,7 @@ def new_vendor_credit_note():
             )
             cursor.execute("UPDATE vendor_credit_notes SET journal_header_id = %s WHERE vendor_credit_note_id = %s", (jh_id, cn_id))
             conn.commit()
-        except UnbalancedEntryError as err:
+        except (UnbalancedEntryError, ValueError) as err:
             conn.rollback()
             cursor.close()
             conn.close()
@@ -1005,7 +1151,19 @@ def new_vendor_payment():
 
         cursor.execute("SELECT name, nature_of_purchase FROM vendors WHERE vendor_id = %s", (vendor_id,))
         vendor_name, nature_of_purchase = cursor.fetchone()
-        trade_creditors_id = _get_account_id_by_code(cursor, org_id, "2000")
+
+        try:
+            trade_creditors_id = _trade_payables_account_id(cursor, org_id)
+        except ValueError as err:
+            conn.rollback()
+            cursor.close()
+            conn.close()
+            return render_template(
+                "vendors/new_vendor_payment.html",
+                vendors=_get_vendors(org_id), accounts=_get_bank_accounts(org_id),
+                tax_rates=get_active_tax_rates(org_id),
+                error=str(err), today=date.today().isoformat(),
+            )
 
         je_lines = [{
             "account_id": trade_creditors_id, "partner_name": vendor_name,
@@ -1370,13 +1528,13 @@ def new_batch_vendor_payment():
             v_num = _generate_voucher_number(cursor, org_id, True)
             cursor.execute("SELECT name FROM vendors WHERE vendor_id = %s", (v_id,))
             v_name = cursor.fetchone()[0]
-            trade_creditors_id = _get_account_id_by_code(cursor, org_id, "2000")
 
-            je_lines = [
-                {"account_id": trade_creditors_id, "partner_name": v_name, "label": f"Batch payment {batch_number} to {v_name}", "debit": amt, "credit": 0},
-                {"account_id": paid_from_account_id, "partner_name": v_name, "label": f"Payment via batch {batch_number}", "debit": 0, "credit": amt},
-            ]
             try:
+                trade_creditors_id = _trade_payables_account_id(cursor, org_id)
+                je_lines = [
+                    {"account_id": trade_creditors_id, "partner_name": v_name, "label": f"Batch payment {batch_number} to {v_name}", "debit": amt, "credit": 0},
+                    {"account_id": paid_from_account_id, "partner_name": v_name, "label": f"Payment via batch {batch_number}", "debit": 0, "credit": amt},
+                ]
                 jh_id = create_journal_entry(
                     cursor, organization_id=org_id,
                     reference=f"Batch Payment {batch_number} - {v_name}",

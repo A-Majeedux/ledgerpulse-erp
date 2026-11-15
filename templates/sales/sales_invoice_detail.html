@@ -106,6 +106,16 @@
         <td colspan="8" style="text-align:right;">Grand Total:</td>
         <td class="amount" style="color:var(--lp-teal);">{{ active_currency|default('PKR') }} {{ "%.2f"|format(grand_total) }}</td>
       </tr>
+      {% if paid_amount %}
+      <tr>
+        <td colspan="8" style="text-align:right; color:var(--lp-text-muted);">Receipts applied:</td>
+        <td class="amount" style="color:var(--lp-green-text);">-{{ active_currency|default('PKR') }} {{ "%.2f"|format(paid_amount) }}</td>
+      </tr>
+      <tr style="font-weight:700;">
+        <td colspan="8" style="text-align:right;">Still due:</td>
+        <td class="amount" style="{% if still_due < grand_total %}color:var(--lp-teal);{% endif %}">{{ active_currency|default('PKR') }} {{ "%.2f"|format(still_due) }}</td>
+      </tr>
+      {% endif %}
     </tbody>
   </table>
 </div>

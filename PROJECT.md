@@ -81,14 +81,14 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 | Journal entries | 🟡 | Basic form. Planned grid redesign not built |
 | Bank internal transfer | 🟡 | Exists, needs review |
 | Vendors: master | 🟡 | List/new/detail work. Edit page reuses the New Vendor form (works) |
-| Vendors: bills, credit notes, payments, batch | 🟡 | Most complete module. Claimed done; verify by running tests |
-| Customers + receipts | 🟡 | Customer card rebuilt 14 Nov 2026 (ID, Edit, search, Columns menu — section 13). Receipts unchanged, older pattern |
-| Sales invoices | 🟡 | Invoices only. No quotation → order → delivery chain |
+| Vendors: bills, credit notes, payments, batch | 🟡 | Most complete module. Bills can now carry their LC charges and show a landed cost per product (section 18) |
+| Customers + receipts | 🟡 | Customer card rebuilt 14 Nov 2026 (ID, Edit, search, Columns menu — section 13). Receipts can be applied to invoices since 15 Nov 2026 (section 18) |
+| Sales invoices | 🟡 | Invoices only. No quotation → order → delivery chain. Each invoice now shows what is still due |
 | Purchases (RFQ → PO → Receipt) | ❌ | |
 | Inventory | ❌ | |
 | Fixed assets | ❌ | |
 | Bank reconciliation | ❌ | |
-| Reports | ✅ | Trial Balance and General Ledger done; Partner Ledger not built yet |
+| Reports | ✅ | Trial Balance, General Ledger, both Partner Ledgers, Customer and Vendor Aging, Own Cheques |
 
 ## 8. Voucher numbering (per old status report, re-verify)
 
@@ -151,6 +151,8 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 - 2026-11-15 — The customer receipt voucher, and the four corrections after it: LC removed from the sales
   invoice, tick-box columns on the invoice lines, the menu split into Reports and Business Settings, and the
   Customer Partner Ledger (see section 17)
+- 2026-11-15 — Round nine, the first three of the list: **LC + landed cost on purchases**, **receipts matched to
+  invoices**, and the **Customer Aging Report** (0-30 / 31-60 / 61-90 / older) under Reports (see section 18)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -642,3 +644,128 @@ lines - the same basis as the vendor ledger, so the two reports can be read side
   screenshot is needed.
 - The partner ledger reads documents, not the 1100 ledger lines: a hand-written journal entry against a customer
   does not appear on it (it does appear on the customer's own Accounting tab).
+
+
+## 18. Landed cost, receipts against invoices, and customer aging (built 15 Nov 2026)
+
+Three things from the owner's own list, built together because they lean on each other: a landed cost needs the
+purchase bill, an aging report needs to know what is really still owed, and what is really still owed needs the
+receipts to be matched to the invoices.
+
+### A. LC + landed cost on a vendor bill
+
+A letter of credit belongs to buying (see section 17B), so this is on the **purchase** side only.
+
+- The **New Vendor Bill** screen has an **LC Reference** box and a **Spread LC charges** choice:
+  **By value of the goods** or **By quantity**.
+- Each line now has a **Product** box (goods lines only) and a **Landed cost** tick. A ticked line is one of the
+  LC's own charges - freight, customs duty, clearing, bank charges - and names no product; a goods line names the
+  product it brought in.
+- The running total at the bottom splits as it is typed: **Goods** and **LC charges** under the **Bill Total**, so
+  the charges are visible before the bill is saved.
+- Nothing new is posted. The charges are ordinary bill lines - the same debit they always were - and they are
+  simply **spread over the goods lines** to show what each unit really cost. `vendors/landed_cost.py` does the
+  arithmetic and nothing else:
+
+```
+split_landed_cost(goods_lines, cost_total, basis)   -> (rows, summary)
+landed_unit_cost_by_product(goods_lines, cost_total, basis) -> {product_id: cost per unit}
+```
+
+  The shares **always add up to the charges exactly**: every line but the last is rounded to the paisa and the last
+  takes the remainder, so 33,333.33 over three lines loses nothing. A line with no quantity is given no cost per
+  unit rather than passing the whole line off as one.
+- The **bill's own page** gains a **What these goods really cost** panel (only when the bill has charges): three
+  figures - Goods, LC charges, Landed value - and a table of each goods line with its share of the charges, its
+  landed value and its **cost per unit**. The lines table itself gains **Product** and **Kind** columns.
+- When the bill is **posted**, each product's **last landed cost** is written to its card
+  (`products.last_landed_cost`), and the products screen shows it beside Price and On hand together with the margin
+  at the sale price. **On hand is not changed** by any of this - it was already an untracked figure.
+- A bill with **no** LC lines behaves exactly as before: no panel, no product requirement, nothing posted
+  differently. That is checked by a test.
+
+### B. A receipt knocks off the invoices it settles
+
+Vendor payments could already be allocated to vendor bills; customer receipts could not. Now they can, the same way.
+
+- The **New Customer Receipt** screen, under the amount, lists **the customer's posted invoices with something
+  still owed** (oldest first) with what is left on each: a **Full** button fills the whole balance, and any figure
+  can be typed. The money you have typed is shown above as "Applied x of y" and turns red if you apply more than
+  the receipt is for.
+- Applied money is stored in `customer_receipt_allocations` (one row per invoice a receipt settles), which mirrors
+  `vendor_payment_allocations`. The invoice's `paid_amount` and `amount_due` are then rewritten from those rows
+  (`customers.services.refresh_invoice_balance`), so the allocation rows are the truth and the two columns on the
+  invoice are a cache of them.
+- **Nothing is posted by an allocation.** The receipt's own journal entry already credited Trade Receivables with
+  the whole amount; matching it to invoices only says *which* invoices it paid.
+- What is refused, with a message that names the invoice: an amount bigger than the invoice still owes; amounts
+  that add up to more than the receipt; another customer's invoice; another company's invoice; a **draft** invoice
+  (it is not in the ledger yet, so money cannot honestly be applied to it). A refused receipt saves nothing at all.
+- A receipt that matches nothing still saves - it becomes an unapplied credit on the customer's account, and the
+  receipt page says so.
+- The **receipt's page** now lists the invoices it settles, with anything left unapplied named separately, and the
+  **invoice list** has a **Still due** column while the **invoice's page** shows "Receipts applied" and "Still due"
+  under the total.
+
+### C. Customer aging under Reports
+
+`GET /customers/reports/ageing`, in the menu as **Customer Aging Report**, beside the Vendor Aging Report.
+
+- Four buckets, exactly as asked: **0-30**, **31-60**, **61-90** and **Over 90 days**, per customer, with the total,
+  each customer's share, and the age counted from the **due date** (or the invoice date when it has none) to the
+  **as at** date - which can be changed on the page.
+- Only **posted** invoices with something still owed are counted, and "still owed" is the invoice total less what
+  the receipts applied to it - the same basis as the vendor aging, and the same money the partner ledger shows as
+  owed by that customer, so the two tie.
+- Below the table, **every open invoice** is listed with its age in days, so a customer's total can be walked back
+  to the documents.
+
+### D. One bug found on the way: the Trade Payables account
+
+Saving a vendor bill (or a credit note or a payment) looked the payables account up by the code **2000**, which is
+what this program's default chart uses. The owner's own chart numbers it **2100 Trade Payables**, so on that
+company every one of those screens would have failed on a NULL account. `_trade_payables_account_id` now takes
+2000, then 2100, then any liability named payables / creditors, and - if the company has none at all - says so on
+the form ("This company has no Trade Payables account…") instead of crashing. The bill form asks for the account
+before it writes anything, so nothing is left half-saved.
+
+### Checks
+
+- `tests/test_landed_cost_and_ageing.py` (34 checks):
+  - the split itself: shares adding up exactly for awkward figures in both bases; by-value and by-quantity giving
+    the expected shares; a cost per unit per line; no charges meaning no extra cost; a zero-quantity line; the two
+    bases and the fallback for an old bill with no answer; the same product on two lines giving one cost; the
+    remainder landing on the last line;
+  - the bill: the product and the kind stored per line, the basis kept, the panel and its figures
+    (7,692.31 of charges on Urea, 3,269.23 a bag), posting writing 3,269.23 and 10,461.54 to the two products, the
+    products screen showing them, a bill with no LC lines unchanged, and the form offering the box, the product
+    picker and the tick;
+  - the receipt: settling one invoice and the balance being real, one receipt over several invoices, one invoice
+    by two receipts, over-allocation refused three ways, a draft invoice refused, another customer's invoice
+    refused, a receipt that matches nothing still saving, and the picker listing only posted invoices with
+    something owed;
+  - the aging: the four buckets with four invoices, an invoice with no due date, a settled invoice dropping out, a
+    draft invoice not aged, and the report sitting under Reports;
+  - the payables account: a chart numbered 2100 still saving a bill, and a company with no payables account being
+    told so on the form rather than crashing.
+- Whole suite: **176 passed**, with only the vendor print case still failing that already failed before this work
+  (`test_10_all_print_templates_and_routes`, "INVOICE LINES" vs "Invoice Lines").
+- Every GET screen was requested with a real login against the demo database after the change: 72 screens, none
+  returning an error (the ten admin screens answer 403 for a non-admin, as they should).
+- The whole story was then walked through on the demo data with the app's own screens: an imported consignment -
+  200 bags of Urea and 120 of DAP with ocean freight 95,000, customs duty 148,000 and clearing 32,000 - was saved
+  as a bill (LC 118/2026) and posted, giving a landed cost of **2,817.62** a bag of Urea and **9,112.30** a bag of
+  DAP (goods 1,382,000 + charges 275,000 = the bill's 1,657,000), and a receipt of 120,000 was applied to two of
+  Al-Noor Agri Traders' June invoices (56,550 and 58,860), which then read fully paid while 4,590 stayed on the
+  account as a credit.
+
+### Known gaps
+
+- **Stock is still not tracked.** A landed cost per unit is a figure on the product card, not a valuation of stock;
+  On hand and any inventory value are untouched.
+- **A receipt cannot be un-matched.** To correct a wrong allocation the receipt would have to be deleted; there is
+  no "remove this allocation" button yet.
+- **Aging reads documents, not the ledger.** A hand-written journal entry against a customer does not appear on it
+  (the same gap the partner ledger has, section 17).
+- The **vendor payment** screen still has no allocation grid of its own, although the route has accepted
+  `bill_id[]` / `alloc_amount[]` since it was written.

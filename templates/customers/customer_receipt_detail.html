@@ -85,6 +85,45 @@
       </a>
     </section>
   </div>
+
+  <section class="lp-card" style="margin-top:16px;">
+    <h2 style="margin:0 0 10px; font-size:15px;">Invoices this receipt settles</h2>
+    {% if allocations %}
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th>Invoice</th>
+          <th>Invoice date</th>
+          <th class="amount">Applied</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in allocations %}
+        <tr>
+          <td style="font-weight:600;">{{ row.invoice_no or ('#' ~ row.invoice_id) }}</td>
+          <td>{{ row.date_text }}</td>
+          <td class="amount">{{ "{:,.2f}".format(row.amount) }}</td>
+        </tr>
+        {% endfor %}
+        <tr style="font-weight:700;">
+          <td colspan="2">Applied{% if unapplied and unapplied > 0 %} · still unapplied{% endif %}</td>
+          <td class="amount">{{ "{:,.2f}".format(amount - unapplied) }}</td>
+        </tr>
+        {% if unapplied and unapplied > 0 %}
+        <tr>
+          <td colspan="2" style="color:var(--lp-text-muted);">Not applied to an invoice — sits as a credit</td>
+          <td class="amount" style="color:var(--lp-text-muted);">{{ "{:,.2f}".format(unapplied) }}</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="margin:0; font-size:13px; color:var(--lp-text-muted);">
+      This receipt was not matched to any invoice, so the whole amount sits as a credit on
+      {{ receipt[1] }}'s account.
+    </p>
+    {% endif %}
+  </section>
 </div>
 
 <div id="panel-cheques" style="display:none;">

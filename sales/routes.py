@@ -92,7 +92,7 @@ def products_list():
     cursor = conn.cursor()
     sql = """
         SELECT p.product_id, p.name, p.unit, coa.code, coa.name, p.is_active,
-               COALESCE(p.sales_price, 0), COALESCE(p.on_hand, 0)
+               COALESCE(p.sales_price, 0), COALESCE(p.on_hand, 0), p.last_landed_cost
         FROM products p
         LEFT JOIN chart_of_accounts coa ON coa.account_id = p.default_account_id
         WHERE p.organization_id = %s
@@ -358,12 +358,13 @@ def sales_invoices_list():
     cursor = conn.cursor()
     cursor.execute("""
         SELECT si.sales_invoice_id, c.name, si.invoice_date, si.due_date, si.status,
-               COALESCE(SUM(sil.total), 0) AS total, si.invoice_no, si.lc_reference
+               COALESCE(SUM(sil.total), 0) AS total, si.invoice_no, si.lc_reference,
+               COALESCE(si.paid_amount, 0) AS paid
         FROM sales_invoices si
         JOIN customers c ON c.customer_id = si.customer_id
         LEFT JOIN sales_invoice_lines sil ON sil.sales_invoice_id = si.sales_invoice_id
         WHERE si.organization_id = %s
-        GROUP BY si.sales_invoice_id, c.name, si.invoice_no, si.lc_reference
+        GROUP BY si.sales_invoice_id, c.name, si.invoice_no, si.lc_reference, si.paid_amount
         ORDER BY si.invoice_date DESC, si.sales_invoice_id DESC
     """, (org_id,))
     invoices = cursor.fetchall()
@@ -596,7 +597,7 @@ def sales_invoice_detail(sales_invoice_id):
         SELECT si.sales_invoice_id, c.name, si.invoice_date, si.due_date,
                si.status, si.journal_header_id, si.payment_terms,
                si.invoice_no, si.lc_reference, si.delivery_date, c.ntn, c.address, c.city,
-               si.journal_name, header.accounting_date
+               si.journal_name, header.accounting_date, COALESCE(si.paid_amount, 0)
         FROM sales_invoices si
         JOIN customers c ON c.customer_id = si.customer_id
         LEFT JOIN journal_headers header ON header.journal_header_id = si.journal_header_id
@@ -628,6 +629,12 @@ def sales_invoice_detail(sales_invoice_id):
     total_tax = sum((to_decimal(l[10]) for l in lines), to_decimal(0))
     grand_total = sum((to_decimal(l[11]) for l in lines), to_decimal(0))
 
+    # What the customer receipts have already been applied to this invoice
+    # (customers/services.py keeps the allocation rows; paid_amount is their
+    # total on the invoice itself).
+    paid_amount = money_round(to_decimal(invoice[15] or 0))
+    still_due = money_round(grand_total - paid_amount)
+
     return render_template(
         "sales/sales_invoice_detail.html",
         invoice=invoice,
@@ -636,6 +643,8 @@ def sales_invoice_detail(sales_invoice_id):
         total_discount=total_discount,
         total_tax=total_tax,
         grand_total=grand_total,
+        paid_amount=paid_amount,
+        still_due=still_due,
     )
 
 

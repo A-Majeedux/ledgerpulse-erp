@@ -37,19 +37,39 @@
         <label class="form-label">Payment Terms</label>
         <input type="text" name="payment_terms" placeholder="e.g. 30 days" class="form-control">
       </div>
+      <div class="lp-form-group">
+        <label class="form-label">LC Reference</label>
+        <input type="text" name="lc_reference" maxlength="100" placeholder="e.g. LC 123/2026 (imports only)"
+               class="form-control">
+      </div>
+      <div class="lp-form-group">
+        <label class="form-label">Spread LC charges</label>
+        <select name="landed_cost_basis" class="form-select">
+          {% for value, label in basis_options.items() %}
+            <option value="{{ value }}" {{ 'selected' if value == 'value' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
     </div>
+    <p style="margin: 10px 0 0; font-size: 12px; line-height: 1.55; color: var(--lp-text-muted);">
+      Tick <strong>Landed cost</strong> on a line for the LC's own charges — freight, customs duty, clearing,
+      bank charges — and name the product on the goods lines. The bill then shows what each unit really cost.
+      The charges are spread over the goods, not added twice.
+    </p>
   </div>
 
   <div class="lp-table-wrapper" style="margin-bottom: 20px;">
     <table class="lp-table" id="lines-table">
       <thead>
         <tr>
-          <th style="width:30%;">Label</th>
-          <th style="width:30%;">Account</th>
-          <th style="width:12%;" class="amount">Qty</th>
-          <th style="width:12%;" class="amount">Rate ({{ active_currency|default('PKR') }})</th>
-          <th style="width:14%;" class="amount">Total</th>
-          <th style="width:40px;"></th>
+          <th>Label</th>
+          <th>Product (goods only)</th>
+          <th>Account</th>
+          <th class="amount">Qty</th>
+          <th class="amount">Rate ({{ active_currency|default('PKR') }})</th>
+          <th class="amount">Total</th>
+          <th>Landed cost</th>
+          <th class="col-actions"></th>
         </tr>
       </thead>
       <tbody id="lines-body"></tbody>
@@ -60,6 +80,9 @@
     <button type="button" onclick="addLine()" class="lp-btn secondary sm">+ Add line</button>
     <div style="background: var(--lp-white); padding: 12px 20px; border-radius: var(--lp-radius-md); border: 1px solid var(--lp-border); font-size: 14px;">
       Bill Total: <strong id="grand-total" style="color: var(--lp-teal); font-size: 16px;">0.00</strong>
+      <div style="font-size: 12px; color: var(--lp-text-muted); margin-top: 2px;">
+        Goods <span id="goods-total">0.00</span> · LC charges <span id="charges-total">0.00</span>
+      </div>
     </div>
   </div>
 
@@ -69,10 +92,15 @@
 </form>
 
 <script>
-const ACCOUNTS = [{% for a in accounts %}{ id: {{ a[0] }}, label: "{{ a[1] }} - {{ a[2] }}" },{% endfor %}];
+const ACCOUNTS = [{% for a in accounts %}{ id: {{ a[0] }}, label: {{ (a[1] ~ ' - ' ~ a[2])|tojson }} },{% endfor %}];
+const PRODUCTS = [{% for p in products %}{ id: {{ p[0] }}, label: {{ (p[1] ~ ((' (' ~ p[2] ~ ')') if p[2] else ''))|tojson }} },{% endfor %}];
 
 function accountOptions() {
   return '<option value="">Select account…</option>' + ACCOUNTS.map(a => `<option value="${a.id}">${a.label}</option>`).join('');
+}
+
+function productOptions() {
+  return '<option value="">—</option>' + PRODUCTS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
 }
 
 function recalcRow(row) {
@@ -83,9 +111,18 @@ function recalcRow(row) {
 }
 
 function recalcGrandTotal() {
-  let sum = 0;
-  document.querySelectorAll('[name="total[]"]').forEach(el => sum += parseFloat(el.value || 0));
+  let sum = 0, goods = 0, charges = 0;
+  document.querySelectorAll('#lines-body tr').forEach(row => {
+    const total = parseFloat((row.querySelector('[name="total[]"]') || {}).value || 0);
+    const kind = (row.querySelector('[name="line_kind[]"]') || {}).value;
+    sum += total;
+    if (kind === 'Landed Cost') charges += total; else goods += total;
+  });
   document.getElementById('grand-total').textContent = sum.toFixed(2);
+  const goodsBox = document.getElementById('goods-total');
+  const chargesBox = document.getElementById('charges-total');
+  if (goodsBox) goodsBox.textContent = goods.toFixed(2);
+  if (chargesBox) chargesBox.textContent = charges.toFixed(2);
 }
 
 function addLine() {
@@ -93,13 +130,42 @@ function addLine() {
   const row = document.createElement('tr');
   row.innerHTML = `
     <td><input type="text" name="label[]" class="form-control" placeholder="Description"></td>
+    <td><select name="product_id[]" class="form-select">${productOptions()}</select></td>
     <td><select name="account_id[]" class="form-select" required>${accountOptions()}</select></td>
     <td><input type="number" step="0.01" name="quantity[]" value="1" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
     <td><input type="number" step="0.01" name="rate[]" value="0" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
     <td><input type="number" step="0.01" name="total[]" value="0" class="form-control" style="text-align:right;" oninput="recalcGrandTotal()"></td>
-    <td><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotal();" class="lp-btn danger sm" title="Remove line">✕</button></td>
+    <td style="text-align:center;">
+      <input type="hidden" name="line_kind[]" value="Goods">
+      <input type="checkbox" class="landed-tick" title="This line is an LC charge, not goods"
+             onchange="markLanded(this)">
+    </td>
+    <td class="col-actions"><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotal();" class="lp-btn ghost sm" title="Remove line" aria-label="Remove line"><svg class="ico sm" aria-hidden="true"><use href="#i-trash"/></svg></button></td>
   `;
   tbody.appendChild(row);
+}
+
+// The tick writes the line's kind into a hidden box, which is always sent, so
+// one ticked line does not shift the kind of every line after it.
+function markLanded(box) {
+  const row = box.closest('tr');
+  const kind = row.querySelector('[name="line_kind[]"]');
+  if (kind) kind.value = box.checked ? 'Landed Cost' : 'Goods';
+  recalcGrandTotal();
+  const product = row.querySelector('[name="product_id[]"]');
+  const label = row.querySelector('[name="label[]"]');
+  if (!product) return;
+  // Not `disabled`: a disabled box is left out of the form and every later
+  // line would shift by one. Dim it and empty it instead.
+  product.style.opacity = box.checked ? '.45' : '';
+  product.style.pointerEvents = box.checked ? 'none' : '';
+  if (box.checked) {
+    product.value = '';
+    row.style.background = '#FFFBF3';
+    if (label && !label.value) label.placeholder = 'e.g. Freight, customs duty, clearing';
+  } else {
+    row.style.background = '';
+  }
 }
 
 addLine();

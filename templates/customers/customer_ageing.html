@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Customer Aging Report{% endblock %}
+{% block active_nav %}reports{% endblock %}
+{% block content %}
+<nav class="lp-crumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('dashboard.home') }}">Dashboard</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <a href="{{ url_for('reports.trial_balance') }}">Reports</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <span>Aging</span>
+</nav>
+
+<div class="lp-page-header" style="display:flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap;">
+  <div>
+    <h1 class="lp-page-title">Customer receivables aging</h1>
+    <p class="lp-page-subtitle">
+      What each customer still owes, by how long it has been owed — posted invoices only,
+      as at {{ as_of.strftime('%d %b %Y') }}.
+    </p>
+  </div>
+  <div style="display:flex; gap:8px; align-items:flex-end;">
+    <form method="GET" style="display:flex; gap:8px; align-items:flex-end;">
+      <div>
+        <label for="as_of" style="display:block; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--lp-text-muted); margin-bottom:4px;">As at</label>
+        <input type="date" id="as_of" name="as_of" value="{{ as_of_text }}"
+               style="padding:8px 10px; border:1px solid var(--lp-border); border-radius:8px;">
+      </div>
+      <button type="submit" class="lp-btn secondary sm">Go</button>
+    </form>
+    <a href="{{ url_for('customers.customer_partner_ledger') }}" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-ledger"/></svg> Partner ledger
+    </a>
+    <a href="{{ url_for('vendors.vendor_aging') }}" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-vendor"/></svg> Vendor aging
+    </a>
+  </div>
+</div>
+
+<div class="kpi-grid" style="margin-bottom: 18px;">
+  <article class="kpi" style="--kpi-tint:#0EA5A0; --kpi-soft:#E6F7F5;">
+    <div class="kpi-top">
+      <span class="kpi-label">Total outstanding</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-coins"/></svg></span>
+    </div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(ageing_totals.total) }}</div>
+    <div class="kpi-note">Across {{ ageing_rows|length }} customer{{ '' if ageing_rows|length == 1 else 's' }}</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#E8833A; --kpi-soft:#FDF0E6;">
+    <div class="kpi-top">
+      <span class="kpi-label">More than 90 days</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-trending-up"/></svg></span>
+    </div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(ageing_totals['older']) }}</div>
+    <div class="kpi-note">
+      {% set total = ageing_totals.total %}
+      {{ "{:.1f}".format((ageing_totals['older'] / total * 100) if total else 0) }}% of what is owed
+    </div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#4B7CB8; --kpi-soft:#EAF1F9;">
+    <div class="kpi-top">
+      <span class="kpi-label">Due now (0-30)</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-receipt"/></svg></span>
+    </div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(ageing_totals['0-30']) }}</div>
+    <div class="kpi-note">The freshest money on the books</div>
+  </article>
+</div>
+
+{% if ageing_rows %}
+<section class="chart-card" style="margin-bottom: 18px;">
+  <div class="chart-head">
+    <div>
+      <h3>Who owes the most</h3>
+      <p class="chart-sub">The eight biggest balances; the table below has every customer</p>
+    </div>
+  </div>
+  <div class="zyro-chart" data-chart="hbar" data-unit="{{ active_currency }}">
+    <script type="application/json">[{% for row in ageing_rows[:8] %}[{{ row.name|tojson }}, {{ row.total|float }}]{% if not loop.last %},{% endif %}{% endfor %}]</script>
+  </div>
+</section>
+{% endif %}
+
+<div class="lp-card" style="padding: 0;">
+  <div class="lp-table-wrapper">
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          {% for key, label, _low, _high in buckets %}
+          <th class="amount">{{ label }}</th>
+          {% endfor %}
+          <th class="amount">Total due ({{ active_currency }})</th>
+          <th style="width: 18%;">Share</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in ageing_rows %}
+        <tr>
+          <td>
+            <a href="{{ url_for('customers.customer_partner_ledger', customer_id=row.customer_id) }}"
+               style="font-weight:600; display:inline-flex; align-items:center; gap:7px;">
+              <svg class="ico sm" aria-hidden="true"><use href="#i-customer"/></svg>{{ row.name }}
+            </a>
+            <div style="font-size:11.5px; color:var(--lp-text-muted); margin-top:2px;">
+              {{ row.invoices|length }} invoice{{ '' if row.invoices|length == 1 else 's' }} still open
+            </div>
+          </td>
+          {% for key, label, _low, _high in buckets %}
+          <td class="amount" style="{% if row.buckets[key] %}color: {{ '#C0392B' if key == 'older' else 'inherit' }};{% else %}color: var(--lp-text-muted);{% endif %}">
+            {{ "{:,.2f}".format(row.buckets[key]) }}
+          </td>
+          {% endfor %}
+          <td class="amount" style="font-weight:700;">{{ "{:,.2f}".format(row.total) }}</td>
+          <td>
+            <div style="height: 8px; border-radius: 999px; background: #F2F7F9; overflow: hidden;">
+              <div style="height: 100%; width: {{ ((row.total / ageing_totals.total) * 100) if ageing_totals.total else 0 }}%;
+                          border-radius: 999px; background: linear-gradient(90deg, #12B0A9, #7BE0D8);"></div>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7">
+            <div class="lp-empty-state" style="padding: 24px; text-align:center;">
+              Nothing is owed by any customer — every posted invoice is settled.
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      {% if ageing_rows %}
+      <tfoot>
+        <tr style="font-weight: 700;">
+          <td>Total</td>
+          {% for key, label, _low, _high in buckets %}
+          <td class="amount">{{ "{:,.2f}".format(ageing_totals[key]) }}</td>
+          {% endfor %}
+          <td class="amount">{{ "{:,.2f}".format(ageing_totals.total) }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+{% if ageing_rows %}
+<div class="lp-card" style="margin-top: 18px;">
+  <h2 style="margin:0 0 4px; font-size:15px;">Every open invoice</h2>
+  <p style="margin:0 0 12px; font-size:12.5px; color: var(--lp-text-muted);">
+    Days are counted from the due date, or from the invoice date when it has none.
+    What is still due is the invoice total less what the receipts have been applied to it.
+  </p>
+  <div class="lp-table-wrapper">
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th>Customer</th>
+          <th>Invoice</th>
+          <th>Date</th>
+          <th>Due</th>
+          <th class="amount">Days</th>
+          <th class="amount">Still due</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in ageing_rows %}
+          {% for invoice in row.invoices %}
+          <tr>
+            <td>{{ row.name }}</td>
+            <td style="font-weight:600;">{{ invoice.invoice_no or ('#' ~ invoice.invoice_id) }}</td>
+            <td>{{ invoice.date_text }}</td>
+            <td>{{ invoice.due_text }}</td>
+            <td class="amount" style="{% if invoice.days > 90 %}color:#C0392B; font-weight:600;{% endif %}">{{ invoice.days }}</td>
+            <td class="amount">{{ "{:,.2f}".format(invoice.remaining) }}</td>
+          </tr>
+          {% endfor %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

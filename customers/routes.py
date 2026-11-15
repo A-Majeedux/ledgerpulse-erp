@@ -1,12 +1,14 @@
 from datetime import date
 from decimal import Decimal
-from flask import Blueprint, render_template, request, redirect, url_for, abort
+from flask import Blueprint, jsonify, render_template, request, redirect, url_for, abort
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
 from accounting.services import create_journal_entry, UnbalancedEntryError
 from wht.routes import get_active_tax_rates
 from core.money import to_decimal, money_round
 from customers.services import (
+    AGEING_BUCKETS, apply_receipt_to_invoices, customer_ageing, open_invoices,
+    receipt_allocations,
     CONTACT_TEXT_FIELDS, LIST_COLUMNS, NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS, TEXT_FIELDS,
     ValidationError, blank_contact_form, blank_form, clean_contact_form, clean_customer_form,
     clean_search, contact_form_as_typed, contact_form_from_contact, count_customers, create_contact,
@@ -602,8 +604,23 @@ def new_customer_receipt():
             # changed afterwards (customers/services.py).
             give_receipt_a_voucher_number(
                 cursor, org_id, customer_receipt_id, request.form["receipt_date"])
+
+            # Which invoices this money settles. Optional: a receipt that
+            # settles nothing is still a real receipt (an unapplied credit),
+            # and the invoices it names get their still-due figure written
+            # back from the allocations themselves.
+            invoice_ids = request.form.getlist("invoice_id[]")
+            alloc_amounts = request.form.getlist("alloc_amount[]")
+            wanted = []
+            for index, invoice_id in enumerate(invoice_ids):
+                amount = alloc_amounts[index] if index < len(alloc_amounts) else ""
+                if invoice_id and (amount or "").strip():
+                    wanted.append((invoice_id, amount))
+            apply_receipt_to_invoices(
+                cursor, org_id, customer_receipt_id, customer_id, gross_amount, wanted)
+
             conn.commit()
-        except UnbalancedEntryError as error:
+        except (UnbalancedEntryError, ValueError) as error:
             conn.rollback()
             cursor.close()
             conn.close()
@@ -647,11 +664,79 @@ def customer_receipt_detail(customer_receipt_id):
         WHERE cr.customer_receipt_id = %s AND cr.organization_id = %s
     """, (customer_receipt_id, org_id))
     receipt = cursor.fetchone()
+    if not receipt:
+        cursor.close()
+        conn.close()
+        abort(404)
+    allocations = receipt_allocations(cursor, org_id, customer_receipt_id)
+    unapplied = money_round(to_decimal(receipt[2] or 0)
+                            - sum((row["amount"] for row in allocations), Decimal("0")))
     cursor.close()
     conn.close()
-    if not receipt:
+    return render_template(
+        "customers/customer_receipt_detail.html",
+        receipt=receipt, allocations=allocations, unapplied=unapplied,
+    )
+
+
+@bp.route("/<int:customer_id>/open-invoices")
+@require_organization
+def customer_open_invoices(customer_id):
+    """The posted invoices of one customer that still have something owed.
+
+    Used by the receipt form: choose the customer, and the invoices he may be
+    paying for are listed with what is left on each.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM customers WHERE customer_id = %s AND organization_id = %s",
+                   (customer_id, org_id))
+    if not cursor.fetchone():
+        cursor.close()
+        conn.close()
         abort(404)
-    return render_template("customers/customer_receipt_detail.html", receipt=receipt)
+    invoices = open_invoices(cursor, org_id, customer_id)
+    cursor.close()
+    conn.close()
+    return jsonify({"invoices": [
+        {
+            "id": invoice["invoice_id"],
+            "invoice_no": invoice["invoice_no"] or "",
+            "date": invoice["date_text"],
+            "due": invoice["due_text"],
+            "total": str(invoice["total"]),
+            "paid": str(invoice["paid"]),
+            "remaining": str(invoice["remaining"]),
+        }
+        for invoice in invoices
+    ]})
+
+
+@bp.route("/reports/ageing")
+@require_organization
+def customer_ageing_report():
+    """What each customer still owes, split 0-30 / 31-60 / 61-90 / older."""
+    org_id = current_organization_id()
+    as_of_text = (request.args.get("as_of") or "").strip()
+    if as_of_text:
+        try:
+            as_of = clean_receipt_date(as_of_text)
+        except ValueError:
+            as_of = date.today()
+    else:
+        as_of = date.today()
+
+    conn = get_conn()
+    cursor = conn.cursor()
+    rows, totals = customer_ageing(cursor, org_id, as_of)
+    cursor.close()
+    conn.close()
+    return render_template(
+        "customers/customer_ageing.html",
+        ageing_rows=rows, ageing_totals=totals, buckets=AGEING_BUCKETS,
+        as_of=as_of, as_of_text=as_of.isoformat(),
+    )
 
 
 @bp.route("/receipts/<int:customer_receipt_id>/print")
