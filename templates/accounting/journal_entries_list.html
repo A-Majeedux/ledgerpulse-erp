@@ -13,7 +13,7 @@
 
 {{ search_bar(url_for('accounting.journal_entries_list'), search,
               statuses=['Draft', 'Posted'], accounts=accounts,
-              note='Reference, journal, line label or partner…') }}
+              note='Reference, journal, line label or partner…', suggestions=suggestions) }}
 
 <div class="lp-table-wrapper">
   <table class="lp-table">

@@ -175,15 +175,22 @@
   {% endif %}
 
   {% if unapplied_receipts and still_due > 0 %}
+  {# Choosing a receipt fills the amount in by itself: the smaller of what that
+     receipt still has unapplied and what this invoice still owes. It stays
+     editable - this just saves typing a figure the books already know. #}
   <form method="POST" action="{{ url_for('sales.apply_receipt_to_invoice', sales_invoice_id=invoice[0]) }}"
+        id="match-receipt-form"
+        data-still-due="{{ '{:.2f}'.format(still_due) }}"
         style="margin-top:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
     {{ csrf_field() }}
-    <div class="lp-form-group" style="margin:0; min-width:280px;">
+    <div class="lp-form-group" style="margin:0; min-width:280px; flex: 1 1 280px;">
       <label class="form-label">Match a receipt of {{ invoice[1] }} to this invoice</label>
-      <select name="customer_receipt_id" class="form-select" required>
+      <select name="customer_receipt_id" id="match-receipt-select" class="form-select" required>
         <option value="">Choose a receipt with money still unapplied…</option>
         {% for receipt in unapplied_receipts %}
-          <option value="{{ receipt.id }}">
+          <option value="{{ receipt.id }}"
+                  data-voucher="{{ receipt.voucher_no or ('#' ~ receipt.id) }}"
+                  data-left="{{ '{:.2f}'.format(receipt.left) }}">
             {{ receipt.voucher_no or ('#' ~ receipt.id) }} · {{ receipt.date.strftime('%d %b %Y') if receipt.date else '' }}
             · unapplied {{ "{:,.2f}".format(receipt.left) }}
           </option>
@@ -192,13 +199,50 @@
     </div>
     <div class="lp-form-group" style="margin:0; width:170px;">
       <label class="form-label">Amount</label>
-      <input type="number" step="0.01" min="0.01" name="amount" class="form-control"
-             value="{{ '{:.2f}'.format(still_due) }}" required>
+      <input type="number" step="0.01" min="0.01" name="amount" id="match-receipt-amount"
+             class="form-control" value="{{ '{:.2f}'.format(still_due) }}" required>
     </div>
     <button type="submit" class="lp-btn primary sm">
       <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Match it
     </button>
   </form>
+  <p id="match-receipt-note" style="margin:8px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
+    Pick a receipt and the amount fills itself in; change it if you are only settling part of it.
+  </p>
+  <script>
+  (function () {
+    const form = document.getElementById('match-receipt-form');
+    if (!form) { return; }
+    const select = document.getElementById('match-receipt-select');
+    const amount = document.getElementById('match-receipt-amount');
+    const note = document.getElementById('match-receipt-note');
+    const stillDue = parseFloat(form.dataset.stillDue || '0');
+
+    function money(value) { return (Math.round(value * 100) / 100).toFixed(2); }
+
+    function fill() {
+      const option = select.selectedOptions[0];
+      const left = option && option.dataset.left ? parseFloat(option.dataset.left) : null;
+      if (left === null) {
+        amount.value = money(stillDue);
+        note.textContent = 'Pick a receipt and the amount fills itself in; change it if you are only settling part of it.';
+        return;
+      }
+      const use = Math.min(left, stillDue);
+      amount.value = money(use);
+      amount.max = money(left);
+      if (left < stillDue) {
+        note.textContent = option.dataset.voucher + ' has ' + money(left) + ' still unapplied, so that is the most '
+          + 'it can settle here. The invoice keeps owing ' + money(stillDue - left) + '.';
+      } else {
+        note.textContent = option.dataset.voucher + ' has ' + money(left) + ' unapplied; this invoice only needs '
+          + money(stillDue) + ', so that much is matched.';
+      }
+    }
+    select.addEventListener('change', fill);
+    if (select.value) { fill(); }
+  })();
+  </script>
   {% endif %}
 </section>
 

@@ -26,7 +26,7 @@ from vendors.landed_cost import (BASIS_LABELS, landed_unit_cost_by_product, norm
                                  split_landed_cost)
 from vendors.services import duplicate_vendor_bill
 from core.docmenu import build_menu
-from core.searchbar import read_search, search_filters, and_clauses, describe
+from core.searchbar import read_search, search_filters, and_clauses, describe, suggest
 from auth.services import require_permission, current_user_id
 
 bp = Blueprint("vendors", __name__, url_prefix="/vendors")
@@ -541,9 +541,20 @@ def vendor_bills_list():
         ORDER BY vb.bill_date DESC, vb.vendor_bill_id DESC
     """, [org_id] + params)
     bills = cursor.fetchall()
+    suggestions = {
+        "q": suggest(cursor, [
+            ("SELECT bill_number FROM vendor_bills WHERE organization_id = %s AND bill_number IS NOT NULL "
+             "ORDER BY vendor_bill_id DESC LIMIT 40", (org_id,)),
+            ("SELECT name FROM vendors WHERE organization_id = %s ORDER BY vendor_id DESC LIMIT 40", (org_id,)),
+        ]),
+        "partner": suggest(cursor, [
+            ("SELECT name FROM vendors WHERE organization_id = %s ORDER BY name LIMIT 60", (org_id,)),
+        ]),
+    }
     cursor.close()
     conn.close()
-    return render_template("vendors/vendor_bills_list.html", bills=bills, search=search, accounts=accounts)
+    return render_template("vendors/vendor_bills_list.html", bills=bills, search=search,
+                           accounts=accounts, suggestions=suggestions)
 
 
 def _filter_accounts(cursor, org_id):
@@ -1166,9 +1177,20 @@ def vendor_payments_list():
         ORDER BY vp.payment_date DESC, vp.vendor_payment_id DESC
     """, [org_id] + params)
     payments = cursor.fetchall()
+    suggestions = {
+        "q": suggest(cursor, [
+            ("SELECT voucher_number FROM vendor_payments WHERE organization_id = %s AND voucher_number IS NOT NULL "
+             "ORDER BY vendor_payment_id DESC LIMIT 40", (org_id,)),
+            ("SELECT name FROM vendors WHERE organization_id = %s ORDER BY vendor_id DESC LIMIT 40", (org_id,)),
+        ]),
+        "partner": suggest(cursor, [
+            ("SELECT name FROM vendors WHERE organization_id = %s ORDER BY name LIMIT 60", (org_id,)),
+        ]),
+    }
     cursor.close()
     conn.close()
-    return render_template("vendors/vendor_payments_list.html", payments=payments, search=search)
+    return render_template("vendors/vendor_payments_list.html", payments=payments, search=search,
+                           suggestions=suggestions)
 
 
 @bp.route("/payments/new", methods=["GET", "POST"])

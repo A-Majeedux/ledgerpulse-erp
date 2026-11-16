@@ -76,6 +76,18 @@
     {% endfor %}
   </select>
 
+  {# What is being sold. This is the part of an invoice that gets typed the
+     most, so it is a panel of its own with its own heading, a tinted header row
+     and a count of the lines - not a table that looks like every other table. #}
+  <section class="lines-panel" aria-labelledby="lines-panel-title">
+  <div class="lines-panel-head">
+    <div>
+      <h2 class="lines-panel-title" id="lines-panel-title">Invoice lines</h2>
+      <p class="lines-panel-note">Product, quantity, rate, discount, tax and the line total - the money this invoice is for.</p>
+    </div>
+    <span class="lines-panel-count"><strong id="lines-count">0</strong> <span id="lines-count-word">lines</span></span>
+  </div>
+
   {# Which columns this invoice needs. Tick a box and the column appears;
      untick it and the other columns take the width - nothing is squashed.
      The choice is remembered in this browser. #}
@@ -108,14 +120,25 @@
         </tr>
       </thead>
       <tbody id="lines-body"></tbody>
+      <tfoot>
+        <tr id="lines-empty-hint">
+          <td colspan="10" style="text-align:center; color:var(--lp-text-muted); font-size:13px; padding:18px;">
+            No lines yet - press <strong>Add line</strong> and pick the product.
+          </td>
+        </tr>
+      </tfoot>
     </table>
   </div>
 
-  <div class="invoice-foot">
-    <button type="button" onclick="addLine()" class="lp-btn secondary sm">
+  <div class="lines-panel-foot">
+    <button type="button" onclick="addLine()" class="lp-btn secondary">
       <svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> Add line
     </button>
+    <span class="lines-panel-hint">A line needs a product; the account, unit and tax come with it and can be changed.</span>
+  </div>
+  </section>
 
+  <div class="invoice-foot">
     <div class="invoice-summary">
       <div class="sum-row"><span>Subtotal</span><strong id="summary-gross">0.00</strong></div>
       <div class="sum-row" id="sum-discount-row"><span>Discount</span><strong id="summary-discount" style="color:var(--lp-coral-text);">0.00</strong></div>
@@ -181,7 +204,18 @@ function recalcRow(row) {
   recalcGrandTotals();
 }
 
+function updateLineCount() {
+  const count = document.querySelectorAll('#lines-body tr').length;
+  const box = document.getElementById('lines-count');
+  const word = document.getElementById('lines-count-word');
+  if (box) { box.textContent = count; }
+  if (word) { word.textContent = count === 1 ? 'line' : 'lines'; }
+  const hint = document.getElementById('lines-empty-hint');
+  if (hint) { hint.style.display = count ? 'none' : 'block'; }
+}
+
 function recalcGrandTotals() {
+  updateLineCount();
   let grossSum = 0;
   let discSum = 0;
   let taxSum = 0;
@@ -303,6 +337,7 @@ function addLine() {
     <td class="col-actions"><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotals();" class="lp-btn ghost sm" title="Remove line" aria-label="Remove line"><svg class="ico sm" aria-hidden="true"><use href="#i-trash"/></svg></button></td>
   `;
   tbody.appendChild(row);
+  updateLineCount();
   applyColumns();
   recalcRow(row);
 }

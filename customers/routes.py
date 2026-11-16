@@ -4,7 +4,7 @@ from flask import Blueprint, jsonify, render_template, request, redirect, url_fo
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
 from core.docmenu import build_menu
-from core.searchbar import read_search, search_filters, and_clauses, describe
+from core.searchbar import read_search, search_filters, and_clauses, describe, suggest
 from auth.services import require_permission, current_user_id
 from accounting.services import create_journal_entry, UnbalancedEntryError
 from wht.routes import get_active_tax_rates
@@ -248,9 +248,10 @@ def customer_view(customer_id):
 def customer_statement(customer_id):
     """The Statement of Account - the sheet that goes to the customer.
 
-    Same printed frame as the voucher and the invoice (A4, company head, four
-    signature boxes). A date range can be given (?start_date=&end_date=); with
-    none it is everything to today.
+    Same printed frame as the voucher and the invoice (A4, company head) but
+    with no signature boxes: a statement goes out to the customer as a record of
+    account, and nobody inside the company signs it. A date range can be given
+    (?start_date=&end_date=); with none it is everything to today.
     """
     org_id = current_organization_id()
     try:
@@ -554,15 +555,26 @@ def customer_receipts_list():
         "SELECT COUNT(*) FROM customer_receipts WHERE organization_id = %s AND payment_method = 'Cheque'",
         (org_id,))
     cheque_count = cursor.fetchone()[0]
+    search.description = describe(search)
+    suggestions = {
+        "q": suggest(cursor, [
+            ("SELECT voucher_no FROM customer_receipts WHERE organization_id = %s AND voucher_no IS NOT NULL "
+             "ORDER BY customer_receipt_id DESC LIMIT 40", (org_id,)),
+            ("SELECT name FROM customers WHERE organization_id = %s ORDER BY customer_id DESC LIMIT 40", (org_id,)),
+        ]),
+        "partner": suggest(cursor, [
+            ("SELECT name FROM customers WHERE organization_id = %s ORDER BY name LIMIT 60", (org_id,)),
+        ]),
+    }
     cursor.close()
     conn.close()
-    search.description = describe(search)
     return render_template(
         "customers/customer_receipts_list.html",
         receipts=receipts,
         tab=tab,
         cheque_count=cheque_count,
         search=search,
+        suggestions=suggestions,
     )
 
 

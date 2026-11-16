@@ -4,7 +4,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, abort,
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
 from core.docmenu import build_menu
-from core.searchbar import read_search, search_filters, and_clauses, describe
+from core.searchbar import read_search, search_filters, and_clauses, describe, suggest
 from auth.services import require_permission, current_user_id
 from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
 from sales.schema import UOM_CHOICES
@@ -375,6 +375,21 @@ def sales_invoices_list():
     # the list is filtered to in the sentence under the bar.
     accounts = _filter_accounts(cursor, org_id)
     search.description = describe(search, accounts)
+    # Suggested from what is already in the books: the numbers, the customers and
+    # the labels this company has used.
+    suggestions = {
+        "q": suggest(cursor, [
+            ("SELECT invoice_no FROM sales_invoices WHERE organization_id = %s AND invoice_no IS NOT NULL "
+             "ORDER BY sales_invoice_id DESC LIMIT 40", (org_id,)),
+            ("SELECT name FROM customers WHERE organization_id = %s ORDER BY customer_id DESC LIMIT 40", (org_id,)),
+            ("SELECT DISTINCT sil.label FROM sales_invoice_lines sil "
+             "JOIN sales_invoices si ON si.sales_invoice_id = sil.sales_invoice_id "
+             "WHERE si.organization_id = %s AND sil.label IS NOT NULL LIMIT 40", (org_id,)),
+        ]),
+        "partner": suggest(cursor, [
+            ("SELECT name FROM customers WHERE organization_id = %s ORDER BY name LIMIT 60", (org_id,)),
+        ]),
+    }
     cursor.execute("""
         SELECT si.sales_invoice_id, c.name, si.invoice_date, si.due_date, si.status,
                COALESCE(SUM(sil.total), 0) AS total, si.invoice_no, si.lc_reference,
@@ -391,7 +406,7 @@ def sales_invoices_list():
     cursor.close()
     conn.close()
     return render_template("sales/sales_invoices_list.html", invoices=invoices,
-                           search=search, accounts=accounts)
+                           search=search, accounts=accounts, suggestions=suggestions)
 
 
 @bp.route("/invoices/new", methods=["GET", "POST"])

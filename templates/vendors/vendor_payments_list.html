@@ -7,7 +7,7 @@
   <h2 style="margin:0;">Vendor Payments</h2>
   <a href="{{ url_for('vendors.new_vendor_payment') }}" class="lp-btn primary">+ New Payment</a>
 </div>
-{{ search_bar(url_for('vendors.vendor_payments_list'), search, statuses=['Draft', 'Posted'], note='Voucher number, vendor, memo or cheque…') }}
+{{ search_bar(url_for('vendors.vendor_payments_list'), search, statuses=['Draft', 'Posted'], note='Voucher number, vendor, memo or cheque…', suggestions=suggestions) }}
 
 <div class="lp-card">
   <table class="lp-table">

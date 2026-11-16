@@ -190,3 +190,36 @@ def month_name(text):
     if not _looks_like_month(text):
         return text
     return "%s %s" % (MONTHS[int(text[5:]) - 1], text[:4])
+
+
+# ---------------------------------------------------------------------------
+# Suggestions from history
+#
+# His words: "the search bar should show auto suggestions from history for
+# written inputs". A <datalist> under the box, filled with the values that have
+# actually been used - invoice numbers, customer names, line labels - so typing
+# "INV/2026" or "Chaudhry" brings up what is really in the books. The browser
+# filters it as he types; nothing is fetched and no JavaScript is needed.
+# ---------------------------------------------------------------------------
+def suggest(cursor, parts, limit=60):
+    """Distinct values to offer in the box.
+
+    `parts` is a list of (sql, params) pairs, each selecting one text column -
+    most recent first. Empty values are dropped and the result is de-duplicated
+    without regard to case, because "Chaudhry" and "CHaudhry" are one customer to
+    the person typing, not two.
+    """
+    values, seen = [], set()
+    for sql, params in parts:
+        cursor.execute(sql, params or ())
+        for (value,) in cursor.fetchall():
+            if not value:
+                continue
+            key = str(value).strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            values.append(str(value).strip())
+            if len(values) >= limit:
+                return values
+    return values

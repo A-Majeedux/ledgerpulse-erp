@@ -13,6 +13,7 @@
 
 {{ search_bar(url_for('sales.sales_invoices_list'), search,
               statuses=['Draft', 'Posted'], accounts=accounts,
+              suggestions=suggestions,
               note='Invoice number, customer, line label or reference…') }}
 
 <div class="lp-table-wrapper">

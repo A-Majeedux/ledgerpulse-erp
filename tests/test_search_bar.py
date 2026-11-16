@@ -230,8 +230,15 @@ class SearchBarDatabaseTests(unittest.TestCase):
         return response.status_code, response.get_data(as_text=True)
 
     def listed(self, page):
-        """The invoice rows on the page, by number."""
-        return [number for number in ("INV-SEP-1", "INV-SEP-2", "INV-OCT-1") if number in page]
+        """The invoice rows in the table, by number.
+
+        Only the table is looked at: the bar's suggestion list repeats every
+        invoice number the company has ever used, so scanning the whole page
+        would answer "all of them" whatever the search.
+        """
+        marker = page.find("lp-table-wrapper")
+        table = page[marker:] if marker != -1 else page
+        return [number for number in ("INV-SEP-1", "INV-SEP-2", "INV-OCT-1") if number in table]
 
     def three_invoices(self):
         self.invoice("Alpha Traders", "INV-SEP-1", "2026-09-10", status="Posted", label="Freight to Depot")

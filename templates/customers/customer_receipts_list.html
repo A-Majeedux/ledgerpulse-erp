@@ -21,7 +21,8 @@
 </div>
 
 {{ search_bar(url_for('customers.customer_receipts_list'), search,
-              statuses=['Draft', 'Posted'], note='Voucher number, customer, memo or cheque…') }}
+              statuses=['Draft', 'Posted'], note='Voucher number, customer, memo or cheque…',
+              suggestions=suggestions) }}
 
 <div class="lp-card">
   <table class="lp-table">

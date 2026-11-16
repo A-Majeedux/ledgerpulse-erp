@@ -233,12 +233,17 @@
 
     {% block content %}{% endblock %}
 
+    {# The four boxes are right on an invoice, a bill and a receipt voucher. A
+       statement of account goes out to the customer as information, not as an
+       internal document to be signed, so it empties this block. #}
+    {% block signatures %}
     <div class="signatures">
       <div class="sig-box">Prepared By</div>
       <div class="sig-box">Checked By</div>
       <div class="sig-box">Approved By</div>
       <div class="sig-box">Authorized By</div>
     </div>
+    {% endblock %}
   </div>
 </body>
 </html>

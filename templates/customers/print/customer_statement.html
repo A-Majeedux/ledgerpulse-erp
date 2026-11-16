@@ -3,8 +3,8 @@
 {# The Statement of Account - what goes to the customer.
 
    Same printed frame as the receipt voucher and the invoice (company head, A4
-   margins, the four signature boxes, the Print button). That frame is only
-   READ from here - no vendor screen or template is changed.
+   margins, the Print button) - but with the signature boxes left off, because
+   a statement is sent to the customer rather than signed by us.
 
    statement  everything account_statement() returned (customers/services.py):
                 customer, rows, opening/closing and their texts,
@@ -16,6 +16,12 @@
 {% block title %}Statement of Account — {{ customer.name }}{% endblock %}
 {% block toolbar_title %}Statement of Account — {{ customer.name }}{% endblock %}
 {% block back_url %}/customers/{{ customer.customer_id }}{% endblock %}
+
+{# No Prepared By / Checked By / Approved By / Authorized By on a statement: it
+   is a record of account sent to the customer, not a document anyone signs.
+   The frame is shared with the invoice and the receipt voucher, so this only
+   empties that one block. #}
+{% block signatures %}{% endblock %}
 
 {% block content %}
 <div class="title-block">

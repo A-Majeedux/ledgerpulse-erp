@@ -11,14 +11,23 @@
    so a month can be asked for by name ("September") or a range typed in.
    Everything is submitted with GET, so a search is a link that can be shared.
    --------------------------------------------------------------------------- #}
-{% macro search_bar(action, search, statuses=None, accounts=None, note=None, partners=None) %}
+{% macro search_bar(action, search, statuses=None, accounts=None, note=None, partners=None, suggestions=None) %}
 {% set values = search.as_dict() if search and search.as_dict else {} %}
+{% set suggest = suggestions or {} %}
 <form method="GET" action="{{ action }}" class="lp-search" role="search">
   <div class="lp-search-main">
     <label class="lp-search-field grow">
       <span class="lp-search-label">Search</span>
       <input type="search" name="q" value="{{ values.get('q', '') }}"
-             placeholder="{{ note or 'Partner name, label, reference…' }}" autocomplete="off">
+             placeholder="{{ note or 'Partner name, label, reference…' }}" autocomplete="off"
+             {% if suggest.get('q') %}list="lp-search-q-suggestions"{% endif %}>
+      {% if suggest.get('q') %}
+        {# What has actually been typed into this module before - the browser
+           filters it as he types, so no request is made. #}
+        <datalist id="lp-search-q-suggestions">
+          {% for value in suggest.get('q') %}<option value="{{ value }}"></option>{% endfor %}
+        </datalist>
+      {% endif %}
     </label>
 
     <label class="lp-search-field">
@@ -57,7 +66,13 @@
             {% endfor %}
           </select>
         {% else %}
-          <input type="text" name="partner" value="{{ values.get('partner', '') }}" placeholder="Customer or vendor name">
+          <input type="text" name="partner" value="{{ values.get('partner', '') }}" placeholder="Customer or vendor name"
+                 {% if suggest.get('partner') %}list="lp-search-partner-suggestions" autocomplete="off"{% endif %}>
+          {% if suggest.get('partner') %}
+            <datalist id="lp-search-partner-suggestions">
+              {% for value in suggest.get('partner') %}<option value="{{ value }}"></option>{% endfor %}
+            </datalist>
+          {% endif %}
         {% endif %}
       </label>
 

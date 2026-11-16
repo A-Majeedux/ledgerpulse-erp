@@ -40,12 +40,14 @@ class DocumentMenuRulesTests(unittest.TestCase):
         finally:
             menu_module._may = original
         labels = [item["label"] for item in items]
-        self.assertEqual(labels, ["Duplicate as a new draft", "Delete this draft"])
+        # printing comes first, then the two that change the document
+        self.assertEqual(labels, ["Print / PDF invoice", "Duplicate as a new draft", "Delete this draft"])
         self.assertTrue(all(item["allowed"] for item in items))
-        self.assertEqual(items[0]["url"], "/sales/invoices/7/duplicate")
-        self.assertTrue(items[0]["post"])                       # a form button, not a link
-        self.assertEqual(items[1]["tone"], "danger")
-        self.assertTrue(items[1]["confirm"])                    # asked before it happens
+        by_key = dict((item["key"], item) for item in items)
+        self.assertEqual(by_key["duplicate"]["url"], "/sales/invoices/7/duplicate")
+        self.assertTrue(by_key["duplicate"]["post"])            # a form button, not a link
+        self.assertEqual(by_key["delete"]["tone"], "danger")
+        self.assertTrue(by_key["delete"]["confirm"])            # asked before it happens
 
     def test_a_posted_invoice_cannot_be_deleted_and_says_why(self):
         import core.docmenu as menu_module
@@ -74,15 +76,26 @@ class DocumentMenuRulesTests(unittest.TestCase):
         self.assertFalse(delete["allowed"])
         self.assertIn("unmatch it before deleting", delete["note"])
 
-    def test_a_person_without_the_permission_is_offered_nothing(self):
-        # has_permission() answers False in a database-less run, so nothing is offered
-        self.assertEqual(build_menu("sales_invoice", 7, status="Draft", user_id=None, organization_id=None), [])
+    def test_a_person_without_the_permission_is_offered_nothing_that_changes_anything(self):
+        # has_permission() answers False in a database-less run. Printing changes
+        # nothing, so it is still offered; duplicate and delete are not.
+        items = build_menu("sales_invoice", 7, status="Draft", user_id=None, organization_id=None)
+        self.assertEqual([item["key"] for item in items], ["print"])
         self.assertEqual(build_menu("unknown_kind", 7, status="Draft", user_id=1, organization_id=2), [])
 
     def test_a_receipt_is_copied_through_the_form_not_behind_the_users_back(self):
-        item = ACTIONS["customer_receipt"][0]
+        item = [action for action in ACTIONS["customer_receipt"] if action["key"] == "duplicate"][0]
         self.assertEqual(item["url"], "/customers/receipts/new?from={id}")
         self.assertFalse(item["post"])                          # opens the form, saves nothing
+
+    def test_every_document_offers_its_printed_copy_from_the_menu(self):
+        for kind, suffix in (("sales_invoice", "print"), ("customer_receipt", "print"),
+                             ("vendor_bill", "print"), ("vendor_payment", "print")):
+            first = ACTIONS[kind][0]
+            self.assertEqual(first["key"], "print", kind)
+            self.assertTrue(first["url"].endswith("/print"), kind)
+            self.assertFalse(first["post"], kind)                # a link, not a form
+            self.assertNotIn("permission", first, kind)          # printing asks for nothing
 
 
 class DocumentActionsDatabaseTests(unittest.TestCase):

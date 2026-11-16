@@ -4,7 +4,7 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
 from core.docmenu import build_menu
-from core.searchbar import read_search, search_filters, and_clauses, describe
+from core.searchbar import read_search, search_filters, and_clauses, describe, suggest
 from auth.services import require_permission, current_user_id
 from accounting.schema import ACCOUNT_TYPES
 from accounting.services import (create_journal_entry, delete_draft_journal_entry,
@@ -115,10 +115,27 @@ def journal_entries_list():
         ORDER BY jh.accounting_date DESC, jh.journal_header_id DESC
     """, [org_id] + params)
     entries = cursor.fetchall()
+    suggestions = {
+        "q": suggest(cursor, [
+            ("SELECT reference FROM journal_headers WHERE organization_id = %s AND reference IS NOT NULL "
+             "ORDER BY journal_header_id DESC LIMIT 40", (org_id,)),
+            ("SELECT DISTINCT jl.partner_name FROM journal_lines jl "
+             "JOIN journal_headers jh ON jh.journal_header_id = jl.journal_header_id "
+             "WHERE jh.organization_id = %s AND jl.partner_name IS NOT NULL LIMIT 40", (org_id,)),
+            ("SELECT DISTINCT jl.label FROM journal_lines jl "
+             "JOIN journal_headers jh ON jh.journal_header_id = jl.journal_header_id "
+             "WHERE jh.organization_id = %s AND jl.label IS NOT NULL LIMIT 40", (org_id,)),
+        ]),
+        "partner": suggest(cursor, [
+            ("SELECT DISTINCT jl.partner_name FROM journal_lines jl "
+             "JOIN journal_headers jh ON jh.journal_header_id = jl.journal_header_id "
+             "WHERE jh.organization_id = %s AND jl.partner_name IS NOT NULL ORDER BY 1 LIMIT 60", (org_id,)),
+        ]),
+    }
     cursor.close()
     conn.close()
     return render_template("accounting/journal_entries_list.html", entries=entries,
-                           search=search, accounts=accounts)
+                           search=search, accounts=accounts, suggestions=suggestions)
 
 
 def _filter_accounts(cursor, org_id):

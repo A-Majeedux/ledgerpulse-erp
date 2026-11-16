@@ -159,6 +159,9 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
 - 2026-11-15 — Round eleven, "every transaction tells you where it came from": the **gear menu** on every
   document (duplicate, delete, copy), the **trail** of related documents across the top of the page, receipts
   **matched and un-matched** from either end, and a **search bar on every list** (see section 20)
+- 2026-11-16 — Round twelve, five corrections: the statement goes out **without signature boxes**, printing
+  moves **into the gear menu**, the **invoice lines** become a panel of their own, the search bar **suggests
+  from history**, and choosing a receipt **fills the amount in** (see section 21)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -1061,3 +1064,110 @@ names come from the route, never from the address bar.
 - **Vendor credit notes have no gear menu**, and **vendor bills have no trail** - the bill's page has its menu, but
   the strip of related documents stops at invoices, receipts and entries.
 - **The search bar does not search goods or products**, and it does not remember a search between visits.
+
+## 21. Five corrections (built 16 Nov 2026)
+
+### A. The statement of account carries no signatures
+
+"hide signatures (prepare by, check by....etc) from the statement of account."
+
+The four boxes belonged to the printed frame shared by the invoice, the bill and the receipt voucher
+(`templates/vendors/print/_print_base.html`), so every print took them. That frame now hands the boxes to the
+page through a `{% block signatures %}`, and `templates/customers/print/customer_statement.html` empties it.
+Nothing else changed: the invoice, the bill and the receipt voucher still print their four boxes, because
+somebody signs those.
+
+The reasoning, written into the template: a statement is a record of account **sent to the customer**. Nobody
+inside the company signs it, and a signature line on it implies a promise the sheet does not make.
+
+### B. Printing moved into the gear menu
+
+"move 'Print/PDF voucher' into actions, and actions text is overlayed with cpv."
+
+- `core/docmenu.py` now opens every document's menu with **Print / PDF** - the invoice, the customer receipt,
+  the vendor bill, the vendor payment. It is a plain link, not a form, and it asks for **no permission**: it
+  changes nothing, and a person who can read the page can already print it from the browser.
+- The receipt page's own Print button is gone; the menu is one place for everything the page can do.
+- **The overlap is fixed at the layout, not with a nudge.** The page header is now a real flex row:
+  `.lp-page-heading` may shrink (`min-width: 0; flex: 1 1 320px`) while `.lp-page-actions` never does
+  (`flex: 0 0 auto`), and the gear's own label is `white-space: nowrap`. A long voucher number or a long customer
+  name wraps inside its own column instead of running under the Actions button. The same header shape now serves
+  every page that uses `.lp-page-header`.
+
+### C. The invoice lines panel
+
+"make the product panel (product, qty, rate, discount, tax, total etc) a little prominent in the invoicing
+template."
+
+The line table is now a panel of its own: a heading - **Invoice lines**, with a sentence saying what it is -
+a pill counting the lines (`0 lines`, kept true as rows are added and removed), a tinted and spaced header row,
+striped rows, a quieter hover, and a heavier line total. The **Add line** button moved under the table, inside the
+panel, with a note saying a line needs a product. The grand total sits directly beneath in a stronger card, right
+aligned with the lines it adds up. An empty panel says where to start instead of looking broken.
+
+### D. The search bar suggests from history
+
+"the search bar should show auto suggestions from history for written inputs."
+
+`core/searchbar.py` gained `suggest(cursor, parts, limit=60)`: it asks for the values actually used - most recent
+first, blanks dropped, de-duplicated without regard to case - and `templates/_search.html` turns them into a
+`<datalist>` under the Search box and under Partner. The browser filters the list as he types, so **no request is
+made and no JavaScript is needed**. Each module suggests its own:
+
+| List | Suggested |
+|---|---|
+| Sales invoices | the invoice numbers, the customers, the line labels |
+| Customer receipts | the voucher numbers, the customers |
+| Journal entries | the references, the partners and the labels on the lines |
+| Vendor bills | the bill numbers, the vendors |
+| Vendor payments | the voucher numbers, the vendors |
+
+A list with nothing in it draws no suggestion list at all - an empty list of what has never been used says
+nothing. A suggestion is only a suggestion: whatever he types still decides the answer, and it is still bound as
+a parameter (section 20, D).
+
+### E. Choosing a receipt fills the amount in
+
+"the customers receipts against invoices upon selection should automatically fetch the amount of that particular
+receipt upon selection (it isnt integrated)."
+
+Two places, one rule - the books already know the figure, so nobody should type it:
+
+- **On an invoice page**, each receipt in the *Match a receipt* list now carries `data-left` (what that receipt
+  still has unapplied). Choose one and the Amount box fills with **the smaller of that and what the invoice still
+  owes**, with a sentence saying which one won and why ("CPV/2026/0001 has 900.00 still unapplied, so that is the
+  most it can settle here. The invoice keeps owing 354.00."). The box stays editable for a part settlement, and
+  its `max` is the receipt's own money so the browser refuses an impossible amount before the form is sent.
+- **On the receipt form**, typing the Amount shares it out over the customer's open invoices by itself, **oldest
+  invoice first**, up to what each still owes. A row he types into becomes his (`touchedRows`) and is left alone
+  from then on; choosing another customer starts the sharing out afresh.
+
+### Checks
+
+- `tests/test_statement_menu_and_suggestions.py` (14 checks): the statement has none of the four boxes while the
+  invoice print and the bill print keep all four; the receipt page prints from its menu and no longer has a second
+  button in the header; the invoice form's lines are a panel with its heading, its counter and its Add line button;
+  the receipt offered on an invoice page carries its unapplied money and the invoice its own debt, with the script
+  that fills the box; the receipt form has the auto-sharing hooks; and suggestions - a real invoice number and a
+  real customer offered on the invoice list, the voucher on the receipt list, no empty suggestion list on a module
+  with no history, and a suggestion never deciding the answer. Plus five no-database checks of `suggest()`
+  (blanks dropped, one customer offered once whatever the case, the limit kept, several questions combined).
+- Three earlier tests were updated where this round changed the page **deliberately**: the gear menu now opens with
+  Print (so the invoice menu's first item changed), a person with no permission is still offered Print because it
+  changes nothing, and the receipt page's button became the menu item.
+- Two search tests were re-pointed at the table rather than the whole page - the suggestion list now repeats every
+  invoice number the company has ever used, so a test that scanned the whole page would answer "all of them"
+  whatever the search. The same correction was made to the Cheques tab test.
+- Whole suite: **252 passed**, with only the vendor print case still failing that failed before this work
+  (`test_10_all_print_templates_and_routes`, "INVOICE LINES" vs "Invoice Lines").
+- Demo database: the statement of customer 2, receipt 5, invoice 2, a new invoice form, bill 22 and the invoice
+  list were all requested with a real login and read back for each of the five changes.
+
+### Known gaps
+
+- **The suggestion lists are drawn per page load**, capped at 60 values each. That is the whole of what has been
+  typed before, most recent first, not a search-as-you-type service - which is also why it needs no JavaScript.
+- **The auto-shared amounts are only a starting point.** Nothing is stored by the sharing out: the amounts are
+  posted with the receipt, and a receipt recorded through the form still matches by allocation rows (section 20, C).
+- **Printing still opens the browser's own dialog** rather than writing a server-side PDF; "Print / PDF" is the
+  browser's *Save as PDF*.

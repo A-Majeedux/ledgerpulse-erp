@@ -282,8 +282,20 @@ body.is-leaving .lp-content { opacity: 0; transform: translate3d(0, -6px, 0); tr
 .panel-head h2, .panel-head h3 { margin: 0; font-size: 15.5px; font-weight: 700; letter-spacing: -0.015em; }
 .panel-head p { margin: 3px 0 0; font-size: 12px; color: var(--lp-text-muted); }
 
-.lp-page-header { margin-bottom: 20px; }
-.lp-page-title { margin: 0; font-size: 24px; font-weight: 750; letter-spacing: -0.03em; color: var(--lp-text); }
+.lp-page-header {
+  display: flex; justify-content: space-between; align-items: flex-end;
+  gap: 16px; flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+/* The heading gives way before the buttons do, so a long voucher number or a
+   long customer name wraps instead of running under the Actions button. */
+.lp-page-heading { min-width: 0; flex: 1 1 320px; }
+.lp-page-header > .lp-page-actions,
+.lp-page-actions {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px; flex-wrap: wrap; flex: 0 0 auto; margin-left: auto;
+}
+.lp-page-title { margin: 0; font-size: 24px; font-weight: 750; letter-spacing: -0.03em; color: var(--lp-text); overflow-wrap: anywhere; }
 .lp-page-subtitle { margin: 6px 0 0; color: var(--lp-text-muted); font-size: 13.5px; }
 
 .lp-crumbs {
@@ -911,8 +923,9 @@ label { color: var(--lp-ink-2); }
 /* -- The gear menu on a transaction ------------------------------------- */
 /* A <details> element: the browser opens and closes it, no JavaScript. The
    panel sits under the button and over the page. */
-.lp-docmenu { position: relative; display: inline-block; }
-.lp-docmenu > summary { list-style: none; cursor: pointer; user-select: none; }
+.lp-docmenu { position: relative; display: inline-block; flex: none; }
+.lp-docmenu > summary { list-style: none; cursor: pointer; user-select: none; white-space: nowrap; }
+.lp-docmenu-text { white-space: nowrap; }
 .lp-docmenu > summary::-webkit-details-marker { display: none; }
 .lp-docmenu > summary .chev { transition: transform .18s var(--lp-ease); opacity: .6; }
 .lp-docmenu[open] > summary .chev { transform: rotate(180deg); }
@@ -1018,4 +1031,69 @@ label { color: var(--lp-ink-2); }
   font-size: 12.5px;
   color: var(--lp-text-muted);
   margin: -6px 0 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   The invoice lines panel (templates/sales/new_sales_invoice.html)
+   The part of an invoice that gets typed the most: its own heading, a tinted
+   header row, airy rows and a heavier total, so the eye lands on it first.
+   --------------------------------------------------------------------------- */
+.lines-panel {
+  background: var(--lp-surface, #fff);
+  border: 1px solid var(--lp-border);
+  border-radius: 14px;
+  padding: 14px 16px 12px;
+  margin-bottom: 18px;
+  box-shadow: var(--lp-shadow-1, 0 1px 2px rgba(16, 38, 48, .06));
+}
+.lines-panel-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 14px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.lines-panel-title { margin: 0; font-size: 16px; font-weight: 750; letter-spacing: -0.01em; color: var(--lp-text); }
+.lines-panel-note { margin: 3px 0 0; font-size: 12.5px; color: var(--lp-text-muted); }
+.lines-panel-count {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--lp-accent-600, #0B6B4F);
+  background: rgba(127, 209, 185, .18);
+  border: 1px solid rgba(127, 209, 185, .45);
+  border-radius: 999px; padding: 5px 12px; white-space: nowrap;
+}
+.lines-panel .lines-wrapper {
+  border: 1px solid var(--lp-hairline, var(--lp-border));
+  border-radius: 10px;
+  overflow: auto;
+}
+.lines-panel .lines-table thead th {
+  background: #EEF6F8;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--lp-ink-2, #23505F);
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--lp-border);
+}
+.lines-panel .lines-table tbody tr:nth-child(even) { background: #FBFDFE; }
+.lines-panel .lines-table tbody tr:hover { background: rgba(127, 209, 185, .10); }
+.lines-panel .lines-table td { padding: 7px 8px; }
+.lines-panel .lines-table td.col-total,
+.lines-panel .lines-table td.col-qty,
+.lines-panel .lines-table td.col-rate { font-variant-numeric: tabular-nums; font-weight: 650; }
+.lines-panel .lines-table input:focus,
+.lines-panel .lines-table select:focus {
+  outline: 2px solid var(--lp-accent, #2F9E86); outline-offset: 1px; border-radius: 6px;
+}
+.lines-panel-foot {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-top: 10px;
+}
+.lines-panel-hint { font-size: 12px; color: var(--lp-text-muted); }
+
+/* the total stands on its own, right under the lines it adds up */
+.invoice-foot { justify-content: flex-end; }
+.invoice-summary {
+  min-width: 300px;
+  border: 1px solid var(--lp-border);
+  background: linear-gradient(180deg, #FBFDFE 0%, #F2F8F9 100%);
+  box-shadow: 0 6px 18px rgba(16, 38, 48, .08);
 }

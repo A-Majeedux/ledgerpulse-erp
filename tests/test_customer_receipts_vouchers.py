@@ -209,8 +209,11 @@ class ReceiptScreenTests(_OneCompanyPerTest):
         self.save_receipt(payment_method="Cheque", cheque_no="1", cheque_date="2026-11-15")
         self.save_receipt(payment_method="Cash")
         cheques = self.client.get("/customers/receipts?tab=cheques").get_data(as_text=True)
-        self.assertIn("CPV/2026/00001", cheques)
-        self.assertNotIn("CPV/2026/00002", cheques)
+        # only the table is read: the search bar's suggestion list carries every
+        # voucher number the company has, cheque or not
+        table = cheques[cheques.find("lp-card"):] if "lp-card" in cheques else cheques
+        self.assertIn("CPV/2026/00001", table)
+        self.assertNotIn("CPV/2026/00002", table)
         self.assertIn("Cheques", cheques)
 
     def test_another_company_cannot_open_this_receipt(self):

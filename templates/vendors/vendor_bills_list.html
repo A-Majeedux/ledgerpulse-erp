@@ -7,7 +7,7 @@
   <h2 style="margin:0;">Vendor Bills</h2>
   <a href="{{ url_for('vendors.new_vendor_bill') }}" class="lp-btn primary"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Vendor Bill</a>
 </div>
-{{ search_bar(url_for('vendors.vendor_bills_list'), search, statuses=['Draft', 'Posted'], accounts=accounts, note='Bill number, vendor, reference or line label…') }}
+{{ search_bar(url_for('vendors.vendor_bills_list'), search, statuses=['Draft', 'Posted'], accounts=accounts, note='Bill number, vendor, reference or line label…', suggestions=suggestions) }}
 
 <div class="lp-card">
   <table class="lp-table">

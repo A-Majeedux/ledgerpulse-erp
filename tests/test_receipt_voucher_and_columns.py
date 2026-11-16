@@ -238,7 +238,8 @@ class ReceiptVoucherTests(_OneCompany):
     def test_the_receipt_page_and_the_list_lead_to_the_voucher(self):
         receipt_id = self.make_receipt()
         detail = self.client.get(f"/customers/receipts/{receipt_id}").get_data(as_text=True)
-        self.assertIn("Print voucher", detail)
+        # the voucher is printed from the page's gear menu now, not a button
+        self.assertIn("Print / PDF voucher", detail)
         self.assertIn(f"/customers/receipts/{receipt_id}/print", detail)
         listing = self.client.get("/customers/receipts").get_data(as_text=True)
         self.assertIn(f"/customers/receipts/{receipt_id}/print", listing)

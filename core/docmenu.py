@@ -44,6 +44,8 @@ def _may(user_id, organization_id, permission):
 # ---------------------------------------------------------------------------
 ACTIONS = {
     "sales_invoice": [
+        {"key": "print", "label": "Print / PDF invoice", "icon": "i-print",
+         "url": "/sales/invoices/{id}/print", "post": False},
         {"key": "duplicate", "label": "Duplicate as a new draft", "icon": "i-refresh",
          "url": "/sales/invoices/{id}/duplicate", "post": True, "permission": "sales.create"},
         {"key": "delete", "label": "Delete this draft", "icon": "i-trash",
@@ -53,6 +55,10 @@ ACTIONS = {
          "blocked_note": "A posted invoice cannot be deleted - the books already carry it."},
     ],
     "customer_receipt": [
+        # Printing is not a change to the document, so it asks for no permission
+        # beyond being able to see the page it is on.
+        {"key": "print", "label": "Print / PDF voucher", "icon": "i-print",
+         "url": "/customers/receipts/{id}/print", "post": False},
         {"key": "duplicate", "label": "Copy to a new receipt", "icon": "i-refresh",
          "url": "/customers/receipts/new?from={id}", "post": False, "permission": "sales.create"},
         {"key": "delete", "label": "Delete this receipt", "icon": "i-trash",
@@ -73,6 +79,8 @@ ACTIONS = {
          "blocked_note": "A posted entry cannot be deleted - post a reversing entry instead."},
     ],
     "vendor_bill": [
+        {"key": "print", "label": "Print / PDF bill", "icon": "i-print",
+         "url": "/vendors/bills/{id}/print", "post": False},
         {"key": "duplicate", "label": "Duplicate as a new draft", "icon": "i-refresh",
          "url": "/vendors/bills/{id}/duplicate", "post": True, "permission": "vendors.create"},
         {"key": "delete", "label": "Delete this draft", "icon": "i-trash",
@@ -82,6 +90,8 @@ ACTIONS = {
          "blocked_note": "A posted bill cannot be deleted - the books already carry it."},
     ],
     "vendor_payment": [
+        {"key": "print", "label": "Print / PDF voucher", "icon": "i-print",
+         "url": "/vendors/payments/{id}/print", "post": False},
         {"key": "delete", "label": "Delete this payment", "icon": "i-trash",
          "url": "/vendors/payments/{id}/delete", "post": True, "permission": "vendors.post",
          "tone": "danger", "blocked_by": "has_allocations",
