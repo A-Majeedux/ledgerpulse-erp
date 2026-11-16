@@ -197,6 +197,14 @@
           <a href="{{ url_for('auth.admin_return_to_zyro') }}" class="lp-btn sm">Return to the head office</a>
         </div>
       {% endif %}
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+          <div class="lp-flash{{ ' danger' if category == 'error' else '' }}" role="status">
+            <svg class="ico sm" aria-hidden="true"><use href="#{{ 'i-alert' if category == 'error' else 'i-check' }}"/></svg>
+            <span>{{ message }}</span>
+          </div>
+        {% endfor %}
+      {% endwith %}
       {% block content %}{% endblock %}
     </main>
   </div>

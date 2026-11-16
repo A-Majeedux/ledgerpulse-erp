@@ -1,0 +1,35 @@
+{#
+  The trail of documents that belong together, drawn under the page title:
+  the partner, the journal entry, the receipts that settled the invoice, the
+  invoice a receipt paid. Each chip is a link straight to that document, so
+  nobody has to go back to a list to find it.
+
+  A page passes a list of chips:
+
+    [{"icon": "i-journal", "label": "Journal entry", "meta": "ACC-JV-00012",
+      "url": url_for(...)}, ...]
+
+  A chip with no url is drawn as plain text (for something that is named but
+  has no screen of its own).
+#}
+{% macro trail(chips, heading=None) -%}
+  {% if chips %}
+  <nav class="lp-trail" aria-label="{{ heading or 'Related documents' }}">
+    {% for chip in chips %}
+      {% if chip.url %}
+        <a class="lp-trail-chip" href="{{ chip.url }}">
+          <svg class="ico sm" aria-hidden="true"><use href="#{{ chip.icon }}"/></svg>
+          <span>{{ chip.label }}</span>
+          {% if chip.meta %}<span class="meta">{{ chip.meta }}</span>{% endif %}
+        </a>
+      {% else %}
+        <span class="lp-trail-chip plain">
+          <svg class="ico sm" aria-hidden="true"><use href="#{{ chip.icon }}"/></svg>
+          <span>{{ chip.label }}</span>
+          {% if chip.meta %}<span class="meta">{{ chip.meta }}</span>{% endif %}
+        </span>
+      {% endif %}
+    {% endfor %}
+  </nav>
+  {% endif %}
+{%- endmacro %}

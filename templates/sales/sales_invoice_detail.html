@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_doc_actions.html" import doc_actions with context %}
+{% from "_trail.html" import trail as doc_trail with context %}
 {% block title %}{{ invoice[7] or 'Sales Invoice' }}{% endblock %}
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
@@ -30,8 +32,12 @@
         <button type="submit" class="lp-btn primary sm">Post Invoice</button>
       </form>
     {% endif %}
+    {{ doc_actions(menu) }}
   </div>
 </div>
+
+{# The documents that belong to this invoice, one click away. #}
+{{ doc_trail(trail) }}
 
 {% if over_limit %}
 <div class="alert alert-error" style="margin-bottom:16px;">
@@ -139,6 +145,62 @@
     </tbody>
   </table>
 </div>
+
+{# What has been matched to this invoice, and what still can be. Matching a
+   receipt to its invoice is the same act whether it is done here or on the
+   receipt screen: customers.services.apply_receipt_to_invoices writes one row
+   in customer_receipt_allocations and nothing is posted. #}
+<section class="lp-card" style="margin-top:16px;">
+  <h2 style="margin:0 0 10px; font-size:15px;">Receipts matched to this invoice</h2>
+  {% if receipts_applied %}
+    <table class="lp-table">
+      <thead><tr><th>Receipt</th><th>Date</th><th class="amount">Applied</th><th></th></tr></thead>
+      <tbody>
+        {% for receipt in receipts_applied %}
+        <tr>
+          <td style="font-weight:600;">{{ receipt.voucher_no or ('#' ~ receipt.id) }}</td>
+          <td>{{ receipt.date.strftime('%d %b %Y') if receipt.date else '—' }}</td>
+          <td class="amount">{{ active_currency|default('PKR') }} {{ "{:,.2f}".format(receipt.amount) }}</td>
+          <td style="text-align:right;">
+            <a class="lp-btn ghost sm" href="{{ url_for('customers.customer_receipt_detail', customer_receipt_id=receipt.id) }}">Open</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p style="margin:0; font-size:13px; color:var(--lp-text-muted);">
+      No receipt has been matched to this invoice yet.
+    </p>
+  {% endif %}
+
+  {% if unapplied_receipts and still_due > 0 %}
+  <form method="POST" action="{{ url_for('sales.apply_receipt_to_invoice', sales_invoice_id=invoice[0]) }}"
+        style="margin-top:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+    {{ csrf_field() }}
+    <div class="lp-form-group" style="margin:0; min-width:280px;">
+      <label class="form-label">Match a receipt of {{ invoice[1] }} to this invoice</label>
+      <select name="customer_receipt_id" class="form-select" required>
+        <option value="">Choose a receipt with money still unapplied…</option>
+        {% for receipt in unapplied_receipts %}
+          <option value="{{ receipt.id }}">
+            {{ receipt.voucher_no or ('#' ~ receipt.id) }} · {{ receipt.date.strftime('%d %b %Y') if receipt.date else '' }}
+            · unapplied {{ "{:,.2f}".format(receipt.left) }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="lp-form-group" style="margin:0; width:170px;">
+      <label class="form-label">Amount</label>
+      <input type="number" step="0.01" min="0.01" name="amount" class="form-control"
+             value="{{ '{:.2f}'.format(still_due) }}" required>
+    </div>
+    <button type="submit" class="lp-btn primary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Match it
+    </button>
+  </form>
+  {% endif %}
+</section>
 
 {% if invoice[5] %}
 <p style="margin-top:16px;">

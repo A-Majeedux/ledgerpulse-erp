@@ -2,6 +2,7 @@
 {% block title %}Journal Entries{% endblock %}
 {% block active_nav %}journals{% endblock %}
 {% block content %}
+{% from "_search.html" import search_bar with context %}
 <div class="lp-page-header">
   <div>
     <h1 class="lp-page-title">Journal Entries</h1>
@@ -9,6 +10,10 @@
   </div>
   <a href="{{ url_for('accounting.new_journal_entry') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Journal Entry</a>
 </div>
+
+{{ search_bar(url_for('accounting.journal_entries_list'), search,
+              statuses=['Draft', 'Posted'], accounts=accounts,
+              note='Reference, journal, line label or partner…') }}
 
 <div class="lp-table-wrapper">
   <table class="lp-table">

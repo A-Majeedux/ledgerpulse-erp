@@ -1,16 +1,20 @@
 from datetime import date
 from decimal import Decimal
-from flask import Blueprint, jsonify, render_template, request, redirect, url_for, abort
+from flask import Blueprint, jsonify, render_template, request, redirect, url_for, abort, flash
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
+from core.docmenu import build_menu
+from core.searchbar import read_search, search_filters, and_clauses, describe
+from auth.services import require_permission, current_user_id
 from accounting.services import create_journal_entry, UnbalancedEntryError
 from wht.routes import get_active_tax_rates
 from core.money import to_decimal, money_round
 from customers.services import (
+    format_amount,
     AGEING_BUCKETS, PROVINCE_OPTIONS, REGISTRATION_OPTIONS,
     account_statement, apply_receipt_to_invoices, bucket_totals, credit_status,
     customer_ageing, customer_open_invoices as open_invoices_for_customer,
-    open_invoices, receipt_allocations,
+    open_invoices, receipt_allocations, unmatch_receipt_from_invoice,
     CONTACT_TEXT_FIELDS, LIST_COLUMNS, NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS, TEXT_FIELDS,
     ValidationError, blank_contact_form, blank_form, clean_contact_form, clean_customer_form,
     clean_search, contact_form_as_typed, contact_form_from_contact, count_customers, create_contact,
@@ -524,17 +528,27 @@ def customer_receipts_list():
     # "Receipts" and "Cheques" are the same list, the second one only showing
     # the money that came in by cheque (the Cheques tab of his screen).
     tab = (request.args.get("tab") or "receipts").strip().lower()
+    # The search bar. A receipt has no draft/posted of its own - the money is in
+    # the books the moment it is saved - so the status box is not offered here.
+    search = read_search(request)
+    clauses, params = search_filters(
+        search,
+        text_columns=["cr.voucher_no", "cr.memo", "c.name", "cr.payment_type",
+                      "cr.payment_method", "cr.cheque_no", "cr.cheque_bank"],
+        date_column="cr.receipt_date",
+        partner_column="c.name",
+    )
     sql = """
         SELECT cr.customer_receipt_id, c.name, cr.amount, cr.receipt_date, cr.has_wht,
                cr.voucher_no, cr.payment_method, cr.payment_type, cr.cheque_no, cr.cheque_date
         FROM customer_receipts cr JOIN customers c ON c.customer_id = cr.customer_id
         WHERE cr.organization_id = %s
     """
-    params = [org_id]
     if tab == "cheques":
         sql += " AND cr.payment_method = 'Cheque'"
+    sql += and_clauses(clauses)
     sql += " ORDER BY cr.receipt_date DESC, cr.customer_receipt_id DESC"
-    cursor.execute(sql, tuple(params))
+    cursor.execute(sql, tuple([org_id] + params))
     receipts = cursor.fetchall()
     cursor.execute(
         "SELECT COUNT(*) FROM customer_receipts WHERE organization_id = %s AND payment_method = 'Cheque'",
@@ -542,11 +556,13 @@ def customer_receipts_list():
     cheque_count = cursor.fetchone()[0]
     cursor.close()
     conn.close()
+    search.description = describe(search)
     return render_template(
         "customers/customer_receipts_list.html",
         receipts=receipts,
         tab=tab,
         cheque_count=cheque_count,
+        search=search,
     )
 
 
@@ -705,6 +721,10 @@ def new_customer_receipt():
                 cheque_no, cheque_bank, cheque_date,
             ))
             customer_receipt_id = cursor.fetchone()[0]
+            # The journal entry now points back at the document that wrote it,
+            # so the entry's own page can offer a link to this receipt.
+            cursor.execute("UPDATE journal_headers SET source_id = %s WHERE journal_header_id = %s AND source_id IS NULL",
+                           (customer_receipt_id, journal_header_id))
             # The voucher number his screen shows - given here, and never
             # changed afterwards (customers/services.py).
             give_receipt_a_voucher_number(
@@ -742,14 +762,119 @@ def new_customer_receipt():
         conn.close()
         return redirect(url_for("customers.customer_receipt_detail", customer_receipt_id=customer_receipt_id))
 
+    # "Copy to a new receipt": the form is opened from an existing receipt, with
+    # the same customer, amount, method and account, dated today. Nothing is
+    # saved until it is saved deliberately, and no allocation is copied - the
+    # money of the old receipt is already matched where it was matched.
+    prefill = {}
+    source_id = request.args.get("from", type=int)
+    if source_id:
+        conn = get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("""
+                SELECT customer_id, amount, payment_type, payment_method, journal_name,
+                       deposit_to_account_id, memo, has_wht, wht_rate,
+                       cheque_no, cheque_bank, cheque_date
+                FROM customer_receipts
+                WHERE customer_receipt_id = %s AND organization_id = %s
+            """, (source_id, org_id))
+            row = cursor.fetchone()
+        finally:
+            cursor.close()
+            conn.close()
+        if row:
+            prefill = {
+                "customer_id": row[0], "amount": "{:.2f}".format(to_decimal(row[1] or 0)),
+                "payment_type": row[2], "payment_method": row[3], "journal_name": row[4],
+                "deposit_to_account_id": row[5], "memo": row[6], "has_wht": row[7],
+                "wht_rate": row[8], "cheque_no": row[9], "cheque_bank": row[10],
+                "cheque_date": row[11].isoformat() if row[11] else "",
+                "receipt_date": date.today().isoformat(),
+            }
+
     return render_template(
         "customers/new_customer_receipt.html",
         customers=_get_customers(org_id), accounts=_get_accounts(org_id),
         tax_rates=get_active_tax_rates(org_id),
         payment_types=PAYMENT_TYPE_OPTIONS, payment_methods=PAYMENT_METHOD_OPTIONS,
                 journals=_journal_names(org_id),
-        error=None, today=date.today().isoformat(),
+        error=None, today=date.today().isoformat(), prefill=prefill,
     )
+
+
+@bp.route("/receipts/<int:customer_receipt_id>/delete", methods=["POST"])
+@require_organization
+@require_permission("sales.post")
+def delete_customer_receipt(customer_receipt_id):
+    """Delete a receipt that has been matched to nothing.
+
+    A receipt is money received, so it enters the books the moment it is saved.
+    Deleting one takes its journal entry out again - which is why it is refused
+    once any of the money has been matched to an invoice: the invoice would keep
+    a payment that no longer exists. Unmatch it first (open the invoice and
+    delete the match there is not offered yet - the allocation has to be
+    removed), or keep the receipt and match it the other way.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT voucher_no, journal_header_id FROM customer_receipts "
+                       "WHERE customer_receipt_id = %s AND organization_id = %s",
+                       (customer_receipt_id, org_id))
+        row = cursor.fetchone()
+        if not row:
+            abort(404)
+        voucher_no, journal_header_id = row
+        cursor.execute("SELECT COUNT(*) FROM customer_receipt_allocations WHERE customer_receipt_id = %s",
+                       (customer_receipt_id,))
+        matched = cursor.fetchone()[0]
+        if matched:
+            conn.rollback()
+            flash(f"{voucher_no or 'That receipt'} is matched to an invoice, so it cannot be deleted. "
+                  f"Unmatch it first.", "error")
+            return redirect(url_for("customers.customer_receipt_detail",
+                                    customer_receipt_id=customer_receipt_id))
+        if journal_header_id:
+            cursor.execute("SELECT status FROM journal_headers WHERE journal_header_id = %s", (journal_header_id,))
+            header = cursor.fetchone()
+            if header and (header[0] or "").lower() != "draft" and not _can_delete_posted():
+                conn.rollback()
+                flash("That receipt's journal entry is posted. Ask an administrator to remove it.", "error")
+                return redirect(url_for("customers.customer_receipt_detail",
+                                        customer_receipt_id=customer_receipt_id))
+            cursor.execute("UPDATE customer_receipts SET journal_header_id = NULL "
+                           "WHERE customer_receipt_id = %s", (customer_receipt_id,))
+            cursor.execute("DELETE FROM journal_lines WHERE journal_header_id = %s", (journal_header_id,))
+            cursor.execute("DELETE FROM journal_headers WHERE journal_header_id = %s", (journal_header_id,))
+        cursor.execute("DELETE FROM customer_receipts WHERE customer_receipt_id = %s", (customer_receipt_id,))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    flash(f"{voucher_no or 'The receipt'} was deleted, and its journal entry with it.", "success")
+    return redirect(url_for("customers.customer_receipts_list"))
+
+
+def _can_delete_posted():
+    """May this person take a posted receipt out of the books? (Admin only.)"""
+    from auth.services import is_platform_admin
+    user_id = current_user_id()
+    if is_platform_admin():
+        return True
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT 1 FROM organization_memberships membership
+            JOIN roles role ON role.role_id = membership.role_id
+            WHERE membership.user_id = %s AND membership.organization_id = %s AND role.name = 'Admin'
+        """, (user_id, current_organization_id()))
+        return bool(cursor.fetchone())
+    finally:
+        cursor.close()
+        conn.close()
 
 
 @bp.route("/receipts/<int:customer_receipt_id>")
@@ -776,12 +901,57 @@ def customer_receipt_detail(customer_receipt_id):
     allocations = receipt_allocations(cursor, org_id, customer_receipt_id)
     unapplied = money_round(to_decimal(receipt[2] or 0)
                             - sum((row["amount"] for row in allocations), Decimal("0")))
+
+    # The trail: the customer, the entry this receipt wrote, and each invoice the
+    # money was matched to - every one of them a link, so a receipt can be read
+    # beside the documents it touches.
+    cursor.execute("SELECT customer_id FROM customer_receipts WHERE customer_receipt_id = %s",
+                   (customer_receipt_id,))
+    customer_id = cursor.fetchone()[0]
+    trail = [{"icon": "i-customers", "label": receipt[1], "meta": "Customer",
+              "url": url_for("customers.customer_view", customer_id=customer_id)},
+             {"icon": "i-ledger", "label": "Statement", "meta": "account",
+              "url": url_for("customers.customer_statement", customer_id=customer_id)}]
+    if receipt[9]:
+        trail.append({"icon": "i-journal", "label": "Journal entry", "meta": "#%s" % receipt[9],
+                      "url": url_for("accounting.journal_entry_detail", journal_header_id=receipt[9])})
+    for row in allocations:
+        trail.append({"icon": "i-invoice", "label": row["invoice_no"] or ("Invoice #%s" % row["invoice_id"]),
+                      "meta": "matched · {:,.2f}".format(to_decimal(row["amount"] or 0)),
+                      "url": url_for("sales.sales_invoice_detail", sales_invoice_id=row["invoice_id"])})
     cursor.close()
     conn.close()
     return render_template(
         "customers/customer_receipt_detail.html",
-        receipt=receipt, allocations=allocations, unapplied=unapplied,
+        receipt=receipt, allocations=allocations, unapplied=unapplied, trail=trail,
+        menu=build_menu("customer_receipt", customer_receipt_id, status="Posted",
+                        user_id=current_user_id(), organization_id=org_id,
+                        extra={"has_allocations": bool(allocations)}),
     )
+
+
+@bp.route("/receipts/<int:customer_receipt_id>/unmatch/<int:sales_invoice_id>", methods=["POST"])
+@require_organization
+@require_permission("sales.post")
+def unmatch_receipt_from_invoice_route(customer_receipt_id, sales_invoice_id):
+    """Take an invoice back off a receipt, from the receipt's own page."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        invoice_no, amount = unmatch_receipt_from_invoice(cursor, org_id, customer_receipt_id, sales_invoice_id)
+        conn.commit()
+    except ValueError as error:
+        conn.rollback()
+        flash(str(error), "error")
+    else:
+        flash(f"{invoice_no or 'That invoice'} is no longer matched to this receipt - "
+              f"{format_amount(amount)} is free again.", "success")
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for("customers.customer_receipt_detail",
+                            customer_receipt_id=customer_receipt_id))
 
 
 @bp.route("/<int:customer_id>/open-invoices")

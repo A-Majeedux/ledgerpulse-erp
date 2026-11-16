@@ -1,0 +1,91 @@
+{# ---------------------------------------------------------------------------
+   The search bar, one on every list.
+
+     {% from "_search.html" import search_bar with context %}
+     {{ search_bar(url_for('sales.sales_invoices_list'), search,
+                   statuses=['Draft', 'Posted'],
+                   accounts=accounts,          # (id, label) pairs, for "expense head"
+                   note="Search by invoice number, customer or label") }}
+
+   The date reference and the month reference are two boxes over the same date,
+   so a month can be asked for by name ("September") or a range typed in.
+   Everything is submitted with GET, so a search is a link that can be shared.
+   --------------------------------------------------------------------------- #}
+{% macro search_bar(action, search, statuses=None, accounts=None, note=None, partners=None) %}
+{% set values = search.as_dict() if search and search.as_dict else {} %}
+<form method="GET" action="{{ action }}" class="lp-search" role="search">
+  <div class="lp-search-main">
+    <label class="lp-search-field grow">
+      <span class="lp-search-label">Search</span>
+      <input type="search" name="q" value="{{ values.get('q', '') }}"
+             placeholder="{{ note or 'Partner name, label, reference…' }}" autocomplete="off">
+    </label>
+
+    <label class="lp-search-field">
+      <span class="lp-search-label">Status</span>
+      <select name="status">
+        <option value="">Draft and posted</option>
+        {% for option in (statuses or ['Draft', 'Posted']) %}
+          <option value="{{ option }}"{% if values.get('status') == option %} selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+
+    <label class="lp-search-field">
+      <span class="lp-search-label">Month</span>
+      <input type="month" name="month" value="{{ values.get('month', '') }}">
+    </label>
+
+    <div class="lp-search-actions">
+      <button type="submit" class="lp-btn primary">Search</button>
+      {% if search and search.active %}
+        <a class="lp-btn secondary" href="{{ action }}">Clear</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <details class="lp-search-more"{% if values.get('partner') or values.get('date_from') or values.get('date_to') or values.get('account') %} open{% endif %}>
+    <summary>More filters{% if values.get('partner') or values.get('date_from') or values.get('date_to') or values.get('account') %} · in use{% endif %}</summary>
+    <div class="lp-search-grid">
+      <label class="lp-search-field">
+        <span class="lp-search-label">Partner</span>
+        {% if partners %}
+          <select name="partner">
+            <option value="">Any partner</option>
+            {% for name in partners %}
+              <option value="{{ name }}"{% if values.get('partner') == name %} selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        {% else %}
+          <input type="text" name="partner" value="{{ values.get('partner', '') }}" placeholder="Customer or vendor name">
+        {% endif %}
+      </label>
+
+      {% if accounts %}
+        <label class="lp-search-field">
+          <span class="lp-search-label">Expense head</span>
+          <select name="account">
+            <option value="">Any account</option>
+            {% for account in accounts %}
+              <option value="{{ account[0] }}"{% if values.get('account')|string == account[0]|string %} selected{% endif %}>{{ account[1] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      {% endif %}
+
+      <label class="lp-search-field">
+        <span class="lp-search-label">Date from</span>
+        <input type="date" name="date_from" value="{{ values.get('date_from', '') }}">
+      </label>
+
+      <label class="lp-search-field">
+        <span class="lp-search-label">Date to</span>
+        <input type="date" name="date_to" value="{{ values.get('date_to', '') }}">
+      </label>
+    </div>
+  </details>
+</form>
+{% if search and search.description %}
+  <p class="lp-search-note">{{ search.description }}</p>
+{% endif %}
+{% endmacro %}

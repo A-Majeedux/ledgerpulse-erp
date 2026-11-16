@@ -1,13 +1,16 @@
 from datetime import date, timedelta
 from decimal import Decimal
-from flask import Blueprint, render_template, request, redirect, url_for, abort
+from flask import Blueprint, render_template, request, redirect, url_for, abort, flash
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
+from core.docmenu import build_menu
+from core.searchbar import read_search, search_filters, and_clauses, describe
+from auth.services import require_permission, current_user_id
 from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
 from sales.schema import UOM_CHOICES
-from sales.services import clean_date, give_invoice_a_number
+from sales.services import clean_date, delete_draft_invoice, duplicate_invoice, give_invoice_a_number
 from core.money import to_decimal, money_round
-from customers.services import credit_status
+from customers.services import credit_status, format_amount
 
 bp = Blueprint("sales", __name__, url_prefix="/sales")
 
@@ -357,6 +360,21 @@ def sales_invoices_list():
     org_id = current_organization_id()
     conn = get_conn()
     cursor = conn.cursor()
+    # The search bar: a number, a customer, a label on a line, the letter of
+    # credit reference, a status, a month, or a range of dates.
+    search = read_search(request)
+    clauses, params = search_filters(
+        search,
+        text_columns=["si.invoice_no", "si.lc_reference", "c.name", "sil.label"],
+        status_column="si.status",
+        date_column="si.invoice_date",
+        partner_column="c.name",
+        account_column="sil.account_id",
+    )
+    # Accounts are needed twice: to filter by expense head, and to name the head
+    # the list is filtered to in the sentence under the bar.
+    accounts = _filter_accounts(cursor, org_id)
+    search.description = describe(search, accounts)
     cursor.execute("""
         SELECT si.sales_invoice_id, c.name, si.invoice_date, si.due_date, si.status,
                COALESCE(SUM(sil.total), 0) AS total, si.invoice_no, si.lc_reference,
@@ -365,13 +383,15 @@ def sales_invoices_list():
         JOIN customers c ON c.customer_id = si.customer_id
         LEFT JOIN sales_invoice_lines sil ON sil.sales_invoice_id = si.sales_invoice_id
         WHERE si.organization_id = %s
+    """ + and_clauses(clauses) + """
         GROUP BY si.sales_invoice_id, c.name, si.invoice_no, si.lc_reference, si.paid_amount
         ORDER BY si.invoice_date DESC, si.sales_invoice_id DESC
-    """, (org_id,))
+    """, [org_id] + params)
     invoices = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template("sales/sales_invoices_list.html", invoices=invoices)
+    return render_template("sales/sales_invoices_list.html", invoices=invoices,
+                           search=search, accounts=accounts)
 
 
 @bp.route("/invoices/new", methods=["GET", "POST"])
@@ -602,6 +622,34 @@ def new_sales_invoice():
     )
 
 
+def _invoice_trail(org_id, customer_name, customer_id, journal_header_id, invoice_no, receipts_applied):
+    """The chips under an invoice's title: who it is for, its journal entry, and
+    every receipt that has been matched to it."""
+    chips = [{"icon": "i-customers", "label": customer_name, "meta": "Customer",
+              "url": url_for("customers.customer_view", customer_id=customer_id)},
+             {"icon": "i-ledger", "label": "Statement", "meta": "account",
+              "url": url_for("customers.customer_statement", customer_id=customer_id)}]
+    if journal_header_id:
+        chips.append({"icon": "i-journal", "label": "Journal entry", "meta": "#%s" % journal_header_id,
+                      "url": url_for("accounting.journal_entry_detail",
+                                     journal_header_id=journal_header_id)})
+    for receipt in receipts_applied:
+        chips.append({"icon": "i-receipt", "label": receipt["voucher_no"] or ("Receipt #%s" % receipt["id"]),
+                      "meta": "receipt · {:,.2f}".format(to_decimal(receipt["amount"] or 0)),
+                      "url": url_for("customers.customer_receipt_detail",
+                                     customer_receipt_id=receipt["id"])})
+    return chips
+
+
+def _filter_accounts(cursor, org_id):
+    """The accounts a list may be filtered to: (id, 'code · name')."""
+    cursor.execute("""
+        SELECT account_id, code || ' · ' || name FROM chart_of_accounts
+        WHERE organization_id = %s AND is_active = TRUE ORDER BY code
+    """, (org_id,))
+    return cursor.fetchall()
+
+
 @bp.route("/invoices/<int:sales_invoice_id>")
 @require_organization
 def sales_invoice_detail(sales_invoice_id):
@@ -653,17 +701,47 @@ def sales_invoice_detail(sales_invoice_id):
     # On a draft, what the credit limit says about it - the page then offers the
     # "save anyway" tick instead of a Post button that quietly does nothing.
     credit = None
-    if invoice[4] != "Posted":
-        conn = get_conn()
-        cursor = conn.cursor()
-        try:
-            cursor.execute("SELECT customer_id FROM sales_invoices WHERE sales_invoice_id = %s AND organization_id = %s",
-                           (sales_invoice_id, org_id))
-            customer_id = cursor.fetchone()[0]
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT customer_id, invoice_no, journal_header_id FROM sales_invoices "
+                       "WHERE sales_invoice_id = %s AND organization_id = %s", (sales_invoice_id, org_id))
+        customer_id, invoice_no, journal_header_id = cursor.fetchone()
+        if invoice[4] != "Posted":
             credit = credit_status(cursor, org_id, customer_id, extra=grand_total)
-        finally:
-            cursor.close()
-            conn.close()
+
+        # The money already matched to this invoice, each one a link to the
+        # receipt itself - so "which receipt paid this?" is one click, not a
+        # walk through a list.
+        cursor.execute("""
+            SELECT receipt.customer_receipt_id, receipt.voucher_no, receipt.receipt_date,
+                   allocation.allocated_amount
+            FROM customer_receipt_allocations allocation
+            JOIN customer_receipts receipt ON receipt.customer_receipt_id = allocation.customer_receipt_id
+            WHERE allocation.sales_invoice_id = %s
+            ORDER BY receipt.receipt_date, receipt.customer_receipt_id
+        """, (sales_invoice_id,))
+        receipts_applied = [{"id": row[0], "voucher_no": row[1], "date": row[2], "amount": row[3]}
+                            for row in cursor.fetchall()]
+
+        # And the receipts of this customer that still have money unapplied, so
+        # one of them can be matched to this invoice from here.
+        cursor.execute("""
+            SELECT receipt.customer_receipt_id, receipt.voucher_no, receipt.receipt_date, receipt.amount,
+                   COALESCE((SELECT SUM(a.allocated_amount) FROM customer_receipt_allocations a
+                             WHERE a.customer_receipt_id = receipt.customer_receipt_id), 0) AS applied
+            FROM customer_receipts receipt
+            WHERE receipt.organization_id = %s AND receipt.customer_id = %s
+            ORDER BY receipt.receipt_date, receipt.customer_receipt_id
+        """, (org_id, customer_id))
+        unapplied_receipts = []
+        for row in cursor.fetchall():
+            left = money_round(to_decimal(row[3] or 0) - to_decimal(row[4] or 0))
+            if left > 0:
+                unapplied_receipts.append({"id": row[0], "voucher_no": row[1], "date": row[2], "left": left})
+    finally:
+        cursor.close()
+        conn.close()
 
     return render_template(
         "sales/sales_invoice_detail.html",
@@ -678,7 +756,114 @@ def sales_invoice_detail(sales_invoice_id):
         credit=credit,
         over_limit=(credit["over"] if credit else False),
         refused_over_limit=bool(request.args.get("over_limit")),
+        receipts_applied=receipts_applied,
+        unapplied_receipts=unapplied_receipts,
+        menu=build_menu("sales_invoice", sales_invoice_id, status=invoice[4],
+                        user_id=current_user_id(), organization_id=org_id),
+        trail=_invoice_trail(org_id, invoice[1], customer_id, journal_header_id, invoice_no, receipts_applied),
     )
+
+
+@bp.route("/invoices/<int:sales_invoice_id>/apply-receipt", methods=["POST"])
+@require_organization
+@require_permission("sales.create")
+def apply_receipt_to_invoice(sales_invoice_id):
+    """Match an existing receipt of this customer to this invoice.
+
+    The same check the receipt screen makes runs here (customers.services), so
+    an amount bigger than the invoice still owes, or bigger than the receipt has
+    left, is refused with the reason instead of saved.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT customer_id, status FROM sales_invoices "
+                       "WHERE sales_invoice_id = %s AND organization_id = %s", (sales_invoice_id, org_id))
+        row = cursor.fetchone()
+        if not row:
+            abort(404)
+        customer_id, status = row
+        if (status or "").lower() != "posted":
+            flash("A draft invoice cannot take money yet - post it first.", "error")
+            return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+        try:
+            receipt_id = int(request.form.get("customer_receipt_id") or 0)
+            amount = to_decimal(request.form.get("amount") or 0)
+        except (TypeError, ValueError):
+            flash("Choose a receipt and type an amount.", "error")
+            return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+        if not receipt_id or amount <= 0:
+            flash("Choose a receipt and type an amount bigger than zero.", "error")
+            return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+
+        cursor.execute("SELECT customer_id, amount, voucher_no FROM customer_receipts "
+                       "WHERE customer_receipt_id = %s AND organization_id = %s", (receipt_id, org_id))
+        receipt = cursor.fetchone()
+        if not receipt:
+            abort(404)
+        if int(receipt[0]) != int(customer_id):
+            flash("That receipt belongs to another customer.", "error")
+            return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+
+        from customers.services import apply_receipt_to_invoices
+        try:
+            apply_receipt_to_invoices(cursor, org_id, receipt_id, customer_id, receipt[1],
+                                      [(sales_invoice_id, amount)])
+        except ValueError as error:
+            conn.rollback()
+            flash(str(error), "error")
+            return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+        conn.commit()
+        flash(f"{format_amount(amount)} of {(receipt[2] or 'the receipt')} is now matched to this invoice.", "success")
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+
+
+@bp.route("/invoices/<int:sales_invoice_id>/duplicate", methods=["POST"])
+@require_organization
+@require_permission("sales.create")
+def duplicate_sales_invoice(sales_invoice_id):
+    """Copy an invoice into a new draft (the gear menu on the invoice page)."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        new_id, new_number = duplicate_invoice(cursor, org_id, sales_invoice_id)
+    except ValueError as error:
+        conn.rollback()
+        abort(400, description=str(error))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    flash(f"{new_number} is a copy of the invoice, saved as a draft. Change what you need, then post it.",
+          "success")
+    return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=new_id))
+
+
+@bp.route("/invoices/<int:sales_invoice_id>/delete", methods=["POST"])
+@require_organization
+@require_permission("sales.create")
+def delete_sales_invoice(sales_invoice_id):
+    """Delete a DRAFT invoice. A posted one is refused with the reason."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        number = delete_draft_invoice(cursor, org_id, sales_invoice_id)
+    except ValueError as error:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        flash(str(error), "error")
+        return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    flash(f"{number or 'The draft invoice'} was deleted.", "success")
+    return redirect(url_for("sales.sales_invoices_list"))
 
 
 @bp.route("/invoices/<int:sales_invoice_id>/post", methods=["POST"])

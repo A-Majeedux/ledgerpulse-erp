@@ -131,3 +131,54 @@ def post_journal_entry(cursor, journal_header_id):
         SET status = 'Posted', posted_at = %s
         WHERE journal_header_id = %s
     """, (datetime.now(timezone.utc), journal_header_id))
+
+
+# ---------------------------------------------------------------------------
+# Duplicating and deleting a journal entry (the gear menu on its own page)
+#
+# A duplicate is a new DRAFT with the same accounts, partners, labels and money.
+# Only a draft may be deleted; a posted entry is in the books, and a mistake in
+# it is corrected by a reversing entry, never by removing it.
+# ---------------------------------------------------------------------------
+def duplicate_journal_entry(cursor, organization_id, journal_header_id):
+    """Copy an entry into a new draft. Returns the new journal_header_id."""
+    cursor.execute("""
+        SELECT reference, accounting_date, journal_name
+        FROM journal_headers WHERE journal_header_id = %s AND organization_id = %s
+    """, (journal_header_id, organization_id))
+    source = cursor.fetchone()
+    if not source:
+        raise ValueError("That journal entry is not one of this company's.")
+    reference, accounting_date, journal_name = source
+
+    cursor.execute("""
+        SELECT account_id, partner_name, label, debit, credit
+        FROM journal_lines WHERE journal_header_id = %s ORDER BY line_order, journal_line_id
+    """, (journal_header_id,))
+    lines = [{"account_id": row[0], "partner_name": row[1], "label": row[2],
+              "debit": row[3], "credit": row[4]} for row in cursor.fetchall()]
+    if not lines:
+        raise ValueError("That entry has no lines to copy.")
+    return create_journal_entry(
+        cursor, organization_id=organization_id, reference=reference,
+        accounting_date=accounting_date, journal_name=journal_name,
+        lines=lines, source_type="Manual", auto_post=False)
+
+
+def delete_draft_journal_entry(cursor, organization_id, journal_header_id):
+    """Delete a DRAFT entry. Returns its reference, for the message."""
+    cursor.execute("SELECT reference, status, source_type FROM journal_headers "
+                   "WHERE journal_header_id = %s AND organization_id = %s",
+                   (journal_header_id, organization_id))
+    row = cursor.fetchone()
+    if not row:
+        raise ValueError("That journal entry is not one of this company's.")
+    reference, status, source_type = row
+    if (status or "").lower() != "draft":
+        raise ValueError("A posted entry cannot be deleted - post a reversing entry instead.")
+    if source_type and source_type not in ("Manual", "BankTransfer"):
+        raise ValueError(f"This entry belongs to a {source_type} - delete that document instead, "
+                         f"so the two cannot drift apart.")
+    cursor.execute("DELETE FROM journal_lines WHERE journal_header_id = %s", (journal_header_id,))
+    cursor.execute("DELETE FROM journal_headers WHERE journal_header_id = %s", (journal_header_id,))
+    return reference

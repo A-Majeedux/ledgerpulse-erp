@@ -24,6 +24,10 @@ from wht.routes import get_active_tax_rates
 from core.money import to_decimal, money_round
 from vendors.landed_cost import (BASIS_LABELS, landed_unit_cost_by_product, normalise_basis,
                                  split_landed_cost)
+from vendors.services import duplicate_vendor_bill
+from core.docmenu import build_menu
+from core.searchbar import read_search, search_filters, and_clauses, describe
+from auth.services import require_permission, current_user_id
 
 bp = Blueprint("vendors", __name__, url_prefix="/vendors")
 
@@ -500,35 +504,55 @@ def vendor_detail(vendor_id):
 @require_organization
 def vendor_bills_list():
     org_id = current_organization_id()
-    status_filter = request.args.get("status", "").strip()
-    search = request.args.get("q", "").strip()
-
     conn = get_conn()
     cursor = conn.cursor()
 
-    query = """
+    # The search bar (the same one as on every other list): the vendor's bill
+    # number, the vendor, the payment reference, a label on a bill line, the
+    # purchase account, a status, a month or a range of dates.
+    search = read_search(request)
+    clauses, params = search_filters(
+        search,
+        text_columns=["vb.bill_number", "v.name", "vb.payment_reference", "vb.lc_reference"],
+        status_column="vb.status",
+        date_column="vb.bill_date",
+        partner_column="v.name",
+    )
+    if search.q:
+        pattern = "%" + search.q + "%"
+        clauses.append("EXISTS (SELECT 1 FROM vendor_bill_lines qbl WHERE qbl.vendor_bill_id = vb.vendor_bill_id "
+                       "AND COALESCE(qbl.label, '') ILIKE %s)")
+        params.append(pattern)
+    if search.account:
+        clauses.append("EXISTS (SELECT 1 FROM vendor_bill_lines abl WHERE abl.vendor_bill_id = vb.vendor_bill_id "
+                       "AND abl.account_id::text = %s)")
+        params.append(search.account)
+    accounts = _filter_accounts(cursor, org_id)
+    search.description = describe(search, accounts)
+
+    cursor.execute("""
         SELECT vb.vendor_bill_id, v.name, vb.bill_date, vb.due_date, vb.status,
                COALESCE((SELECT SUM(vbl.total) FROM vendor_bill_lines vbl WHERE vbl.vendor_bill_id = vb.vendor_bill_id), 0) AS total,
                vb.bill_number
         FROM vendor_bills vb
         JOIN vendors v ON v.vendor_id = vb.vendor_id
         WHERE vb.organization_id = %s
-    """
-    params = [org_id]
-    if status_filter:
-        query += " AND vb.status = %s"
-        params.append(status_filter)
-    if search:
-        query += " AND (vb.bill_number ILIKE %s OR v.name ILIKE %s OR vb.payment_reference ILIKE %s)"
-        s_val = f"%{search}%"
-        params.extend([s_val, s_val, s_val])
-
-    query += " ORDER BY vb.bill_date DESC, vb.vendor_bill_id DESC"
-    cursor.execute(query, params)
+    """ + and_clauses(clauses) + """
+        ORDER BY vb.bill_date DESC, vb.vendor_bill_id DESC
+    """, [org_id] + params)
     bills = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template("vendors/vendor_bills_list.html", bills=bills, status_filter=status_filter, search=search)
+    return render_template("vendors/vendor_bills_list.html", bills=bills, search=search, accounts=accounts)
+
+
+def _filter_accounts(cursor, org_id):
+    """The accounts a list may be filtered to: (id, 'code · name')."""
+    cursor.execute("""
+        SELECT account_id, code || ' · ' || name FROM chart_of_accounts
+        WHERE organization_id = %s AND is_active = TRUE ORDER BY code
+    """, (org_id,))
+    return cursor.fetchall()
 
 
 @bp.route("/bills/new", methods=["GET", "POST"])
@@ -755,6 +779,8 @@ def vendor_bill_detail(vendor_bill_id):
         bill=bill, lines=lines, total=total, allocations=allocations,
         landed_rows=landed_rows, landed_summary=landed_summary,
         landed_basis_options=BASIS_LABELS,
+        menu=build_menu("vendor_bill", vendor_bill_id, status=bill[7],
+                        user_id=current_user_id(), organization_id=org_id),
     )
 
 
@@ -863,8 +889,30 @@ def _remember_landed_cost(cursor, org_id, vendor_bill_id):
                        (unit_cost, product_id, org_id))
 
 
+@bp.route("/bills/<int:vendor_bill_id>/duplicate", methods=["POST"])
+@require_organization
+@require_permission("vendors.create")
+def duplicate_vendor_bill_route(vendor_bill_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        new_id = duplicate_vendor_bill(cursor, org_id, vendor_bill_id)
+        conn.commit()
+    except ValueError as error:
+        conn.rollback()
+        abort(400, description=str(error))
+    finally:
+        cursor.close()
+        conn.close()
+    flash("A copy of the bill is saved as a draft. Give it the vendor's own bill number, then post it.",
+          "success")
+    return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=new_id))
+
+
 @bp.route("/bills/<int:vendor_bill_id>/delete", methods=["POST"])
 @require_organization
+@require_permission("vendors.create")
 def delete_vendor_bill(vendor_bill_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1099,17 +1147,28 @@ def vendor_payments_list():
     org_id = current_organization_id()
     conn = get_conn()
     cursor = conn.cursor()
+    search = read_search(request)
+    clauses, params = search_filters(
+        search,
+        text_columns=["vp.voucher_number", "vp.memo", "v.name", "vp.payment_method",
+                      "vp.cheque_number", "vp.lc_reference"],
+        status_column="vp.status",
+        date_column="vp.payment_date",
+        partner_column="v.name",
+    )
+    search.description = describe(search)
     cursor.execute("""
         SELECT vp.vendor_payment_id, v.name, vp.amount, vp.payment_date,
                vp.payment_method, vp.has_wht, vp.status, vp.voucher_number
         FROM vendor_payments vp JOIN vendors v ON v.vendor_id = vp.vendor_id
         WHERE vp.organization_id = %s
+    """ + and_clauses(clauses) + """
         ORDER BY vp.payment_date DESC, vp.vendor_payment_id DESC
-    """, (org_id,))
+    """, [org_id] + params)
     payments = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template("vendors/vendor_payments_list.html", payments=payments)
+    return render_template("vendors/vendor_payments_list.html", payments=payments, search=search)
 
 
 @bp.route("/payments/new", methods=["GET", "POST"])
@@ -1275,7 +1334,7 @@ def vendor_payment_detail(vendor_payment_id):
         SELECT vp.vendor_payment_id, vp.voucher_number, v.name, vp.amount, vp.payment_date, vp.memo,
                coa.name, vp.payment_method, vp.cheque_number, vp.cheque_date,
                vp.has_wht, vp.wht_rate, vp.wht_amount, vp.journal_header_id, vp.status,
-               vp.lc_reference, vp.vendor_bank_account
+               vp.lc_reference, vp.vendor_bank_account, vp.vendor_id
         FROM vendor_payments vp
         JOIN vendors v ON v.vendor_id = vp.vendor_id
         JOIN chart_of_accounts coa ON coa.account_id = vp.paid_from_account_id
@@ -1291,11 +1350,62 @@ def vendor_payment_detail(vendor_payment_id):
     """, (vendor_payment_id,))
     allocations = cursor.fetchall()
 
+    trail = []
+    if payment:
+        trail = [{"icon": "i-vendor", "label": payment[2], "meta": "Vendor",
+                  "url": url_for("vendors.vendor_detail", vendor_id=payment[17])}]
+        if payment[13]:
+            trail.append({"icon": "i-journal", "label": "Journal entry", "meta": "#%s" % payment[13],
+                          "url": url_for("accounting.journal_entry_detail",
+                                         journal_header_id=payment[13])})
+        for row in allocations:
+            trail.append({"icon": "i-bill", "label": row[1] or ("Bill #%s" % row[0]),
+                          "meta": "matched · {:,.2f}".format(to_decimal(row[3] or 0)),
+                          "url": url_for("vendors.vendor_bill_detail", vendor_bill_id=row[0])})
     cursor.close()
     conn.close()
     if not payment:
         abort(404)
-    return render_template("vendors/vendor_payment_detail.html", payment=payment, allocations=allocations)
+    return render_template("vendors/vendor_payment_detail.html", payment=payment, allocations=allocations,
+                           trail=trail,
+                           menu=build_menu("vendor_payment", vendor_payment_id, status=payment[14],
+                                           user_id=current_user_id(), organization_id=org_id,
+                                           extra={"has_allocations": bool(allocations)}))
+
+
+@bp.route("/payments/<int:vendor_payment_id>/delete", methods=["POST"])
+@require_organization
+@require_permission("vendors.post")
+def delete_vendor_payment(vendor_payment_id):
+    """Delete a payment that settles no bill (a payment matched to a bill keeps it)."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT voucher_number, journal_header_id FROM vendor_payments "
+                       "WHERE vendor_payment_id = %s AND organization_id = %s", (vendor_payment_id, org_id))
+        row = cursor.fetchone()
+        if not row:
+            abort(404)
+        voucher_number, journal_header_id = row
+        cursor.execute("SELECT COUNT(*) FROM vendor_payment_allocations WHERE vendor_payment_id = %s",
+                       (vendor_payment_id,))
+        if cursor.fetchone()[0]:
+            conn.rollback()
+            flash(f"{voucher_number or 'That payment'} is matched to a bill, so it cannot be deleted.", "error")
+            return redirect(url_for("vendors.vendor_payment_detail", vendor_payment_id=vendor_payment_id))
+        if journal_header_id:
+            cursor.execute("UPDATE vendor_payments SET journal_header_id = NULL WHERE vendor_payment_id = %s",
+                           (vendor_payment_id,))
+            cursor.execute("DELETE FROM journal_lines WHERE journal_header_id = %s", (journal_header_id,))
+            cursor.execute("DELETE FROM journal_headers WHERE journal_header_id = %s", (journal_header_id,))
+        cursor.execute("DELETE FROM vendor_payments WHERE vendor_payment_id = %s", (vendor_payment_id,))
+        conn.commit()
+    finally:
+        cursor.close()
+        conn.close()
+    flash(f"{voucher_number or 'The payment'} was deleted, and its journal entry with it.", "success")
+    return redirect(url_for("vendors.vendor_payments_list"))
 
 
 def render_journal_print(journal_header_id, back_url):

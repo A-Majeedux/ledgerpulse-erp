@@ -3,8 +3,12 @@ from datetime import date
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, jsonify
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
+from core.docmenu import build_menu
+from core.searchbar import read_search, search_filters, and_clauses, describe
+from auth.services import require_permission, current_user_id
 from accounting.schema import ACCOUNT_TYPES
-from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
+from accounting.services import (create_journal_entry, delete_draft_journal_entry,
+                               duplicate_journal_entry, post_journal_entry, UnbalancedEntryError)
 from accounting.intelligence import suggest_account_for_entry
 from core.money import to_decimal
 
@@ -72,6 +76,32 @@ def journal_entries_list():
     org_id = current_organization_id()
     conn = get_conn()
     cursor = conn.cursor()
+    # The search bar. Partner, label and expense head live on the entry's lines,
+    # so those facets are asked with an EXISTS over the lines rather than a join -
+    # a join would repeat the entry once per matching line.
+    search = read_search(request)
+    clauses, params = search_filters(
+        search,
+        text_columns=["jh.reference", "jh.journal_name"],
+        status_column="jh.status",
+        date_column="jh.accounting_date",
+    )
+    if search.partner:
+        clauses.append("EXISTS (SELECT 1 FROM journal_lines pl WHERE pl.journal_header_id = "
+                       "jh.journal_header_id AND COALESCE(pl.partner_name, '') ILIKE %s)")
+        params.append("%" + search.partner + "%")
+    if search.account:
+        clauses.append("EXISTS (SELECT 1 FROM journal_lines al WHERE al.journal_header_id = "
+                       "jh.journal_header_id AND al.account_id::text = %s)")
+        params.append(search.account)
+    if search.q:
+        pattern = "%" + search.q + "%"
+        clauses.append("EXISTS (SELECT 1 FROM journal_lines ql WHERE ql.journal_header_id = "
+                       "jh.journal_header_id AND (COALESCE(ql.label, '') ILIKE %s "
+                       "OR COALESCE(ql.partner_name, '') ILIKE %s))")
+        params.extend([pattern, pattern])
+    accounts = _filter_accounts(cursor, org_id)
+    search.description = describe(search, accounts)
     cursor.execute("""
         SELECT
             jh.journal_header_id, jh.reference, jh.accounting_date,
@@ -80,13 +110,24 @@ def journal_entries_list():
         FROM journal_headers jh
         LEFT JOIN journal_lines jl ON jl.journal_header_id = jh.journal_header_id
         WHERE jh.organization_id = %s
+    """ + and_clauses(clauses) + """
         GROUP BY jh.journal_header_id
         ORDER BY jh.accounting_date DESC, jh.journal_header_id DESC
-    """, (org_id,))
+    """, [org_id] + params)
     entries = cursor.fetchall()
     cursor.close()
     conn.close()
-    return render_template("accounting/journal_entries_list.html", entries=entries)
+    return render_template("accounting/journal_entries_list.html", entries=entries,
+                           search=search, accounts=accounts)
+
+
+def _filter_accounts(cursor, org_id):
+    """The accounts a list may be filtered to: (id, 'code · name')."""
+    cursor.execute("""
+        SELECT account_id, code || ' · ' || name FROM chart_of_accounts
+        WHERE organization_id = %s AND is_active = TRUE ORDER BY code
+    """, (org_id,))
+    return cursor.fetchall()
 
 
 @bp.route("/journal-entries/new", methods=["GET", "POST"])
@@ -161,7 +202,7 @@ def journal_entry_detail(journal_header_id):
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT journal_header_id, reference, accounting_date, journal_name, status
+        SELECT journal_header_id, reference, accounting_date, journal_name, status, source_type, source_id
         FROM journal_headers WHERE journal_header_id = %s AND organization_id = %s
     """, (journal_header_id, org_id))
     header = cursor.fetchone()
@@ -190,7 +231,83 @@ def journal_entry_detail(journal_header_id):
         lines=lines,
         total_debit=total_debit,
         total_credit=total_credit,
+        menu=build_menu("journal_entry", journal_header_id, status=header[4],
+                        user_id=current_user_id(), organization_id=org_id),
+        trail=_journal_trail(journal_header_id, header),
     )
+
+
+def _journal_trail(journal_header_id, header):
+    """Where this entry came from: the document that wrote it, if any.
+
+    A sales invoice, a receipt, a bill and a payment all record themselves on
+    their journal entry (source_type / source_id), so the entry can lead back to
+    the paper instead of making the reader hunt for it in a list.
+    """
+    source_type, source_id = (header[5] or "Manual"), header[6]
+    chips = []
+    if source_type == "SalesInvoice" and source_id:
+        chips.append({"icon": "i-invoice", "label": "Sales invoice", "meta": "the document behind this entry",
+                      "url": url_for("sales.sales_invoice_detail", sales_invoice_id=source_id)})
+    elif source_type == "CustomerReceipt" and source_id:
+        chips.append({"icon": "i-receipt", "label": "Customer receipt", "meta": "the document behind this entry",
+                      "url": url_for("customers.customer_receipt_detail", customer_receipt_id=source_id)})
+    elif source_type == "VendorBill" and source_id:
+        chips.append({"icon": "i-bill", "label": "Vendor bill", "meta": "the document behind this entry",
+                      "url": url_for("vendors.vendor_bill_detail", vendor_bill_id=source_id)})
+    elif source_type == "VendorPayment" and source_id:
+        chips.append({"icon": "i-payment", "label": "Vendor payment", "meta": "the document behind this entry",
+                      "url": url_for("vendors.vendor_payment_detail", vendor_payment_id=source_id)})
+    elif source_type == "VendorCreditNote" and source_id:
+        chips.append({"icon": "i-credit-note", "label": "Vendor credit note", "meta": "the document behind this entry",
+                      "url": url_for("vendors.vendor_credit_note_detail", vendor_credit_note_id=source_id)})
+    else:
+        chips.append({"icon": "i-journal", "label": "Written by hand", "meta": "no document behind it"})
+    chips.append({"icon": "i-accounts", "label": "Journal entries", "meta": "all of them",
+                  "url": url_for("accounting.journal_entries_list")})
+    return chips
+
+
+@bp.route("/journal-entries/<int:journal_header_id>/duplicate", methods=["POST"])
+@require_organization
+@require_permission("accounting.create")
+def duplicate_journal_entry_route(journal_header_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        new_id = duplicate_journal_entry(cursor, org_id, journal_header_id)
+        conn.commit()
+    except ValueError as error:
+        conn.rollback()
+        abort(400, description=str(error))
+    finally:
+        cursor.close()
+        conn.close()
+    flash("A copy of the entry is saved as a draft - change what you need, then post it.", "success")
+    return redirect(url_for("accounting.journal_entry_detail", journal_header_id=new_id))
+
+
+@bp.route("/journal-entries/<int:journal_header_id>/delete", methods=["POST"])
+@require_organization
+@require_permission("accounting.create")
+def delete_journal_entry_route(journal_header_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        reference = delete_draft_journal_entry(cursor, org_id, journal_header_id)
+        conn.commit()
+    except ValueError as error:
+        conn.rollback()
+        cursor.close()
+        conn.close()
+        flash(str(error), "error")
+        return redirect(url_for("accounting.journal_entry_detail", journal_header_id=journal_header_id))
+    cursor.close()
+    conn.close()
+    flash(f"{reference or 'The draft entry'} was deleted.", "success")
+    return redirect(url_for("accounting.journal_entries_list"))
 
 
 @bp.route("/journal-entries/<int:journal_header_id>/post", methods=["POST"])

@@ -1278,6 +1278,30 @@ def receipt_allocations(cursor, organization_id, customer_receipt_id):
     return rows
 
 
+def unmatch_receipt_from_invoice(cursor, organization_id, customer_receipt_id, sales_invoice_id):
+    """Take one invoice back off a receipt.
+
+    The allocation is the only record of the match, so removing it is all there
+    is to it - what an invoice has been paid is counted from the allocations
+    every time it is read (invoice_paid), never stored twice. Returns the invoice
+    number and the amount that was taken off, for the message on the page.
+    """
+    cursor.execute("""
+        SELECT allocation.allocation_id, allocation.allocated_amount, invoice.invoice_no
+        FROM customer_receipt_allocations allocation
+        JOIN sales_invoices invoice ON invoice.sales_invoice_id = allocation.sales_invoice_id
+        JOIN customer_receipts receipt ON receipt.customer_receipt_id = allocation.customer_receipt_id
+        WHERE allocation.customer_receipt_id = %s AND allocation.sales_invoice_id = %s
+          AND receipt.organization_id = %s
+    """, (customer_receipt_id, sales_invoice_id, organization_id))
+    row = cursor.fetchone()
+    if not row:
+        raise ValueError("That invoice is not matched to this receipt.")
+    allocation_id, amount, invoice_no = row
+    cursor.execute("DELETE FROM customer_receipt_allocations WHERE allocation_id = %s", (allocation_id,))
+    return invoice_no, money_round(amount or 0)
+
+
 def apply_receipt_to_invoices(cursor, organization_id, customer_receipt_id, customer_id,
                               receipt_amount, wanted):
     """Match a receipt to the invoices it settles.

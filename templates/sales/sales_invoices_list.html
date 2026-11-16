@@ -2,6 +2,7 @@
 {% block title %}Sales Invoices{% endblock %}
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
+{% from "_search.html" import search_bar with context %}
 <div class="lp-page-header">
   <div>
     <h1 class="lp-page-title">Sales Invoices</h1>
@@ -9,6 +10,10 @@
   </div>
   <a href="{{ url_for('sales.new_sales_invoice') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Invoice</a>
 </div>
+
+{{ search_bar(url_for('sales.sales_invoices_list'), search,
+              statuses=['Draft', 'Posted'], accounts=accounts,
+              note='Invoice number, customer, line label or reference…') }}
 
 <div class="lp-table-wrapper">
   <table class="lp-table">

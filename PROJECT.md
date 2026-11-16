@@ -153,6 +153,12 @@ Legend: ✅ works as far as reviewed · 🟡 exists but needs checking/fixing ·
   Customer Partner Ledger (see section 17)
 - 2026-11-15 — Round nine, the first three of the list: **LC + landed cost on purchases**, **receipts matched to
   invoices**, and the **Customer Aging Report** (0-30 / 31-60 / 61-90 / older) under Reports (see section 18)
+- 2026-11-15 — Round ten, the Customers module gone through end to end: the statement, the read-only page, one
+  definition of what is due, the credit limit warn / block / tell, the duplicate guard, tax and terms (see
+  section 19)
+- 2026-11-15 — Round eleven, "every transaction tells you where it came from": the **gear menu** on every
+  document (duplicate, delete, copy), the **trail** of related documents across the top of the page, receipts
+  **matched and un-matched** from either end, and a **search bar on every list** (see section 20)
 
 ## 13. The customer card (built 14 Nov 2026)
 
@@ -913,3 +919,145 @@ module above is proved. See the gaps below.
   still unpaid *now*, not the ones that were unpaid on that date - the allocations carry no history.
 - **The customer's `currency` is still display only.** The books stay in the company's currency, so a statement is
   in PKR whatever the card says.
+
+## 20. Every transaction tells you where it came from (built 15 Nov 2026)
+
+His four sentences, and what each one became:
+
+1. *"integrate a mini setting like icon on every transaction for duplicating trans, deleting or editing (User role
+   access based)"* → the **gear menu**.
+2. *"software also show related transactions on header ... there should be an option to move into that transaction
+   by clicking"*, and *"if user click on journal entry he has to go to customer invoices to check the invoice
+   against, simplify this procedure"* → the **trail**, working **both ways**.
+3. *"i dont find any customer receipts check to be selected against any invoice"* → receipts **matched to an
+   invoice**, and **un-matched** again, from either document.
+4. *"add a search bar in every module ... partner name, label, exp head, draft, posted, data reference, month
+   reference or can customize the search"* → **one search bar**, the same on every list.
+
+### A. The gear menu - `core/docmenu.py`, `templates/_doc_actions.html`
+
+One registry, `ACTIONS`, keyed by the kind of document: `sales_invoice`, `customer_receipt`, `journal_entry`,
+`vendor_bill`, `vendor_payment`. Each entry says what it is called, where it goes, whether it is a POST (a
+destructive action is never a link a browser can follow by accident), whether it asks first, its tone, and which
+permission it needs.
+
+`build_menu(kind, document_id, status=None, user_id=None, organization_id=None, extra=None)` returns the items
+with `allowed` true or false. The template draws the allowed ones as buttons in a `<details>` element (no
+JavaScript, so it works with the keyboard and on a phone) and the refused ones **greyed with the reason** rather
+than hidden - "A posted invoice cannot be deleted - the books already carry it."
+
+**Role access is enforced twice, on purpose.** The menu hides what the person may not do, and each route carries
+`@require_permission("sales.create")` (or `sales.post`, `vendors.create`, `accounting.create`) so that typing the
+URL by hand answers **403**. A hidden button is a courtesy; the decorator is the rule.
+
+There are no separate `edit` permission codes in the permissions table yet, so creating rights stand in for them;
+this is written down under the gaps rather than invented.
+
+### What each action does
+
+| Document | Duplicate | Delete |
+|---|---|---|
+| Sales invoice | `duplicate_invoice()` - a new **draft** invoice with its own number, the same customer and lines relabelled with the new number, and its own **draft** journal entry | `delete_draft_invoice()` - drafts only; the lines and the draft entry go with it |
+| Journal entry | `duplicate_journal_entry()` - a draft copy, same lines and wording | `delete_draft_journal_entry()` - drafts only, and only when it belongs to no invoice, bill or receipt |
+| Customer receipt | "Copy to a new receipt" - opens the receipt form filled with the same customer, amount, method and account, dated today, saving nothing | deleting is refused once any of the money is matched; a posted entry needs an Admin |
+| Vendor bill | `duplicate_vendor_bill()` - a draft copy of the lines and landed costs, **without the vendor's own bill number** (that number belongs to the paper he sent, and two bills cannot carry it) | the draft-only delete that was already there |
+
+Duplicating never copies a posted document's posting: the copy is a draft in every case, so nothing reaches the
+ledger until someone posts it on purpose.
+
+### B. The trail - `templates/_trail.html`
+
+A strip of chips under the page title. Each chip is a document: its icon, its name, a small note (its number, the
+amount applied), and a link. Chips without a link are information only, and are drawn dashed.
+
+On a **sales invoice**: the customer, his statement, the invoice's journal entry, and every receipt matched to it.
+On a **customer receipt**: the customer, his statement, the entry the receipt wrote, and each invoice the money
+was matched to.
+On a **journal entry**: the document that wrote it - "Sales invoice INV/2026/00007", "Customer receipt
+CPV/2026/0003", a bill, a payment, a credit note - found from `source_type` / `source_id`.
+
+That last one is his complaint answered: the entry page now carries the link back to the invoice, so there is no
+walk through the customer's file to find out what an entry is for. **Customer receipts had never written
+`source_id`**, so receipts made before today had no way back; new ones do, and the gap below says what is left.
+
+### C. Receipts matched to invoices, and un-matched
+
+- The invoice page lists **"Receipts matched to this invoice"** and offers **"Match a receipt of <customer> to
+  this invoice"**: a choice of that customer's receipts with money left, and an amount box pre-filled with what
+  is still due. `POST /sales/invoices/<id>/apply-receipt`.
+- The receipt page lists the invoices it settles, each a link, and a **Unmatch** button per row:
+  `POST /customers/receipts/<id>/unmatch/<invoice_id>`. The allocation row *is* the match - what an invoice has
+  been paid is counted from the allocations every time it is read - so removing it frees the money again, and
+  both documents show the new figure immediately.
+- Both ends refuse the same things: more than the invoice still owes ("Invoice INV/2026/00001 still owes 100.00,
+  so 400.00 cannot be applied to it"), more than the receipt carries, another customer's invoice, a draft invoice
+  (money cannot settle an invoice that is not posted), and a settled one.
+
+### D. The search bar - `core/searchbar.py`, `templates/_search.html`
+
+One macro, on **sales invoices, customer receipts (and the cheques tab), journal entries, vendor bills and
+vendor payments**. It submits with GET, so a search is a link and the boxes stay filled:
+
+- **Search** - free text over each module's own columns: invoice number, customer, line label, LC reference;
+  voucher number, memo, cheque number; entry reference and journal name - and for journal entries, the lines'
+  partner names and labels as well (`EXISTS` over `journal_lines`, so an entry is not repeated once per matching
+  line).
+- **Status** - Draft / Posted, as he asked. A receipt has neither, so the receipts list says so instead of
+  pretending.
+- **Month** - `2026-09`, matched with `TO_CHAR(date, 'YYYY-MM')`, and named back in English: "September 2026".
+- **More filters** - **Partner** (a name, or a list of the module's partners), **Expense head** (the company's
+  accounts, by code), and a **date range**. These are his "customize the search".
+- A sentence under the bar says what is being shown ("Showing entries matching "ACME", draft, in September 2026,
+  on 6100 · Freight Expense."), and a **Clear** button appears once anything is set.
+
+Nothing from the URL reaches the SQL. Every value is a bound parameter, the two status values are fixed strings,
+dates and months are checked to be real before they are used, the query is cut to 80 characters, and the column
+names come from the route, never from the address bar.
+
+### E. Also in this session
+
+- **Flash messages are drawn once, centrally**, in `templates/base.html` (`.lp-flash`). Before this, a page that
+  saved something had to draw its own banner; a redirect could not tell the person anything at all.
+- **Deleting a journal entry now unlinks the document that names it first.** `sales_invoices.journal_header_id`,
+  `customer_receipts.journal_header_id` and `vendor_payments.journal_header_id` are foreign keys at the database,
+  so the entry cannot go while the invoice still points at it - the tests caught this before the demo did.
+- The demo's `demo@zyro.local` had **no role** in the company, so every permission check answered "no" and its gear
+  menu was empty. It is an Admin now, and the tests say that a person with no permission is offered nothing.
+
+### Checks
+
+- `tests/test_document_actions.py` (18 checks): a draft invoices offers duplicate and delete, a posted one offers
+  duplicate only and greys the delete with its reason, a matched receipt greys its delete, a person with no
+  permission is offered nothing, an unknown kind offers nothing; then against a throwaway company - the menu and
+  the trail on the page, duplicating a posted invoice into a draft with its own number and its own draft entry,
+  deleting a draft and its lines and entry, a posted invoice surviving its own delete button with the reason on
+  the page, the copy-to-a-new-receipt form carrying the amount, an unmatched receipt deleting and a matched one
+  refusing, matching a receipt to an invoice from the invoice page (250.00 leaving a 1,000.00 invoice at 750.00
+  and appearing as a chip), an amount bigger than the invoice refused, a journal entry leading back to its
+  invoice, a draft entry duplicated and deleted while the invoice's own entry refuses, and a bill duplicated - its
+  line copied, the vendor's number not.
+- `tests/test_search_bar.py` (21 checks): what the bar reads and what it refuses (a bad status, a thirteenth
+  month, `13/09/2026`, a 500-character query); a quote and a `DROP TABLE` travelling as parameters and not as
+  SQL; draft and posted asked for by name; a month named back; the sentence under the bar; then against a
+  throwaway company - the bar present on all five lists, and a search by reference, by partner, by line label, by
+  status, by month, by date range and by expense head each narrowing the list to exactly the right invoices, an
+  empty result, a receipt found by its memo, and un-matching a receipt putting 300.00 back on the invoice.
+- Whole suite: **237 passed**, with only the vendor print case still failing that failed before this work
+  (`test_10_all_print_templates_and_routes`, "INVOICE LINES" vs "Invoice Lines").
+- Every list and every document page requested with a real login against the demo database: the five lists with
+  the bar and with each facet applied, invoice 30 (draft) and 2 (posted) with their menus, invoice 3 and 4 with
+  their receipt chips, receipt 5 with its unmatch buttons, journal entry 7 with its invoice chip, and the vendor
+  bill and payment pages.
+
+### Known gaps
+
+- **Receipts made before this round have no `source_id`** on their journal entry, so their entry page cannot link
+  back to the receipt. New receipts do. A backfill is a one-line `UPDATE` per company, kept out of this round
+  because it changes old rows.
+- **"Edit" is still the document's own screen.** The gear menu offers duplicate and delete; the pencil is the page
+  itself, which already opens in edit form for a draft. There is no separate edit URL to point a menu item at.
+- **Delete and edit permission codes** are borrowed from `sales.create` / `sales.post` / `vendors.create` /
+  `accounting.create`; the permissions table has no `delete` or `edit` yet.
+- **Vendor credit notes have no gear menu**, and **vendor bills have no trail** - the bill's page has its menu, but
+  the strip of related documents stops at invoices, receipts and entries.
+- **The search bar does not search goods or products**, and it does not remember a search between visits.

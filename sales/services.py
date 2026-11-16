@@ -29,7 +29,7 @@ Why it is done here and not in the page:
 The numbers are book numbers, not database IDs: sales_invoice_id stays what
 it always was, and nothing that already uses it is affected.
 """
-from datetime import date
+from datetime import date, timedelta
 
 import psycopg2
 
@@ -127,3 +127,136 @@ def clean_date(text):
         return date.fromisoformat(text)
     except ValueError:
         raise ValueError("Please give a real date.")
+
+
+# ---------------------------------------------------------------------------
+# Duplicating and deleting a sales invoice
+#
+# Both are the gear menu on the invoice's own page (core/docmenu.py). They live
+# here, not in the page, because they must leave the books exactly as they
+# found them:
+#
+#   * a duplicate is a NEW DRAFT. It gets its own number, its own lines and its
+#     own draft journal entry; the invoice it was copied from is not touched
+#     and nothing is posted, so the ledger does not change until someone posts
+#     the copy deliberately.
+#   * only a DRAFT can be deleted. A posted invoice is in the books, and taking
+#     a posted document out of the ledger is not a "delete" - it is a
+#     correction, and it has to be seen by the person who keeps the accounts.
+#     The menu says so instead of failing quietly.
+# ---------------------------------------------------------------------------
+def _due_date_for(cursor, organization_id, customer_id, invoice_date, source_due, source_date):
+    """The copy's due date: the customer's own terms, else the same gap as the source."""
+    cursor.execute("SELECT payment_terms_days FROM customers WHERE customer_id = %s AND organization_id = %s",
+                   (customer_id, organization_id))
+    row = cursor.fetchone()
+    days = row[0] if row else None
+    if days:
+        return invoice_date + timedelta(days=int(days))
+    if source_due and source_date:
+        return invoice_date + (source_due - source_date)
+    return None
+
+
+def duplicate_invoice(cursor, organization_id, sales_invoice_id, today=None):
+    """Copy an invoice into a new draft. Returns (new_id, new_number).
+
+    Raises ValueError when the invoice is not this company's.
+    """
+    today = today or date.today()
+    cursor.execute("""
+        SELECT customer_id, invoice_date, due_date, payment_terms, journal_name,
+               delivery_date, lc_reference
+        FROM sales_invoices
+        WHERE sales_invoice_id = %s AND organization_id = %s
+    """, (sales_invoice_id, organization_id))
+    source = cursor.fetchone()
+    if not source:
+        raise ValueError("That invoice is not one of this company's invoices.")
+    customer_id, source_date, source_due, payment_terms, journal_name, delivery_date, lc_reference = source
+    due_date = _due_date_for(cursor, organization_id, customer_id, today, source_due, source_date)
+
+    cursor.execute("""
+        INSERT INTO sales_invoices
+            (organization_id, customer_id, invoice_date, due_date, payment_terms,
+             journal_name, delivery_date, lc_reference, status)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'Draft')
+        RETURNING sales_invoice_id
+    """, (organization_id, customer_id, today, due_date, payment_terms,
+          journal_name, delivery_date, lc_reference))
+    new_id = cursor.fetchone()[0]
+
+    # The same lines, in the same order, with the same tax and discount.
+    cursor.execute("""
+        INSERT INTO sales_invoice_lines
+            (sales_invoice_id, product_id, label, account_id, unit, quantity, rate,
+             discount_percent, discount_amount, sales_tax_rate_id, tax_amount, total, line_order)
+        SELECT %s, product_id, label, account_id, unit, quantity, rate,
+               discount_percent, discount_amount, sales_tax_rate_id, tax_amount, total, line_order
+        FROM sales_invoice_lines
+        WHERE sales_invoice_id = %s
+        ORDER BY line_order
+    """, (new_id, sales_invoice_id))
+
+    new_number = give_invoice_a_number(cursor, organization_id, new_id, today)
+
+    # Its own draft journal entry, copied from the source's, so that posting the
+    # copy writes the same account lines the original would have.
+    cursor.execute("SELECT journal_header_id FROM sales_invoices WHERE sales_invoice_id = %s", (sales_invoice_id,))
+    source_header_id = (cursor.fetchone() or [None])[0]
+    if source_header_id:
+        cursor.execute("""
+            SELECT account_id, partner_name, label, debit, credit
+            FROM journal_lines WHERE journal_header_id = %s ORDER BY line_order, journal_line_id
+        """, (source_header_id,))
+        cursor.execute("SELECT name FROM customers WHERE customer_id = %s", (customer_id,))
+        customer_name = (cursor.fetchone() or [""])[0]
+        reference = f"Invoice {new_number} - {customer_name}"
+        # The same accounts and the same money. Any line that names the source
+        # invoice is relabelled with the copy's own number, so a report can never
+        # show the copy under the original's name.
+        lines = []
+        for account_id, partner_name, label, debit, credit in cursor.fetchall():
+            if label and label.startswith("Customer Invoice "):
+                label = reference
+            lines.append({"account_id": account_id, "partner_name": partner_name, "label": label,
+                          "debit": debit, "credit": credit})
+        from accounting.services import create_journal_entry
+        new_header_id = create_journal_entry(
+            cursor, organization_id=organization_id, reference=reference,
+            accounting_date=today, journal_name=journal_name or "Customer Invoices",
+            lines=lines, source_type="SalesInvoice", source_id=new_id, auto_post=False)
+        cursor.execute("UPDATE sales_invoices SET journal_header_id = %s WHERE sales_invoice_id = %s",
+                       (new_header_id, new_id))
+    return new_id, new_number
+
+
+def delete_draft_invoice(cursor, organization_id, sales_invoice_id):
+    """Delete a DRAFT invoice, its lines and its draft journal entry.
+
+    A posted invoice is refused (ValueError). Returns the number of the invoice
+    that was deleted, for the message on the list.
+    """
+    cursor.execute("SELECT invoice_no, status, journal_header_id FROM sales_invoices "
+                   "WHERE sales_invoice_id = %s AND organization_id = %s",
+                   (sales_invoice_id, organization_id))
+    row = cursor.fetchone()
+    if not row:
+        raise ValueError("That invoice is not one of this company's invoices.")
+    invoice_no, status, header_id = row
+    if (status or "").lower() != "draft":
+        raise ValueError(f"{invoice_no or 'That invoice'} is posted, so it cannot be deleted.")
+    if header_id:
+        cursor.execute("SELECT status FROM journal_headers WHERE journal_header_id = %s", (header_id,))
+        header = cursor.fetchone()
+        if header and (header[0] or "").lower() != "draft":
+            raise ValueError("Its journal entry is already posted, so the invoice cannot be deleted.")
+        # the invoice is unlinked first: it names the entry, and the entry cannot
+        # go while a document still points at it
+        cursor.execute("UPDATE sales_invoices SET journal_header_id = NULL WHERE sales_invoice_id = %s",
+                       (sales_invoice_id,))
+        cursor.execute("DELETE FROM journal_lines WHERE journal_header_id = %s", (header_id,))
+        cursor.execute("DELETE FROM journal_headers WHERE journal_header_id = %s", (header_id,))
+    cursor.execute("DELETE FROM sales_invoice_lines WHERE sales_invoice_id = %s", (sales_invoice_id,))
+    cursor.execute("DELETE FROM sales_invoices WHERE sales_invoice_id = %s", (sales_invoice_id,))
+    return invoice_no

@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_doc_actions.html" import doc_actions with context %}
+{% from "_trail.html" import trail as doc_trail with context %}
 {% block title %}Journal Entry{% endblock %}
 {% block active_nav %}journals{% endblock %}
 {% block content %}
@@ -17,8 +19,11 @@
         <button type="submit" class="lp-btn primary">Post</button>
       </form>
     {% endif %}
+    {{ doc_actions(menu) }}
   </div>
 </div>
+
+{{ doc_trail(trail) }}
 
 <div class="lp-card">
   <table class="lp-table">

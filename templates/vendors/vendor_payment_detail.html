@@ -1,4 +1,6 @@
 {% extends "base.html" %}
+{% from "_doc_actions.html" import doc_actions with context %}
+{% from "_trail.html" import trail as doc_trail with context %}
 {% block title %}Vendor Payment{% endblock %}
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
@@ -7,8 +9,11 @@
   <div>
     <a href="{{ url_for('vendors.vendor_payment_print', vendor_payment_id=payment[0]) }}" target="_blank" class="lp-btn secondary">🖨️ Print Voucher</a>
     <a href="{{ url_for('vendors.vendor_payment_journal_print', vendor_payment_id=payment[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Journal Entry</a>
+    {{ doc_actions(menu) }}
   </div>
 </div>
+
+{{ doc_trail(trail) }}
 
 <div class="lp-card" style="max-width: 600px;">
   <table class="lp-table">

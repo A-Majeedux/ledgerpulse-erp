@@ -1,0 +1,48 @@
+{#
+  The gear menu of a transaction, drawn from core/docmenu.py.
+
+  Used like this, at the end of a page header:
+
+      {% from "_doc_actions.html" import doc_actions with context %}
+      {{ doc_actions(menu) }}
+
+  A <details> element, so it opens and closes with no JavaScript at all. An
+  action that the document's own rule forbids is drawn greyed with the reason
+  beside it; an action the person has no permission for is not drawn at all
+  (and its route refuses it too - see core/docmenu.py).
+#}
+{% macro doc_actions(menu, title="Actions") -%}
+  {% if menu %}
+  <details class="lp-docmenu">
+    <summary class="lp-btn secondary sm" title="{{ title }}">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-settings"/></svg>
+      <span class="lp-docmenu-text">{{ title }}</span>
+      <svg class="ico sm chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+    </summary>
+    <div class="lp-docmenu-list" role="menu">
+      {% for item in menu %}
+        {% if item.allowed %}
+          {% if item.post %}
+            <form method="POST" action="{{ item.url }}" role="menuitem"
+                  {% if item.confirm %}onsubmit="return confirm({{ item.confirm|tojson }});"{% endif %}>
+              {{ csrf_field() }}
+              <button type="submit" class="lp-docmenu-item{{ ' danger' if item.tone == 'danger' else '' }}">
+                <svg class="ico sm" aria-hidden="true"><use href="#{{ item.icon }}"/></svg>{{ item.label }}
+              </button>
+            </form>
+          {% else %}
+            <a class="lp-docmenu-item" role="menuitem" href="{{ item.url }}">
+              <svg class="ico sm" aria-hidden="true"><use href="#{{ item.icon }}"/></svg>{{ item.label }}
+            </a>
+          {% endif %}
+        {% else %}
+          <span class="lp-docmenu-item off" title="{{ item.note or '' }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#{{ item.icon }}"/></svg>{{ item.label }}
+            <small>{{ item.note }}</small>
+          </span>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </details>
+  {% endif %}
+{%- endmacro %}
