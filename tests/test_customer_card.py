@@ -90,7 +90,10 @@ class CustomerCardRulesTests(unittest.TestCase):
         self.assertIsNone(data["currency"])                                 # = the company's currency
         self.assertIsNone(data["website"])
         self.assertEqual(set(data), {"name", "is_company", "nature_of_supply", "credit_limit", "lic_expiry_date",
-                                     "tags", "is_vendor", "currency", "website"}
+                                     "tags", "is_vendor", "currency", "website",
+                                     # tax and terms (Round 10)
+                                     "registration_type", "is_filer", "withholds_wht",
+                                     "default_wht_rate", "payment_terms_days"}
                          | {field for field, _label, _max_length in TEXT_FIELDS})
 
     def test_name(self):
@@ -193,7 +196,10 @@ class CustomerCardRulesTests(unittest.TestCase):
         self.assertEqual((blank["partner_type"], blank["nature_of_supply"], blank["credit_limit"], blank["status"]),
                          ("company", "Supplies", "0.00", "active"))
         self.assertTrue(all(blank[field] == "" for field in blank
-                            if field not in ("partner_type", "nature_of_supply", "credit_limit", "status")))
+                            if field not in ("partner_type", "nature_of_supply", "credit_limit", "status",
+                                             # a new customer is a registered Punjab supplier until told otherwise
+                                             "registration_type", "province")))
+        self.assertEqual((blank["registration_type"], blank["province"]), ("Registered", "Punjab"))
 
         customer = dict.fromkeys(CUSTOMER_COLUMNS)
         customer.update(customer_id=7, customer_no=3, name="Ravi Tanneries", is_company=False,
@@ -250,7 +256,8 @@ class CustomerCardRulesTests(unittest.TestCase):
             "ID", "Name", "Credit Limit", "Email", "Phone", "Region", "Territory", "LIC Number",
             "LIC Expiry Date", "Category Parent", "Country"])
         self.assertEqual([column["label"] for column in LIST_COLUMNS if not column["shown"]], [
-            "NTN", "Street", "City", "State", "STRN", "CNIC", "Nature of Supply", "Category"])
+            "NTN", "Street", "City", "State", "STRN", "CNIC", "Nature of Supply", "Category",
+            "Province", "Registration"])
         self.assertEqual(sum(1 for column in LIST_COLUMNS if column["shown"]), 11)
 
     def test_search_text(self):
@@ -345,20 +352,34 @@ class CustomerCardRulesTests(unittest.TestCase):
             clean_notes("x" * (NOTES_MAX_LENGTH + 1))
 
     def test_the_credit_position(self):
-        totals = {"due": D("250000.00")}
+        totals = {"net": D("250000.00")}
         position = credit_position(totals, D("40000000"))
         self.assertEqual(position["limit"], D("40000000.00"))
+        self.assertEqual(position["used"], D("250000.00"))
         self.assertEqual(position["room"], D("39750000.00"))
         self.assertEqual(position["limit_text"], "40,000,000.00")
         self.assertEqual(position["room_text"], "39,750,000.00")
         self.assertTrue(position["has_limit"])
-        # over the limit, and no limit at all
-        over = credit_position({"due": D("500.00")}, D("100"))
+        self.assertFalse(position["over"])
+        # an invoice about to be added counts against the room
+        bigger = credit_position(totals, D("40000000"), extra=D("1000"))
+        self.assertEqual(bigger["room"], D("39749000.00"))
+        # the net is what is held, not the due - an unapplied receipt does not eat the room
+        self.assertEqual(credit_position({"net": D("100"), "due": D("900")}, D("1000"))["room"], D("900.00"))
+        # over the limit: the room goes negative and the warning says by how much
+        over = credit_position({"net": D("500.00")}, D("100"))
         self.assertEqual(over["room"], D("-400.00"))
+        self.assertEqual(over["room_text"], "-400.00")
+        self.assertEqual(over["over_by"], D("400.00"))
+        self.assertEqual(over["over_by_text"], "400.00")
+        self.assertTrue(over["over"])
         self.assertTrue(over["has_limit"])
-        nothing = credit_position({"due": D("0")}, None)
+        # no limit at all: nothing is held against it and nobody is "over"
+        nothing = credit_position({"net": D("5000.00")}, None)
         self.assertEqual(nothing["limit"], D("0.00"))
         self.assertFalse(nothing["has_limit"])
+        self.assertFalse(nothing["over"])
+        self.assertEqual(nothing["room_text"], "\u2014")
 
     def test_a_contact_card(self):
         data, problems = clean_contact_form({"name": "  Ali   Raza "})
@@ -1029,8 +1050,9 @@ class CustomerCardDatabaseTests(unittest.TestCase):
         self.invoice(customer_id, "4000.00", "Posted")
         page = self.client.get(f"/customers/{customer_id}/edit?tab=credit").get_data(as_text=True)
         self.assertIn("No limit set on the card above", page)
-        self.assertIn("Over the limit", page)
-        self.assertIn("-4,000.00", page)
+        self.assertIn("No limit set, so nothing is checked", page)
+        self.assertIn("4,000.00", page)                  # what is held against it is still shown
+        self.assertNotIn("over the limit</small>", page)  # but he is not called over a limit he does not have
 
     # -- the tabs themselves ----------------------------------------------
     def test_the_five_tabs_and_which_one_opens(self):

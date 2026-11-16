@@ -92,6 +92,23 @@ def ensure_schema(cursor):
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_vendor BOOLEAN NOT NULL DEFAULT FALSE")
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS currency VARCHAR(10)")
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS website VARCHAR(255)")
+    # Tax and terms (15 Nov 2026). What a sales-tax-registered supplier has to
+    # know about a buyer before writing an invoice, and what he would otherwise
+    # type again on every one of them:
+    #   province          the provincial authority the sale falls under
+    #   registration_type Registered / Unregistered / Retail
+    #   is_filer          on the active taxpayers list (ATL) or not
+    #   withholds_wht     this buyer deducts withholding tax from what he pays
+    #   default_wht_rate  the rate he deducts, so a receipt can offer it
+    #   payment_terms_days how long he is given to pay, for the invoice's due date
+    # Additions only, as everything else here.
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS province VARCHAR(50)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS registration_type VARCHAR(20) DEFAULT 'Registered'")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_filer BOOLEAN DEFAULT FALSE")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS withholds_wht BOOLEAN DEFAULT FALSE")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS default_wht_rate NUMERIC(5, 2)")
+    cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS payment_terms_days INTEGER")
+
     # The Notes tab of the card. TEXT, so the length limit is the app's
     # (NOTES_MAX_LENGTH), not the column's.
     cursor.execute("ALTER TABLE customers ADD COLUMN IF NOT EXISTS notes TEXT")

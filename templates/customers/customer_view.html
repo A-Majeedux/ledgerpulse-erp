@@ -1,0 +1,315 @@
+{% extends "base.html" %}
+{% block title %}{{ customer.name }}{% endblock %}
+{% block active_nav %}customers{% endblock %}
+{% block content %}
+{# The customer's own page, for reading.
+
+   Everything here is read from the documents: customer_totals(), the invoices,
+   the receipts, customer_open_invoices() and the 1100 lines. There is no form
+   on this page, so nothing can be changed from it by accident - changing
+   anything is a click away on the Edit card. #}
+
+<nav class="lp-crumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('dashboard.home') }}">Dashboard</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <a href="{{ url_for('customers.customers_list') }}">Customers</a>
+  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
+  <span>{{ customer.name }}</span>
+</nav>
+
+<div class="lp-page-header" style="display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap;">
+  <div>
+    <h1 class="lp-page-title" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+      {{ customer.name }}
+      {% if customer.is_active is not false %}
+        <span class="lp-pill posted" style="font-size:12px;">Active</span>
+      {% else %}
+        <span class="lp-pill draft" style="font-size:12px;">Inactive</span>
+      {% endif %}
+    </h1>
+    <p class="lp-page-subtitle">
+      ID {{ customer.customer_no }} &middot; {{ 'Company' if customer.is_company else 'Person' }}
+      &middot; {{ customer.nature_of_supply }}
+      {% if customer.registration_type %}&middot; {{ customer.registration_type }}{% endif %}
+      {% if customer.is_filer %}&middot; Filer{% endif %}
+      {% if customer.province %}&middot; {{ customer.province }}{% endif %}
+    </p>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <a href="{{ url_for('customers.customer_statement', customer_id=customer.customer_id) }}"
+       class="lp-btn primary sm" target="_blank" rel="noopener">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Statement
+    </a>
+    <a href="{{ url_for('customers.edit_customer', customer_id=customer.customer_id) }}" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-edit"/></svg> Edit
+    </a>
+    <a href="{{ url_for('customers.customer_partner_ledger', customer_id=customer.customer_id) }}" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-ledger"/></svg> Partner ledger
+    </a>
+  </div>
+</div>
+
+<div class="kpi-grid" style="margin-bottom:18px;">
+  <article class="kpi" style="--kpi-tint:#4B7CB8; --kpi-soft:#EAF1F9;">
+    <div class="kpi-top"><span class="kpi-label">Invoiced</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-invoice"/></svg></span></div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ totals.invoiced_text }}</div>
+    <div class="kpi-note">{{ totals.posted_invoices }} posted invoice{{ '' if totals.posted_invoices == 1 else 's' }}</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#E8833A; --kpi-soft:#FDF0E6;">
+    <div class="kpi-top"><span class="kpi-label">Still due on invoices</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-bill"/></svg></span></div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ totals.due_text }}</div>
+    <div class="kpi-note">The same figure the aging report shows</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#0EA5A0; --kpi-soft:#E6F7F5;">
+    <div class="kpi-top"><span class="kpi-label">Received, not yet matched</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-receipt"/></svg></span></div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ totals.unapplied_text }}</div>
+    <div class="kpi-note">Money in hand that no invoice has been applied to</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#8E77C9; --kpi-soft:#F1EDFA;">
+    <div class="kpi-top"><span class="kpi-label">Net receivable</span>
+      <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-coins"/></svg></span></div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ totals.net_text }}</div>
+    <div class="kpi-note">Invoiced less every rupee received</div>
+  </article>
+</div>
+
+<div style="display:grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap:16px; align-items:start;">
+
+  <section class="lp-card">
+    <h2 style="margin:0 0 10px; font-size:15px;">Details</h2>
+    <div class="lp-rows">
+      <div class="lp-row"><span>Customer ID</span><span>{{ customer.customer_no }}</span></div>
+      <div class="lp-row"><span>Phone</span><span>{{ customer.phone or '—' }}</span></div>
+      <div class="lp-row"><span>Email</span><span>{{ customer.email or '—' }}</span></div>
+      <div class="lp-row"><span>Address</span>
+        <span style="text-align:right;">{{ customer.address or '—' }}{% if customer.street2 %}<br>{{ customer.street2 }}{% endif %}
+          {% if customer.city %}<br>{{ customer.city }}{% endif %}{% if customer.state %}, {{ customer.state }}{% endif %}
+          {% if customer.zip_code %} {{ customer.zip_code }}{% endif %}{% if customer.country %}<br>{{ customer.country }}{% endif %}
+        </span>
+      </div>
+      <div class="lp-row"><span>NTN / STRN</span><span>{{ customer.ntn or '—' }}{% if customer.strn %} / {{ customer.strn }}{% endif %}</span></div>
+      <div class="lp-row"><span>CNIC</span><span>{{ customer.cnic or '—' }}</span></div>
+      <div class="lp-row"><span>Sales tax</span>
+        <span>{{ customer.registration_type or 'Registered' }}{% if customer.is_filer %} &middot; Filer{% endif %}{% if customer.province %} &middot; {{ customer.province }}{% endif %}</span>
+      </div>
+      <div class="lp-row"><span>Payment terms</span>
+        <span>{% if customer.payment_terms_days is not none %}{{ customer.payment_terms_days }} days{% else %}—{% endif %}</span>
+      </div>
+      <div class="lp-row"><span>Withholding tax</span>
+        <span>{% if customer.withholds_wht %}Deducted by the customer{% if customer.default_wht_rate %} at {{ '%.2f'|format(customer.default_wht_rate) }}%{% endif %}{% else %}Not deducted{% endif %}</span>
+      </div>
+      <div class="lp-row"><span>Region / Territory</span>
+        <span>{{ customer.region or '—' }}{% if customer.territory %} / {{ customer.territory }}{% endif %}</span>
+      </div>
+      <div class="lp-row"><span>Category</span>
+        <span>{{ customer.category_parent or '—' }}{% if customer.category %} / {{ customer.category }}{% endif %}</span>
+      </div>
+      <div class="lp-row"><span>LIC</span>
+        <span>{{ customer.lic_number or '—' }}{% if customer.lic_expiry_date %} (expires {{ customer.lic_expiry_date.strftime('%d %b %Y') }}){% endif %}</span>
+      </div>
+      {% if customer.website %}
+      <div class="lp-row"><span>Website</span><span>{{ customer.website }}</span></div>
+      {% endif %}
+      {% if linked_vendor %}
+      <div class="lp-row"><span>Also a vendor</span>
+        <span><a href="{{ url_for('vendors.vendor_detail', vendor_id=linked_vendor[0]) }}">{{ linked_vendor[1] }}</a></span>
+      </div>
+      {% endif %}
+    </div>
+
+    {% if customer.tags %}
+    <div class="lp-taglist" style="margin-top:12px;">
+      {% for tag in tag_list(customer.tags) %}<span class="lp-pill draft">{{ tag }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    {% if customer.notes %}
+    <h3 style="margin:18px 0 6px; font-size:13px; color:var(--lp-text-muted); text-transform:uppercase; letter-spacing:.04em;">Notes</h3>
+    <p style="margin:0; font-size:13px; white-space:pre-line; line-height:1.6;">{{ customer.notes }}</p>
+    {% endif %}
+  </section>
+
+  <div style="display:grid; gap:16px;">
+    <section class="lp-card">
+      <h2 style="margin:0 0 10px; font-size:15px;">Credit</h2>
+      <div class="lp-rows">
+        <div class="lp-row"><span>Credit limit</span>
+          <span>{% if credit.has_limit %}{{ active_currency }} {{ credit.limit_text }}{% else %}No limit set{% endif %}</span>
+        </div>
+        <div class="lp-row"><span>Held against it</span><span>{{ active_currency }} {{ credit.used_text }}</span></div>
+        <div class="lp-row"><span>Room left</span>
+          <span style="{% if credit.over %}color:var(--lp-coral-text); font-weight:700;{% endif %}">
+            {% if credit.has_limit %}{% if credit.over %}Over by {{ active_currency }} {{ credit.over_by_text }}{% else %}Room left {{ active_currency }} {{ credit.room_text }}{% endif %}{% else %}—{% endif %}
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-card">
+      <h2 style="margin:0 0 10px; font-size:15px;">How old the balance is</h2>
+      <div class="lp-rows">
+        <div class="lp-row"><span>0-30 days</span><span>{{ active_currency }} {{ "{:,.2f}".format(buckets['0-30']) }}</span></div>
+        <div class="lp-row"><span>31-60 days</span><span>{{ active_currency }} {{ "{:,.2f}".format(buckets['31-60']) }}</span></div>
+        <div class="lp-row"><span>61-90 days</span><span>{{ active_currency }} {{ "{:,.2f}".format(buckets['61-90']) }}</span></div>
+        <div class="lp-row"><span>Over 90 days</span><span>{{ active_currency }} {{ "{:,.2f}".format(buckets['older']) }}</span></div>
+        <div class="lp-row" style="font-weight:700;"><span>Total open</span><span>{{ active_currency }} {{ "{:,.2f}".format(buckets.total) }}</span></div>
+      </div>
+      <p style="margin:10px 0 0; font-size:12px; color:var(--lp-text-muted);">
+        Counted from each invoice's due date, or from its own date when it has none.
+      </p>
+    </section>
+
+    {% if contacts %}
+    <section class="lp-card">
+      <h2 style="margin:0 0 10px; font-size:15px;">People and addresses</h2>
+      <div class="lp-rows">
+        {% for contact in contacts %}
+        <div class="lp-row">
+          <span>{{ contact.name }}{% if contact.address_type %} <span style="font-size:11.5px; color:var(--lp-text-muted);">({{ contact.address_type }})</span>{% endif %}</span>
+          <span>{{ contact.phone or contact.email or '' }}{% if contact.is_primary %} <span class="lp-pill posted" style="font-size:10.5px;">Primary</span>{% endif %}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</div>
+
+<section class="lp-card" style="margin-top:16px; padding:0 0 4px;">
+  <div style="padding:16px 16px 0;">
+    <h2 style="margin:0 0 4px; font-size:15px;">Invoices still owing</h2>
+    <p style="margin:0 0 12px; font-size:12.5px; color:var(--lp-text-muted);">
+      Posted invoices with something left on them, oldest first. "Still due" is the invoice less the
+      receipts applied to it.
+    </p>
+  </div>
+  {% if open_invoices %}
+  <div class="lp-table-wrapper">
+    <table class="lp-table">
+      <thead>
+        <tr>
+          <th>Invoice</th><th>Invoice date</th><th>Due date</th>
+          <th class="amount">Days</th><th class="amount">Still due</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in open_invoices %}
+        <tr>
+          <td style="font-weight:600;">{{ row.invoice_no or ('#' ~ row.invoice_id) }}</td>
+          <td>{{ row.date_text }}</td>
+          <td>{{ row.due_text or '—' }}</td>
+          <td class="amount" style="{% if row.days > 90 %}color:var(--lp-coral-text); font-weight:600;{% endif %}">{{ row.days }}</td>
+          <td class="amount">{{ "{:,.2f}".format(row.remaining) }}</td>
+          <td style="text-align:right;">
+            <a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=row.invoice_id) }}" class="lp-btn ghost sm">Open</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr style="font-weight:700;">
+          <td colspan="4">Total still due</td>
+          <td class="amount">{{ "{:,.2f}".format(totals.due) }}</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% else %}
+  <p style="padding:0 16px 16px; margin:0; font-size:13px; color:var(--lp-text-muted);">
+    Nothing is owed: every posted invoice is settled.
+  </p>
+  {% endif %}
+</section>
+
+<div style="display:grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap:16px; margin-top:16px;">
+  <section class="lp-card" style="padding:0 0 4px;">
+    <div style="padding:16px 16px 0;">
+      <h2 style="margin:0 0 4px; font-size:15px;">All invoices</h2>
+      <p style="margin:0 0 12px; font-size:12.5px; color:var(--lp-text-muted);">Drafts included, newest first.</p>
+    </div>
+    {% if invoices %}
+    <div class="lp-table-wrapper">
+      <table class="lp-table">
+        <thead><tr><th>Invoice</th><th>Date</th><th class="amount">Total</th><th class="amount">Still due</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for invoice in invoices[:20] %}
+          <tr>
+            <td><a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=invoice.invoice_id) }}">{{ invoice.invoice_no or '(not numbered)' }}</a></td>
+            <td>{{ invoice.date_text }}</td>
+            <td class="amount">{{ invoice.total_text }}</td>
+            <td class="amount">{{ invoice.remaining_text if invoice.status == 'Posted' else '—' }}</td>
+            <td><span class="lp-pill {{ 'posted' if invoice.status == 'Posted' else 'draft' }}">{{ invoice.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p style="padding:0 16px 16px; margin:0; font-size:13px; color:var(--lp-text-muted);">No invoices yet.</p>
+    {% endif %}
+  </section>
+
+  <section class="lp-card" style="padding:0 0 4px;">
+    <div style="padding:16px 16px 0;">
+      <h2 style="margin:0 0 4px; font-size:15px;">Receipts</h2>
+      <p style="margin:0 0 12px; font-size:12.5px; color:var(--lp-text-muted);">Money received, newest first.</p>
+    </div>
+    {% if receipts %}
+    <div class="lp-table-wrapper">
+      <table class="lp-table">
+        <thead><tr><th>Date</th><th>Voucher</th><th class="amount">Amount</th><th>Memo</th></tr></thead>
+        <tbody>
+          {% for receipt in receipts[:20] %}
+          <tr>
+            <td>{{ receipt.date_text }}</td>
+            <td><a href="{{ url_for('customers.customer_receipt_detail', customer_receipt_id=receipt.receipt_id) }}">{{ receipt.voucher_no or '—' }}</a></td>
+            <td class="amount">{{ receipt.amount_text }}</td>
+            <td>{{ receipt.memo or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p style="padding:0 16px 16px; margin:0; font-size:13px; color:var(--lp-text-muted);">No receipts yet.</p>
+    {% endif %}
+  </section>
+</div>
+
+<section class="lp-card" style="padding:0 0 4px; margin-top:16px;">
+  <div style="padding:16px 16px 0;">
+    <h2 style="margin:0 0 4px; font-size:15px;">In the books</h2>
+    <p style="margin:0 0 12px; font-size:12.5px; color:var(--lp-text-muted);">
+      The Trade Receivables (1100) lines carrying this name &mdash; including anything written by hand.
+      Closing balance {{ active_currency }} {{ ledger.balance_text }}.
+    </p>
+  </div>
+  {% if ledger.lines %}
+  <div class="lp-table-wrapper">
+    <table class="lp-table">
+      <thead><tr><th>Date</th><th>Journal</th><th>Reference</th><th class="amount">Debit</th><th class="amount">Credit</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for line in ledger.lines[:20] %}
+        <tr>
+          <td>{{ line.date_text }}</td>
+          <td>{{ line.journal_name }}</td>
+          <td>{{ line.reference }}</td>
+          <td class="amount">{{ line.debit_text }}</td>
+          <td class="amount">{{ line.credit_text }}</td>
+          <td><span class="lp-pill {{ 'posted' if line.status == 'Posted' else 'draft' }}">{{ line.status }}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="padding:0 16px 16px; margin:0; font-size:13px; color:var(--lp-text-muted);">
+    Nothing has been posted under this name yet.
+  </p>
+  {% endif %}
+</section>
+{% endblock %}

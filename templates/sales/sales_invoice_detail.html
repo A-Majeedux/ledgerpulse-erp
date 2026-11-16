@@ -19,13 +19,33 @@
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
-      <form method="POST" action="{{ url_for('sales.post_sales_invoice', sales_invoice_id=invoice[0]) }}" style="display:inline; margin-left:8px;">
+      <form method="POST" action="{{ url_for('sales.post_sales_invoice', sales_invoice_id=invoice[0]) }}"
+            style="display:inline-flex; gap:10px; align-items:center; margin-left:8px;">
         {{ csrf_field() }}
+        {% if over_limit %}
+          <label style="font-size:12.5px; display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" name="override_credit_limit" value="1"> Save anyway (over the limit)
+          </label>
+        {% endif %}
         <button type="submit" class="lp-btn primary sm">Post Invoice</button>
       </form>
     {% endif %}
   </div>
 </div>
+
+{% if over_limit %}
+<div class="alert alert-error" style="margin-bottom:16px;">
+  <strong>This invoice goes over the credit limit of {{ invoice[1] }}.</strong>
+  {% if refused_over_limit %}
+    It was <strong>not posted</strong>.
+  {% endif %}
+  His limit is {{ active_currency|default('PKR') }} {{ credit.limit_text }};
+  {{ active_currency|default('PKR') }} {{ credit.used_text }} is already held against it (every invoice, less every
+  receipt), and this one adds {{ active_currency|default('PKR') }} {{ "{:,.2f}".format(grand_total) }} &mdash;
+  over by {{ active_currency|default('PKR') }} {{ credit.over_by_text }}.
+  Raise the limit on his card, or tick <em>Save anyway</em> beside Post and post it again.
+</div>
+{% endif %}
 
 {# The details of the invoice: the customer and his NTN, the delivery address,
    the dates, the journal and the currency. A letter of credit is a purchase

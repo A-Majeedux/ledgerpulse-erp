@@ -52,6 +52,7 @@
           <th>Invoice date</th>
           <th>Due date</th>
           <th class="amount">Total</th>
+          <th class="amount">Still due</th>
           <th>Status</th>
         </tr>
       </thead>
@@ -62,6 +63,10 @@
             <td class="lp-nowrap">{{ invoice.date_text }}</td>
             <td class="lp-nowrap">{{ invoice.due_text }}</td>
             <td class="amount lp-nowrap">{{ active_currency }} {{ invoice.total_text }}</td>
+            <td class="amount lp-nowrap">
+              {% if invoice.status == 'Posted' %}{{ active_currency }} {{ invoice.remaining_text }}
+              {% else %}<span style="color: var(--lp-text-muted);">—</span>{% endif %}
+            </td>
             <td><span class="lp-pill {{ 'posted' if invoice.status == 'Posted' else 'draft' }}">{{ invoice.status }}</span></td>
           </tr>
         {% endfor %}

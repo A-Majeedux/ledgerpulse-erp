@@ -769,3 +769,147 @@ before it writes anything, so nothing is left half-saved.
   (the same gap the partner ledger has, section 17).
 - The **vendor payment** screen still has no allocation grid of its own, although the route has accepted
   `bill_id[]` / `alloc_amount[]` since it was written.
+
+## 19. The Customers module, gone through end to end (built 15 Nov 2026)
+
+The first module of a module-by-module pass. Everything here is about one thing: **a customer's balance must be
+one figure, everywhere, and it must be the figure the documents support.** Six pieces, in the order they were
+built.
+
+### A. One definition of "due"
+
+Before this, four screens counted what a customer owed in four ways, because receipts could only be *received*,
+never *matched* (section 18B added the matching, this makes everyone use it):
+
+| screen | before | now |
+|---|---|---|
+| customer card, "Due" | invoiced − received | **invoiced − matched** |
+| aging report | invoiced − paid | invoiced − paid (unchanged; it was already right) |
+| partner ledger closing | invoiced − received | invoiced − received (unchanged: it is the ledger) |
+| dashboard "Receivables" | `max(0, invoiced − received)` | **invoiced − matched** |
+
+`customers.services.customer_totals` now returns four figures that are not the same thing and are no longer
+confused with each other:
+
+```
+invoiced    every posted invoice, tax included
+received    every receipt, matched or not
+applied     the part of those receipts matched to invoices   (customer_receipt_allocations)
+unapplied   received - applied      (money in hand, waiting for an invoice)
+due         invoiced - applied      (what the aging report and the card's "Still due" show)
+net         invoiced - received     (what the partner ledger closes at, and what the credit limit counts)
+```
+
+On the demo company all four now tie exactly: Al-Noor 136,425.60 invoiced, 712,277.68 received, 115,410 matched,
+**21,015.60 due**, and a **−575,852.08 net** (he has paid more than he was billed). Chaudhry Fertilizers: 1,645,673.60
+invoiced, 891,257.12 received, nothing matched, **1,645,673.60 due**. Balochistan Farm Supply: 2,305,658.40 both
+ways. The dashboard's receivables and the aging report's total are the same **5,778,065.80**.
+
+The card's **Sales** tab gained a **Still due** column beside each invoice, and **Posted only** is stated on it -
+a draft is not money owed.
+
+### B. A customer's own page, and a statement to print
+
+- **`GET /customers/<id>`** - the customer **read only**: name and ID, tax details, terms, the four figures above,
+  the credit position, how old the balance is in four buckets, the open invoices oldest first, the last invoices
+  and receipts, and the contacts and addresses. No boxes to fill in and nothing to save, so a colleague who may
+  not edit a customer can still answer "what does he owe and since when". The customer **list** now opens this page
+  when a name is clicked; the card is a click from there.
+- **`GET /customers/<id>/statement`** - a **Statement of Account** on the A4 print frame used by the bills and
+  invoices: the company's letterhead, the customer, date range, opening balance brought forward, every invoice as
+  a debit and every receipt as a credit with a running balance, the totals, the aging summary, and every invoice
+  still owing with its due date. It closes with the sentence that matters on a statement - *this is a statement of
+  account, not a tax invoice* - and signature lines. A start and an end date may be given (`?start_date=&end_date=`);
+  with none, it covers everything up to the later of today and the last document in the ledger.
+  The arithmetic is checked: **opening + debits − credits = closing**, the closing is the same whether the
+  statement covers everything or any period ending at the same date, and the aging summary equals the "Still due"
+  on the card.
+
+### C. Credit limit: warn, block, and tell
+
+The owner asked for all three behaviours. They are not alternatives on a setting - they are three moments of the
+same rule, so a company gets all of them:
+
+1. **Warn while typing.** Choosing a customer on **New Sales Invoice** fills the **Due Date** from his payment terms
+   (and says so in the strip under the summary how much room is left on his limit, turning coral when the invoice
+   being typed is bigger than the room). `GET /customers/<id>/terms` is the JSON the screen reads. The same endpoint
+   ticks the **withholding tax** box on a new receipt and picks the customer's rate, because he is the one who
+   deducts it.
+2. **Block at posting.** An invoice that would take the customer over his limit is **not posted**; it is sent back
+   to its own page with a red panel saying by how much, and a **Save anyway (over the limit)** tick beside the Post
+   button. A **draft is always allowed** - it changes no balance - and a limit of 0.00 means no limit, so nothing
+   is ever blocked for a company that does not use limits.
+3. **Tell, passively.** The invoice page and the customer page state the position (limit, held, room) without
+   blocking anything, and the card's **Credit Limit** tab explains the rule in one paragraph.
+
+`credit_position` is the one place the arithmetic lives: **held = net receivable** (invoiced less every rupee
+received), `room = limit − held`, `over` only when a limit was actually set, `over_by` for the warning, and a
+signed `room_text` (a customer with no limit shows a dash rather than an invented negative room).
+The **Due Date** is also filled server-side when the box is left empty, so an invoice saved with JavaScript off
+still has the date its terms call for.
+
+### D. Duplicate guard
+
+A second customer with the same **NTN** or **CNIC** is refused, and so is one with the same **phone number**
+(compared as digits, so `0300-1234567` and `(0300) 123 45 67` are the same number). The message names the customer
+that already has it:
+
+> NTN 1234567-8 is already on customer "Gulf Agro" (ID 2). One business has one NTN - open that customer instead
+> of adding a second, or correct the NTN here.
+
+Blank numbers are never compared - most walk-in customers have none. A customer keeping his own numbers is fine
+(the check excludes the row being saved), and a number may not be moved onto another customer's card.
+
+### E. Tax and terms on the card
+
+Six boxes, in a **Tax** section and a **Terms and withholding** section of the card:
+
+- **Province** (Punjab, Sindh, Khyber Pakhtunkhwa, Balochistan, Islamabad Capital Territory, Gilgit-Baltistan,
+  Azad Kashmir - a datalist, so anything else may still be typed)
+- **Sales Tax Registration**: Registered / Unregistered / Retail
+- **On the active taxpayers list (filer)**
+- **Payment terms (days)** - what the due date comes from
+- **This customer deducts WHT when he pays**, and **Default WHT rate (%)**
+
+A blank rate or a blank number of days means "not set", not zero; a rate outside 0-100, more than 365 days or
+"thirty" typed into a days box are refused with a sentence that says what to correct. The read-only page shows all
+six as English ("Registered · Filer · Punjab", "Deducted by the customer at 4.50%").
+
+### F. `journal_lines.customer_id` - not built
+
+The last slice of the list was to give each journal line a customer ID so that a rename or a merge stops
+splitting a balance. It is the one that touches posting and every report, so it is deliberately left until the
+module above is proved. See the gaps below.
+
+### Checks
+
+- `tests/test_customers_module.py` (22 checks): the duplicate guard on NTN, CNIC and phone, blank numbers never
+  colliding, a customer keeping his own number, and the numbers staying per company; the terms saved and read
+  back, four kinds of nonsense refused, the terms offered as JSON, and an invoice with no due date taking
+  2026-10-01 from 30 days; the four figures on a receipt that is partly matched (1,500 invoiced, 900 received,
+  600 matched: **900 due**, 300 unapplied, **600 net**); the card, the aging report, the ledger closing and the
+  open-invoice list agreeing on one figure; a statement adding up over a period and closing where the whole one
+  closes; the room left (800 invoiced, 500 received, 1000 limit: 300 held, **700 room**); a draft over the limit
+  still saved, the same invoice **refused at posting**, the refusal page explaining itself and offering the tick,
+  the same invoice posted with the tick, and a customer with no limit never stopped.
+- The three earlier customer-card tests that describe the card's shape were updated where this round changed it
+  deliberately - the two new list columns, the six new fields, the blank card starting at "Registered, Punjab",
+  and a customer with no limit no longer being told he is "over the limit" he does not have.
+- Whole suite: **198 passed**, with only the vendor print case still failing that already failed before this work
+  (`test_10_all_print_templates_and_routes`, "INVOICE LINES" vs "Invoice Lines").
+- Every GET screen requested with a real login against the demo database: **75 screens**, none returning an error
+  (the ten admin screens answer 403 for a non-admin).
+- The demo company was given real tax and terms data - Chaudhry Fertilizers (Punjab, Registered, filer, WHT 4.5%,
+  30 days, limit 1,500,000), Sindh Agro Services (Sindh, WHT 4.5%), Balochistan Farm Supply (Retail, 7 days, no
+  limit) - and its statement, its page, its card and its JSON were all rendered and read.
+
+### Known gaps
+
+- **`journal_lines.customer_id` is not there yet.** A customer's name is still copied onto every journal line, so
+  a rename is blocked once he has entries (section 13) and two customers cannot be merged. Next round.
+- **A receipt still cannot be un-matched.** A wrong allocation can only be corrected in Accounting, as noted in
+  section 18.
+- **The statement ages what is open today.** A statement printed for a past period shows the invoices that are
+  still unpaid *now*, not the ones that were unpaid on that date - the allocations carry no history.
+- **The customer's `currency` is still display only.** The books stay in the company's currency, so a statement is
+  in PKR whatever the card says.

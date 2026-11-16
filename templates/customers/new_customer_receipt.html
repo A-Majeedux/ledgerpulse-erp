@@ -96,7 +96,8 @@
 
     <div id="alloc-panel" style="display:none; background: var(--lp-canvas); border:1px solid var(--lp-border);
          border-radius: 10px; padding: 14px; margin: 4px 0 16px;"
-         data-url="{{ url_for('customers.customer_open_invoices', customer_id=999999) }}">
+         data-url="{{ url_for('customers.customer_open_invoices', customer_id=999999) }}"
+         data-terms-url="{{ url_for('customers.customer_terms', customer_id=999999) }}">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap;">
         <strong style="font-size:13px;">Apply this money to invoices</strong>
         <span style="font-size:12.5px; color: var(--lp-text-muted);">
@@ -150,6 +151,27 @@ function loadOpenInvoices() {
     .then(r => r.ok ? r.json() : { invoices: [] })
     .then(data => { openInvoices = data.invoices || []; renderOpenInvoices(); })
     .catch(() => { openInvoices = []; renderOpenInvoices(); });
+  loadCustomerTerms(panel.dataset.termsUrl.replace('999999', customerId));
+}
+
+// A customer who deducts withholding tax when he pays: tick the box and set his
+// rate, so the receipt starts the way his card says it should. He can untick it.
+function loadCustomerTerms(customerId) {
+  if (!customerId) { return; }
+  fetch('/customers/' + customerId + '/terms', { headers: { 'X-Requested-With': 'fetch' } })
+    .then(r => r.ok ? r.json() : null)
+    .then(terms => {
+      if (!terms || !terms.withholds_wht || !terms.default_wht_rate) { return; }
+      const box = document.getElementById('has_wht');
+      const rate = document.getElementById('wht_rate');
+      if (!box || !rate) { return; }
+      box.checked = true;
+      for (const option of rate.options) {
+        if (parseFloat(option.value) === parseFloat(terms.default_wht_rate)) { rate.value = option.value; }
+      }
+      if (typeof toggleWht === 'function') { toggleWht(); }
+    })
+    .catch(() => { /* no terms: the receipt works exactly as before */ });
 }
 
 function renderOpenInvoices() {

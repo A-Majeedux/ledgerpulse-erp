@@ -20,7 +20,7 @@
     <div class="lp-form-grid">
       <div class="lp-form-group">
         <label class="form-label">Customer</label>
-        <select name="customer_id" class="form-select" required>
+        <select name="customer_id" id="customer_id" class="form-select" required onchange="onCustomerChange()">
           <option value="">Select customer…</option>
           {% for c in customers %}
             <option value="{{ c[0] }}">{{ c[1] }} ({{ c[2] }})</option>
@@ -33,7 +33,7 @@
       </div>
       <div class="lp-form-group">
         <label class="form-label">Due Date</label>
-        <input type="date" name="due_date" class="form-control">
+        <input type="date" name="due_date" id="due_date" class="form-control">
       </div>
       <div class="lp-form-group">
         <label class="form-label">Payment Terms</label>
@@ -126,6 +126,16 @@
     </div>
   </div>
 
+  {# What the chosen customer's credit limit has left in it. Read from
+     customers/<id>/terms when the customer changes; it warns, it does not
+     stop the draft. The refusing happens when the invoice is POSTED. #}
+  <div id="credit-strip" hidden
+       data-url="{{ url_for('customers.customer_terms', customer_id=999999) }}"
+       style="margin-top: 10px; padding: 10px 14px; border-radius: 10px; font-size: 12.5px;
+              background: var(--lp-canvas); border: 1px solid var(--lp-border);">
+    <span id="credit-text"></span>
+  </div>
+
   <div style="display:flex; gap:10px; align-items:center; margin-top: 6px;">
     <button type="submit" class="lp-btn primary">
       <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Save draft invoice
@@ -201,6 +211,75 @@ function recalcGrandTotals() {
   document.getElementById('summary-discount').textContent = discSum.toFixed(2);
   document.getElementById('summary-tax').textContent = taxSum.toFixed(2);
   document.getElementById('summary-total-value').textContent = grandTotal.toFixed(2);
+  if (customerTerms && customerTerms.credit_has_limit) {
+    showCredit(parseFloat(customerTerms.credit_room || 0),
+               parseFloat(customerTerms.credit_limit || 0),
+               parseFloat(customerTerms.credit_used || 0));
+  }
+}
+
+// --- the customer's terms --------------------------------------------------
+// Asking for the customer's card gives three things this screen can use: how
+// long he is given to pay (so the due date fills itself), and the room left on
+// his credit limit (so a warning can be shown before the invoice is saved).
+let customerTerms = null;
+
+function money(value) {
+  return (Math.round(parseFloat(value || 0) * 100) / 100).toFixed(2);
+}
+
+function onCustomerChange() {
+  const strip = document.getElementById('credit-strip');
+  const select = document.getElementById('customer_id');
+  customerTerms = null;
+  strip.hidden = true;
+  document.getElementById('credit-text').textContent = '';
+  if (!select.value) { return; }
+  fetch(strip.dataset.url.replace('999999', select.value), { headers: { 'X-Requested-With': 'fetch' } })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (terms) {
+      if (!terms) { return; }
+      customerTerms = terms;
+      applyTerms(terms);
+    })
+    .catch(function () { /* no terms: the form works exactly as before */ });
+}
+
+function applyTerms(terms) {
+  // The due date fills itself from the customer's payment terms - but never
+  // overwrites a date someone typed.
+  const due = document.getElementById('due_date');
+  const invoiceDate = document.querySelector('[name="invoice_date"]');
+  if (due && !due.value && terms.payment_terms_days && invoiceDate && invoiceDate.value) {
+    const from = new Date(invoiceDate.value + 'T00:00:00');
+    from.setDate(from.getDate() + parseInt(terms.payment_terms_days, 10));
+    due.value = from.toISOString().slice(0, 10);
+  }
+  if (terms.credit_has_limit) {
+    showCredit(parseFloat(terms.credit_room || 0), parseFloat(terms.credit_limit || 0),
+               parseFloat(terms.credit_used || 0));
+  } else {
+    const strip = document.getElementById('credit-strip');
+    strip.hidden = false;
+    document.getElementById('credit-text').innerHTML =
+      'No credit limit set for ' + terms.name + '.';
+  }
+}
+
+function showCredit(room, limit, used) {
+  const strip = document.getElementById('credit-strip');
+  const grand = parseFloat(document.getElementById('summary-total-value').textContent || 0);
+  const over = grand > room + 0.004;
+  strip.hidden = false;
+  strip.style.background = over ? 'var(--lp-coral-bg)' : 'var(--lp-canvas)';
+  strip.style.borderColor = over ? 'transparent' : 'var(--lp-border)';
+  strip.style.color = over ? 'var(--lp-coral-text)' : 'inherit';
+  const total = 'Credit limit <strong>' + money(limit) + '</strong> · held against it <strong>'
+    + money(used) + '</strong> · room <strong>' + money(room) + '</strong>.';
+  document.getElementById('credit-text').innerHTML = over
+    ? total + ' This invoice is <strong>' + money(grand) + '</strong>, which is over the room left - '
+      + 'it can be saved as a draft, but it will not post until someone ticks &ldquo;save anyway&rdquo; on the invoice.'
+    : total + ' This invoice is <strong>' + money(grand) + '</strong>.';
 }
 
 function addLine() {

@@ -39,6 +39,14 @@ from core.money import money_round, to_decimal
 
 NATURE_OF_SUPPLY_OPTIONS = ["Supplies", "Services"]
 
+# What a buyer is, for sales tax. The first is what most cards are.
+REGISTRATION_OPTIONS = ["Registered", "Unregistered", "Retail"]
+
+# The provinces a sale can fall under (Islamabad is not a province, but it is
+# where the federal capital territory's sales tax is administered).
+PROVINCE_OPTIONS = ["Punjab", "Sindh", "Khyber Pakhtunkhwa", "Balochistan",
+                    "Islamabad Capital Territory", "Gilgit-Baltistan", "Azad Kashmir"]
+
 NAME_MAX_LENGTH = 150                           # customers.name and journal_lines.partner_name
 MAX_CREDIT_LIMIT = Decimal("999999999999.99")   # the largest amount NUMERIC(14, 2) can hold
 SEARCH_MAX_LENGTH = 100
@@ -79,6 +87,7 @@ TEXT_FIELDS = [
     ("ntn", "NTN", 30),
     ("strn", "STRN", 30),
     ("cnic", "CNIC", 20),
+    ("province", "Province", 50),
 ]
 
 # Boxes that offer, while typing, the values this company's other customers
@@ -91,6 +100,8 @@ CUSTOMER_COLUMNS = [
     "address", "street2", "city", "state", "zip_code", "country", "region", "territory",
     "category_parent", "category", "lic_number", "lic_expiry_date", "email", "phone",
     "credit_limit", "is_active", "tags", "is_vendor", "currency", "website", "notes",
+    # tax and terms (15 Nov 2026)
+    "province", "registration_type", "is_filer", "withholds_wht", "default_wht_rate", "payment_terms_days",
 ]
 _SELECT_CUSTOMER = "SELECT " + ", ".join(CUSTOMER_COLUMNS) + " FROM customers"
 
@@ -118,6 +129,8 @@ LIST_COLUMNS = [
     {"key": "cnic", "label": "CNIC", "shown": False, "kind": "text"},
     {"key": "nature_of_supply", "label": "Nature of Supply", "shown": False, "kind": "text"},
     {"key": "category", "label": "Category", "shown": False, "kind": "text"},
+    {"key": "province", "label": "Province", "shown": False, "kind": "text"},
+    {"key": "registration_type", "label": "Registration", "shown": False, "kind": "text"},
 ]
 
 NAME_LOCKED_MESSAGE = (
@@ -350,6 +363,39 @@ def clean_customer_form(form, editing=False):
             data[field] = None
     data["is_vendor"] = str(form.get("is_vendor") or "").strip().lower() in ("1", "on", "true", "yes")
 
+    # Tax and terms. Registration type is one of three offered answers; the two
+    # ticks are ticks; the rate and the terms are numbers with a sane range, and
+    # a blank box means "not set" rather than zero.
+    registration = clean_line(form.get("registration_type")) or REGISTRATION_OPTIONS[0]
+    if registration not in REGISTRATION_OPTIONS:
+        problems.append("Registration must be Registered, Unregistered or Retail.")
+    data["registration_type"] = registration
+    data["is_filer"] = str(form.get("is_filer") or "").strip().lower() in ("1", "on", "true", "yes")
+    data["withholds_wht"] = str(form.get("withholds_wht") or "").strip().lower() in ("1", "on", "true", "yes")
+
+    data["default_wht_rate"] = None
+    typed_rate = clean_line(form.get("default_wht_rate"))
+    if typed_rate:
+        try:
+            rate = Decimal(typed_rate)
+        except (InvalidOperation, ArithmeticError):
+            problems.append("Default WHT rate must be a number (for example 4.5).")
+        else:
+            if not Decimal("0") <= rate <= Decimal("100"):
+                problems.append("Default WHT rate must be between 0 and 100.")
+            else:
+                data["default_wht_rate"] = rate.quantize(Decimal("0.01"))
+
+    data["payment_terms_days"] = None
+    typed_days = clean_line(form.get("payment_terms_days"))
+    if typed_days:
+        if not typed_days.isdigit():
+            problems.append("Payment terms must be a whole number of days (for example 30).")
+        elif int(typed_days) > 365:
+            problems.append("Payment terms cannot be longer than 365 days.")
+        else:
+            data["payment_terms_days"] = int(typed_days)
+
     if editing:
         status = clean_line(form.get("status"))
         if status == "":
@@ -367,7 +413,8 @@ def clean_customer_form(form, editing=False):
 # What the card shows
 # ---------------------------------------------------------------------
 FORM_FIELDS = (["name", "partner_type", "nature_of_supply", "lic_expiry_date", "credit_limit", "status",
-                "tags", "is_vendor", "currency", "website"]
+                "tags", "is_vendor", "currency", "website",
+                "registration_type", "is_filer", "withholds_wht", "default_wht_rate", "payment_terms_days"]
                + [field for field, _label, _max_length in TEXT_FIELDS])
 
 
@@ -375,7 +422,9 @@ def blank_form():
     """The boxes of an empty New Customer card."""
     values = {field: "" for field in FORM_FIELDS}
     values.update(partner_type="company", nature_of_supply=NATURE_OF_SUPPLY_OPTIONS[0],
-                  credit_limit="0.00", status="active")
+                  credit_limit="0.00", status="active",
+                  registration_type=REGISTRATION_OPTIONS[0],
+                  province="Punjab")
     return values
 
 
@@ -393,6 +442,13 @@ def form_from_customer(customer):
     values["website"] = customer["website"] or ""
     values["currency"] = customer["currency"] or ""
     values["is_vendor"] = "1" if customer["is_vendor"] else ""      # a tick-box: "1" or empty
+    values["registration_type"] = customer.get("registration_type") or REGISTRATION_OPTIONS[0]
+    values["is_filer"] = "1" if customer.get("is_filer") else ""
+    values["withholds_wht"] = "1" if customer.get("withholds_wht") else ""
+    rate = customer.get("default_wht_rate")
+    values["default_wht_rate"] = f"{Decimal(rate):.2f}" if rate is not None else ""
+    days = customer.get("payment_terms_days")
+    values["payment_terms_days"] = str(days) if days is not None else ""
     return values
 
 
@@ -408,7 +464,8 @@ def form_as_typed(form, base=None):
         if isinstance(typed, str):
             values[field] = _UNTYPEABLE.sub("", typed)
     # A tick-box the browser did not send was unticked by the user.
-    values["is_vendor"] = "1" if form.get("is_vendor") else ""
+    for tick in ("is_vendor", "is_filer", "withholds_wht"):
+        values[tick] = "1" if form.get(tick) else ""
     return values
 
 
@@ -567,6 +624,56 @@ def customer_with_name(cursor, organization_id, name, except_customer_id=None):
     return cursor.fetchone()
 
 
+def _refuse_a_tax_number_already_in_use(cursor, organization_id, data, except_customer_id=None):
+    """Refuse a second customer carrying the same NTN or CNIC.
+
+    The name rule already stops the same words twice, but the same business
+    typed as "Gulf Agro" and "Gulf Agro Chemicals (Pvt) Ltd" slips past it - and
+    then its balance is split in two and the ageing shows two small rows. A tax
+    number is unique to one business, so it is the honest key to refuse on.
+
+    Blank numbers are not compared: most walk-in customers have none, and many
+    of them would share an empty box.
+    """
+    for field, label in (("ntn", "NTN"), ("cnic", "CNIC")):
+        value = clean_line(data.get(field) or "")
+        if not value:
+            continue
+        sql = "SELECT customer_id, name FROM customers WHERE organization_id = %s AND lower(trim(" + field + ")) = lower(%s)"
+        arguments = [organization_id, value]
+        if except_customer_id:
+            sql += " AND customer_id <> %s"
+            arguments.append(except_customer_id)
+        cursor.execute(sql + " LIMIT 1", arguments)
+        row = cursor.fetchone()
+        if row:
+            raise ValidationError(
+                f"{label} {value} is already on customer \"{row[1]}\" (ID {row[0]}). "
+                f"One business has one {label} - open that customer instead of adding a second, "
+                f"or correct the {label} here."
+            )
+
+    # The phone number: compared as digits only, so 0300-1234567 and
+    # (0300) 1234567 are the same number. Short numbers are not compared -
+    # a box that says "123" or nothing at all is not an identity.
+    digits = "".join(character for character in (data.get("phone") or "") if character.isdigit())
+    if len(digits) >= 7:
+        sql = ("SELECT customer_id, name, phone FROM customers WHERE organization_id = %s "
+               "AND phone IS NOT NULL AND phone <> ''")
+        arguments = [organization_id]
+        if except_customer_id:
+            sql += " AND customer_id <> %s"
+            arguments.append(except_customer_id)
+        cursor.execute(sql, arguments)
+        for row_id, row_name, row_phone in cursor.fetchall():
+            if "".join(character for character in row_phone if character.isdigit()) == digits:
+                raise ValidationError(
+                    f"Phone {clean_line(data.get('phone'))} is already on customer \"{row_name}\" (ID {row_id}). "
+                    f"If this is the same business, open that customer instead of adding a second one; "
+                    f"if two customers really do share a phone, leave the phone blank here."
+                )
+
+
 def _refuse_a_name_already_in_use(cursor, organization_id, name, except_customer_id=None):
     taken = customer_with_name(cursor, organization_id, name, except_customer_id)
     if taken:
@@ -600,7 +707,9 @@ def next_customer_no(cursor, organization_id):
 
 
 _SAVED_COLUMNS = (["name", "is_company", "nature_of_supply", "credit_limit", "lic_expiry_date",
-                   "tags", "is_vendor", "currency", "website"]
+                   "tags", "is_vendor", "currency", "website",
+                   "registration_type", "is_filer", "withholds_wht", "default_wht_rate",
+                   "payment_terms_days"]
                   + [field for field, _label, _max_length in TEXT_FIELDS])
 
 
@@ -612,6 +721,7 @@ def create_customer(cursor, organization_id, data):
     """
     _one_customer_change_at_a_time(cursor, organization_id)
     _refuse_a_name_already_in_use(cursor, organization_id, data["name"])
+    _refuse_a_tax_number_already_in_use(cursor, organization_id, data)
     number = next_customer_no(cursor, organization_id)
     columns = ["organization_id", "customer_no"] + _SAVED_COLUMNS
     cursor.execute(
@@ -645,6 +755,7 @@ def update_customer(cursor, organization_id, customer_id, data):
         if name_lock_reason(cursor, organization_id, customer):
             raise ValidationError(NAME_LOCKED_MESSAGE)
         _refuse_a_name_already_in_use(cursor, organization_id, values["name"], customer["customer_id"])
+    _refuse_a_tax_number_already_in_use(cursor, organization_id, values, customer["customer_id"])
     is_active = values.get("is_active")
     if is_active is None:
         is_active = customer["is_active"] is not False
@@ -899,7 +1010,19 @@ def vendor_purchases(cursor, organization_id, vendor_id):
 
 
 def customer_totals(cursor, organization_id, customer_id):
-    """{'sales', 'invoiced', 'due', 'received', 'invoices', 'posted_invoices'} - all Decimal.
+    """The figures at the top of the card, and what each one means.
+
+    sales, invoiced, received   every invoice (posted or draft), the POSTED
+                                ones, and the money received from him
+    applied                     how much of the posted invoices the receipts
+                                have been matched to (customer_receipt_allocations)
+    due                         what the posted invoices still owe:
+                                invoiced - applied. This is the same figure the
+                                Customer Aging Report shows for him.
+    unapplied                   money received but not yet matched to an invoice
+    net                         invoiced - received: what he owes after every
+                                rupee received, matched or not. This is what the
+                                partner ledger closes at.
 
     'purchases' and 'bills' come from the vendor this customer is linked to
     (vendor_id); both are zero when he is not linked to one.
@@ -924,18 +1047,33 @@ def customer_totals(cursor, organization_id, customer_id):
                    "WHERE organization_id = %s AND customer_id = %s", (organization_id, customer_id))
     received = cursor.fetchone()[0]
 
+    # How much of those posted invoices the receipts have been matched to. A
+    # receipt that matches nothing is still money received - it is counted in
+    # "unapplied" below, not lost.
+    cursor.execute("""
+        SELECT COALESCE(SUM(allocation.allocated_amount), 0)
+        FROM customer_receipt_allocations allocation
+        JOIN sales_invoices invoice ON invoice.sales_invoice_id = allocation.sales_invoice_id
+        WHERE invoice.organization_id = %s AND invoice.customer_id = %s AND invoice.status = 'Posted'
+    """, (organization_id, customer_id))
+    applied = cursor.fetchone()[0]
+
     invoiced = money_round(invoiced or 0)
     received = money_round(received or 0)
+    applied = money_round(applied or 0)
     totals = {
         "sales": money_round(sales or 0),
         "invoiced": invoiced,
         "received": received,
-        "due": invoiced - received,
+        "applied": applied,
+        "due": money_round(invoiced - applied),
+        "unapplied": money_round(received - applied),
+        "net": money_round(invoiced - received),
         "invoices": invoice_count or 0,
         "posted_invoices": posted_count or 0,
     }
     # the same figures ready to be written on the card
-    for key in ("sales", "invoiced", "received", "due"):
+    for key in ("sales", "invoiced", "received", "applied", "due", "unapplied", "net"):
         totals[key + "_text"] = format_amount(totals[key])
 
     # What the customer buys FROM US is above; what we buy from him is here,
@@ -984,15 +1122,23 @@ def save_notes(cursor, organization_id, customer_id, notes):
     return cursor.rowcount > 0
 
 
-def _invoice_row(invoice_id, invoice_no, invoice_date, due_date, status, total):
+def _invoice_row(invoice_id, invoice_no, invoice_date, due_date, status, total, paid=0):
+    total = money_round(total or 0)
+    paid = money_round(paid or 0)
+    remaining = money_round(total - paid)
     return {
         "invoice_id": invoice_id,
         "invoice_no": invoice_no,
         "status": status,
         "date_text": format_date(invoice_date),
+        "due_date": due_date,
         "due_text": format_date(due_date),
-        "total": money_round(total or 0),
+        "total": total,
         "total_text": format_amount(total),
+        "paid": paid,
+        "paid_text": format_amount(paid),
+        "remaining": remaining,
+        "remaining_text": format_amount(remaining),
     }
 
 
@@ -1004,12 +1150,12 @@ def list_customer_invoices(cursor, organization_id, customer_id):
     """
     cursor.execute("""
         SELECT invoice.sales_invoice_id, invoice.invoice_no, invoice.invoice_date, invoice.due_date,
-               invoice.status, COALESCE(SUM(line.total), 0)
+               invoice.status, COALESCE(SUM(line.total), 0), COALESCE(invoice.paid_amount, 0)
         FROM sales_invoices invoice
         LEFT JOIN sales_invoice_lines line ON line.sales_invoice_id = invoice.sales_invoice_id
         WHERE invoice.organization_id = %s AND invoice.customer_id = %s
         GROUP BY invoice.sales_invoice_id, invoice.invoice_no, invoice.invoice_date, invoice.due_date,
-                 invoice.status
+                 invoice.status, invoice.paid_amount
         ORDER BY invoice.invoice_date DESC, invoice.sales_invoice_id DESC
     """, (organization_id, customer_id))
     return [_invoice_row(*row) for row in cursor.fetchall()]
@@ -1214,6 +1360,70 @@ def apply_receipt_to_invoices(cursor, organization_id, customer_receipt_id, cust
     return applied
 
 
+def customer_open_invoices(cursor, organization_id, customer_id, as_of=None):
+    """The invoices of one customer that still owe something, with their age.
+
+    Used by the customer's own page, by the statement, and by the ageing
+    report - one query, so all three always say the same thing.
+    """
+    as_of = as_of or date.today()
+    cursor.execute("""
+        SELECT invoice.sales_invoice_id, invoice.invoice_no, invoice.invoice_date,
+               invoice.due_date, invoice.status,
+               COALESCE(SUM(line.total), 0) AS total,
+               COALESCE(invoice.paid_amount, 0) AS paid
+        FROM sales_invoices invoice
+        LEFT JOIN sales_invoice_lines line ON line.sales_invoice_id = invoice.sales_invoice_id
+        WHERE invoice.organization_id = %s AND invoice.customer_id = %s AND invoice.status = 'Posted'
+        GROUP BY invoice.sales_invoice_id, invoice.invoice_no, invoice.invoice_date,
+                 invoice.due_date, invoice.status, invoice.paid_amount
+        ORDER BY COALESCE(invoice.due_date, invoice.invoice_date), invoice.sales_invoice_id
+    """, (organization_id, customer_id))
+
+    rows = []
+    for invoice_id, invoice_no, invoice_date, due_date, status, total, paid in cursor.fetchall():
+        remaining = money_round(money_round(total or 0) - money_round(paid or 0))
+        if remaining <= 0:
+            continue
+        start = due_date or invoice_date
+        days = (as_of - start).days if start else 0
+        rows.append({
+            "invoice_id": invoice_id,
+            "invoice_no": invoice_no,
+            "status": status,
+            "invoice_date": invoice_date,
+            "date_text": format_date(invoice_date),
+            "due_date": due_date,
+            "due_text": format_date(due_date),
+            "days": days,
+            "bucket": _bucket_for(days),
+            "remaining": remaining,
+            "remaining_text": format_amount(remaining),
+        })
+    return rows
+
+
+def _bucket_for(days):
+    if days <= 30:
+        return "0-30"
+    if days <= 60:
+        return "31-60"
+    if days <= 90:
+        return "61-90"
+    return "older"
+
+
+def bucket_totals(rows):
+    """0-30 / 31-60 / 61-90 / older out of customer_open_invoices() rows."""
+    totals = {key: Decimal("0") for key, _label, _low, _high in AGEING_BUCKETS}
+    for row in rows:
+        totals[row["bucket"]] += row["remaining"]
+    totals = {key: money_round(value) for key, value in totals.items()}
+    totals["total"] = money_round(sum(totals.values()))
+    totals["text"] = {key: format_amount(value) for key, value in totals.items() if key != "text"}
+    return totals
+
+
 def customer_ageing(cursor, organization_id, as_of=None):
     """What each customer still owes, split 0-30 / 31-60 / 61-90 / older.
 
@@ -1245,14 +1455,7 @@ def customer_ageing(cursor, organization_id, as_of=None):
             continue
         start = due_date or invoice_date
         days = (as_of - start).days if start else 0
-        if days <= 30:
-            bucket = "0-30"
-        elif days <= 60:
-            bucket = "31-60"
-        elif days <= 90:
-            bucket = "61-90"
-        else:
-            bucket = "older"
+        bucket = _bucket_for(days)
 
         entry = customers.setdefault(customer_id, {
             "customer_id": customer_id,
@@ -1357,18 +1560,47 @@ def customer_ledger(cursor, organization_id, customer):
     }
 
 
-def credit_position(totals, credit_limit):
-    """The Credit Limit tab: the limit he gave, what is due now, and the room left."""
+def credit_position(totals, credit_limit, extra=Decimal("0")):
+    """The Credit Limit tab, and the warning an invoice needs before it is saved.
+
+    The figure held against the limit is the NET receivable (invoiced less every
+    rupee received), because an unapplied receipt is still money in the bank and
+    should not eat his room. `extra` is an invoice about to be added.
+
+    `room` is signed (it is negative once he is over); `room_text` is the same
+    figure written out, and `over_by`/`over_by_text` is how far over he is, which
+    is what a warning should say. A limit of 0.00 means no limit at all.
+    """
     limit = money_round(credit_limit or 0)
-    due = money_round(totals.get("due") or 0)
+    # Older totals (and the tests) hand in only "due"; the net is used when it is there.
+    held = totals.get("net")
+    if held is None:
+        held = totals.get("due") or 0
+    used = money_round(held) + money_round(extra or 0)
+    room = money_round(limit - used)
+    has_limit = limit > 0
     return {
         "limit": limit,
         "limit_text": format_amount(limit),
-        "due_text": format_amount(due),
-        "room": limit - due,
-        "room_text": format_amount(limit - due),
-        "has_limit": limit > 0,
+        "used": used,
+        "used_text": format_amount(used),
+        "due_text": totals.get("due_text") or format_amount(totals.get("due") or 0),
+        "room": room,
+        "room_text": "\u2014" if not has_limit else format_amount(room),
+        "has_limit": has_limit,
+        "over": bool(has_limit and used > limit),
+        "over_by": money_round(used - limit),
+        "over_by_text": format_amount(abs(used - limit)),
     }
+
+
+def credit_status(cursor, organization_id, customer_id, extra=Decimal("0")):
+    """The same, read straight from the database (used by the invoice screens)."""
+    totals = customer_totals(cursor, organization_id, customer_id)
+    cursor.execute("SELECT credit_limit FROM customers WHERE customer_id = %s AND organization_id = %s",
+                   (customer_id, organization_id))
+    row = cursor.fetchone()
+    return credit_position(totals, row[0] if row else 0, extra)
 
 
 # -------------------------------------------------------------------------
@@ -1545,6 +1777,56 @@ def partner_ledger(cursor, organization_id, customer_id, start_date=None, end_da
         "credit_total_text": format_amount(credit_total),
         "closing": closing,
         "closing_text": format_amount(closing),
+    }
+
+
+# -------------------------------------------------------------------------
+# The statement of account that goes to the customer
+#
+# The partner ledger in the Reports menu is ZYRO's own view: every document, in
+# date order, with a running balance. A statement is the same facts written for
+# the customer to read: the company's head on top, the period, what he owed at
+# the start, every invoice and receipt in between, what he owes at the end, and
+# how old that balance is. Nothing is posted or changed by printing it.
+# -------------------------------------------------------------------------
+
+def account_statement(cursor, organization_id, customer_id, start_date=None, end_date=None):
+    """Everything the printed statement needs, or None for a stranger's customer."""
+    customer = get_customer(cursor, organization_id, customer_id)
+    if customer is None:
+        return None
+
+    ledger = partner_ledger(cursor, organization_id, customer_id, start_date, end_date)
+    # "As at" is the end of the period asked for, or - with no period asked for -
+    # the later of today and the last thing in the ledger, so that a future-dated
+    # invoice is not left out of a statement that says it includes everything.
+    as_of = end_date or date.today()
+    if end_date is None:
+        for row in ledger["rows"]:
+            if row["date"] and row["date"] > as_of:
+                as_of = row["date"]
+    open_rows = customer_open_invoices(cursor, organization_id, customer_id, as_of=as_of)
+    buckets = bucket_totals(open_rows)
+
+    return {
+        "customer": customer,
+        "rows": ledger["rows"],
+        "opening": ledger["opening"],
+        "opening_text": ledger["opening_text"],
+        "debit_total": ledger["debit_total"],
+        "debit_total_text": ledger["debit_total_text"],
+        "credit_total": ledger["credit_total"],
+        "credit_total_text": ledger["credit_total_text"],
+        "closing": ledger["closing"],
+        "closing_text": ledger["closing_text"],
+        "open_invoices": open_rows,
+        "buckets": buckets,
+        "start_date": start_date,
+        "start_text": format_date(start_date) if start_date else "",
+        "end_date": end_date,
+        "end_text": format_date(end_date) if end_date else "",
+        "as_of": as_of,
+        "as_of_text": format_date(as_of),
     }
 
 

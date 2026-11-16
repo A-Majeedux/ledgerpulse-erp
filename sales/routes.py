@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from flask import Blueprint, render_template, request, redirect, url_for, abort
 from core.db import get_conn
@@ -7,6 +7,7 @@ from accounting.services import create_journal_entry, post_journal_entry, Unbala
 from sales.schema import UOM_CHOICES
 from sales.services import clean_date, give_invoice_a_number
 from core.money import to_decimal, money_round
+from customers.services import credit_status
 
 bp = Blueprint("sales", __name__, url_prefix="/sales")
 
@@ -441,6 +442,20 @@ def new_sales_invoice():
                     conn.close()
                     abort(400)
 
+        # The due date the customer was given. If nobody typed one, his card's
+        # payment terms fill it in here as well as on the screen, so an invoice
+        # saved with the warning turned off in the browser still has a due date.
+        due_date = request.form.get("due_date") or None
+        payment_terms = request.form.get("payment_terms", "").strip() or None
+        if due_date is None:
+            cursor.execute("SELECT payment_terms_days FROM customers WHERE customer_id = %s AND organization_id = %s",
+                           (customer_id, org_id))
+            terms_row = cursor.fetchone()
+            days = terms_row[0] if terms_row else None
+            if days:
+                due_date = (date.fromisoformat(request.form["invoice_date"]) + timedelta(days=int(days))).isoformat()
+                payment_terms = payment_terms or f"{int(days)} days"
+
         cursor.execute("""
             INSERT INTO sales_invoices
                 (organization_id, customer_id, invoice_date, due_date, payment_terms, journal_name,
@@ -451,8 +466,8 @@ def new_sales_invoice():
             org_id,
             customer_id,
             request.form["invoice_date"],
-            request.form.get("due_date") or None,
-            request.form.get("payment_terms", "").strip() or None,
+            due_date,
+            payment_terms,
             request.form.get("journal_name", "Customer Invoices").strip(),
             delivery_date,
         ))
@@ -635,6 +650,21 @@ def sales_invoice_detail(sales_invoice_id):
     paid_amount = money_round(to_decimal(invoice[15] or 0))
     still_due = money_round(grand_total - paid_amount)
 
+    # On a draft, what the credit limit says about it - the page then offers the
+    # "save anyway" tick instead of a Post button that quietly does nothing.
+    credit = None
+    if invoice[4] != "Posted":
+        conn = get_conn()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT customer_id FROM sales_invoices WHERE sales_invoice_id = %s AND organization_id = %s",
+                           (sales_invoice_id, org_id))
+            customer_id = cursor.fetchone()[0]
+            credit = credit_status(cursor, org_id, customer_id, extra=grand_total)
+        finally:
+            cursor.close()
+            conn.close()
+
     return render_template(
         "sales/sales_invoice_detail.html",
         invoice=invoice,
@@ -645,6 +675,9 @@ def sales_invoice_detail(sales_invoice_id):
         grand_total=grand_total,
         paid_amount=paid_amount,
         still_due=still_due,
+        credit=credit,
+        over_limit=(credit["over"] if credit else False),
+        refused_over_limit=bool(request.args.get("over_limit")),
     )
 
 
@@ -661,6 +694,24 @@ def post_sales_invoice(sales_invoice_id):
         conn.close()
         abort(404)
     journal_header_id = row[0]
+
+    # Credit control. An invoice that would take the customer past the limit he
+    # was given is NOT posted until someone says so on the invoice itself
+    # ("save anyway"). A draft is always allowed - it changes no balance.
+    override = str(request.form.get("override_credit_limit") or "").strip().lower() in ("1", "on", "true", "yes")
+    cursor.execute("SELECT customer_id FROM sales_invoices WHERE sales_invoice_id = %s AND organization_id = %s",
+                   (sales_invoice_id, org_id))
+    customer_id = cursor.fetchone()[0]
+    cursor.execute("SELECT COALESCE(SUM(total), 0) FROM sales_invoice_lines WHERE sales_invoice_id = %s",
+                   (sales_invoice_id,))
+    invoice_total = to_decimal(cursor.fetchone()[0] or 0)
+    credit = credit_status(cursor, org_id, customer_id, extra=invoice_total)
+    if credit["over"] and not override:
+        cursor.close()
+        conn.close()
+        return redirect(url_for("sales.sales_invoice_detail",
+                                sales_invoice_id=sales_invoice_id, over_limit=1))
+
     try:
         post_journal_entry(cursor, journal_header_id)
         cursor.execute("UPDATE sales_invoices SET status = 'Posted' WHERE sales_invoice_id = %s", (sales_invoice_id,))

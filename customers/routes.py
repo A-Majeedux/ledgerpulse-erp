@@ -7,8 +7,10 @@ from accounting.services import create_journal_entry, UnbalancedEntryError
 from wht.routes import get_active_tax_rates
 from core.money import to_decimal, money_round
 from customers.services import (
-    AGEING_BUCKETS, apply_receipt_to_invoices, customer_ageing, open_invoices,
-    receipt_allocations,
+    AGEING_BUCKETS, PROVINCE_OPTIONS, REGISTRATION_OPTIONS,
+    account_statement, apply_receipt_to_invoices, bucket_totals, credit_status,
+    customer_ageing, customer_open_invoices as open_invoices_for_customer,
+    open_invoices, receipt_allocations,
     CONTACT_TEXT_FIELDS, LIST_COLUMNS, NAME_MAX_LENGTH, NATURE_OF_SUPPLY_OPTIONS, TEXT_FIELDS,
     ValidationError, blank_contact_form, blank_form, clean_contact_form, clean_customer_form,
     clean_search, contact_form_as_typed, contact_form_from_contact, count_customers, create_contact,
@@ -98,6 +100,8 @@ def _customer_card(template, cursor, org_id, **context):
         contact_limits=_field_limits(CONTACT_TEXT_FIELDS),
         suggestions=field_suggestions(cursor, org_id),
         tag_list=tag_list,          # so the card can show the tags one by one
+        registration_options=REGISTRATION_OPTIONS,
+        province_options=PROVINCE_OPTIONS,
         **context,
     )
 
@@ -134,6 +138,7 @@ def _show_edit_card(cursor, org_id, customer, *, values=None, problems=None,
         receipts=receipts,
         ledger=customer_ledger(cursor, org_id, customer),
         credit=credit_position(totals, customer.get("credit_limit")),
+        open_invoices=open_invoices_for_customer(cursor, org_id, customer["customer_id"]),
         notes_text=(customer.get("notes") or "") if notes_text is None else notes_text,
         notes_problems=notes_problems or [],
         # the contact being changed in place
@@ -195,6 +200,106 @@ def new_customer():
     finally:
         cursor.close()
         conn.close()
+
+
+@bp.route("/<int:customer_id>")
+@require_organization
+def customer_view(customer_id):
+    """The customer's own page, for reading.
+
+    The Edit card is for changing things; this is the page to open when you
+    only want to look - and the page to show someone who should not be editing
+    anything. Everything on it is read from the documents; nothing is written.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        customer = get_customer(cursor, org_id, customer_id)
+        if customer is None:
+            abort(404)
+        totals = customer_totals(cursor, org_id, customer_id)
+        open_rows = open_invoices_for_customer(cursor, org_id, customer_id)
+        return render_template(
+            "customers/customer_view.html",
+            customer=customer,
+            totals=totals,
+            credit=credit_position(totals, customer.get("credit_limit")),
+            invoices=list_customer_invoices(cursor, org_id, customer_id),
+            receipts=list_customer_receipts(cursor, org_id, customer_id),
+            contacts=list_contacts(cursor, org_id, customer_id),
+            ledger=customer_ledger(cursor, org_id, customer),
+            open_invoices=open_rows,
+            buckets=bucket_totals(open_rows),
+            linked_vendor=linked_vendor(cursor, org_id, totals.get("vendor_id")),
+            tag_list=tag_list,
+        )
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@bp.route("/<int:customer_id>/statement")
+@require_organization
+def customer_statement(customer_id):
+    """The Statement of Account - the sheet that goes to the customer.
+
+    Same printed frame as the voucher and the invoice (A4, company head, four
+    signature boxes). A date range can be given (?start_date=&end_date=); with
+    none it is everything to today.
+    """
+    org_id = current_organization_id()
+    try:
+        start_date = clean_receipt_date(request.args.get("start_date")) if (request.args.get("start_date") or "").strip() else None
+        end_date = clean_receipt_date(request.args.get("end_date")) if (request.args.get("end_date") or "").strip() else None
+    except ValueError:
+        start_date = end_date = None
+
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        statement = account_statement(cursor, org_id, customer_id, start_date, end_date)
+        if statement is None:
+            abort(404)
+    finally:
+        cursor.close()
+        conn.close()
+    return render_template("customers/print/customer_statement.html", statement=statement)
+
+
+@bp.route("/<int:customer_id>/terms")
+@require_organization
+def customer_terms(customer_id):
+    """What the invoice and receipt screens need to know about one customer.
+
+    Read by the two forms when a customer is chosen: how long he is given to
+    pay (so the invoice's due date fills itself), whether he deducts
+    withholding tax and at what rate (so a receipt offers it), and the room
+    left on his credit limit.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        customer = get_customer(cursor, org_id, customer_id)
+        if customer is None:
+            abort(404)
+        credit = credit_status(cursor, org_id, customer_id)
+    finally:
+        cursor.close()
+        conn.close()
+    return jsonify({
+        "id": customer_id,
+        "name": customer["name"],
+        "payment_terms_days": customer.get("payment_terms_days"),
+        "withholds_wht": bool(customer.get("withholds_wht")),
+        "default_wht_rate": str(customer["default_wht_rate"]) if customer.get("default_wht_rate") is not None else "",
+        "credit_limit": str(credit["limit"]),
+        "credit_used": str(credit["used"]),
+        "credit_room": str(credit["room"]),
+        "credit_has_limit": credit["has_limit"],
+        "over_limit": credit["over"],
+    })
 
 
 @bp.route("/<int:customer_id>/edit", methods=["GET", "POST"])

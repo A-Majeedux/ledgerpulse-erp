@@ -7,7 +7,16 @@
     <h1 class="lp-page-title">Edit Customer</h1>
     <p class="lp-page-subtitle">ID {{ customer.customer_no }}{% if customer.is_active is not false %} · Active{% else %} · Inactive{% endif %} - the ID never changes.</p>
   </div>
-  <a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary sm">Back to Customers</a>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <a href="{{ url_for('customers.customer_view', customer_id=customer.customer_id) }}" class="lp-btn secondary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-customers"/></svg> View page
+    </a>
+    <a href="{{ url_for('customers.customer_statement', customer_id=customer.customer_id) }}"
+       class="lp-btn secondary sm" target="_blank" rel="noopener">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Statement
+    </a>
+    <a href="{{ url_for('customers.customers_list') }}" class="lp-btn secondary sm">Back to Customers</a>
+  </div>
 </div>
 
 {# The three figures at the top. They only read the invoices and the
@@ -36,7 +45,7 @@
   <div class="lp-total">
     <span class="lp-total-label">Due</span>
     <strong class="lp-total-value{{ ' negative' if totals.due < 0 }}">{{ active_currency }} {{ totals.due_text }}</strong>
-    <small>Invoiced less receipts received{% if totals.received > 0 %} ({{ active_currency }} {{ totals.received_text }} received){% endif %}</small>
+    <small>Still owed on posted invoices{% if totals.unapplied > 0 %}, plus {{ active_currency }} {{ totals.unapplied_text }} received but not yet matched{% endif %}</small>
   </div>
 </div>
 
@@ -133,19 +142,44 @@
         <small>{{ 'The limit you gave him' if credit.has_limit else 'No limit set on the card above' }}</small>
       </div>
       <div class="lp-total">
-        <span class="lp-total-label">Due now</span>
-        <strong class="lp-total-value{{ ' negative' if totals.due < 0 }}">{{ active_currency }} {{ credit.due_text }}</strong>
-        <small>Invoiced less receipts received</small>
+        <span class="lp-total-label">Held against the limit</span>
+        <strong class="lp-total-value{{ ' negative' if credit.used < 0 }}">{{ active_currency }} {{ credit.used_text }}</strong>
+        <small>Invoiced less every receipt, matched or not{% if totals.unapplied > 0 %} ({{ active_currency }} {{ totals.unapplied_text }} is still unapplied){% endif %}</small>
       </div>
       <div class="lp-total">
         <span class="lp-total-label">Room left</span>
-        <strong class="lp-total-value{{ ' negative' if credit.room < 0 }}">{{ active_currency }} {{ credit.room_text }}</strong>
-        <small>{{ 'Over the limit' if credit.room < 0 else 'Limit less what is due' }}</small>
+        {% if credit.has_limit %}
+          <strong class="lp-total-value{{ ' negative' if credit.room < 0 }}">{{ active_currency }} {{ credit.room_text }}</strong>
+          <small>{{ 'Over the limit' if credit.over else 'Limit less what is invoiced, after receipts' }}</small>
+        {% else %}
+          <strong class="lp-total-value">&mdash;</strong>
+          <small>No limit set, so nothing is checked</small>
+        {% endif %}
       </div>
     </div>
     <p style="font-size: 12px; line-height: 1.5; color: var(--lp-text-muted); margin: 16px 0 0;">
-      ZYRO records the limit but does not stop a sale that goes over it yet - the invoice is still saved.
+      The invoice screen warns when a bill takes him over the limit, and an invoice that would go over
+      it is not posted until someone ticks "save anyway" on the invoice itself. A draft is always allowed.
+      A limit of 0.00 means no limit.
     </p>
+    {% if open_invoices %}
+    <h4 class="lp-subhead" style="margin-top: 24px;">Open invoices, oldest first</h4>
+    <div class="lp-table-wrapper">
+      <table class="lp-table">
+        <thead><tr><th>Invoice</th><th>Due date</th><th class="amount">Days</th><th class="amount">Still due</th></tr></thead>
+        <tbody>
+          {% for row in open_invoices %}
+          <tr>
+            <td>{{ row.invoice_no or ('#' ~ row.invoice_id) }}</td>
+            <td>{{ row.due_text or '—' }}</td>
+            <td class="amount">{{ row.days }}</td>
+            <td class="amount">{{ "%.2f"|format(row.remaining) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
   </div>
 </div>
 

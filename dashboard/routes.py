@@ -184,13 +184,20 @@ def home():
     """, (org_id,))
     total_invoiced = cursor.fetchone()[0] or Decimal('0')
 
+    # What is still owed is what has been invoiced less what receipts have been
+    # MATCHED to those invoices (the customer card, the aging report and the
+    # partner ledger count it the same way). Money received but not yet matched
+    # is not a reduction of what he owes - it is a credit waiting for an invoice.
     cursor.execute("""
-        SELECT COALESCE(SUM(amount), 0)
-        FROM customer_receipts
-        WHERE organization_id = %s
-    """, (org_id,))
-    total_received = cursor.fetchone()[0] or Decimal('0')
-    receivables_outstanding = max(Decimal('0'), total_invoiced - total_received)
+        SELECT COALESCE(SUM(allocation.allocated_amount), 0)
+        FROM customer_receipt_allocations allocation
+        JOIN customer_receipts receipt ON receipt.customer_receipt_id = allocation.customer_receipt_id
+        JOIN sales_invoices invoice ON invoice.sales_invoice_id = allocation.sales_invoice_id
+        WHERE invoice.organization_id = %s AND invoice.status = 'Posted'
+          AND receipt.organization_id = %s
+    """, (org_id, org_id))
+    total_applied = cursor.fetchone()[0] or Decimal('0')
+    receivables_outstanding = max(Decimal('0'), total_invoiced - total_applied)
 
     # 5. Vendor Outstanding Payables
     cursor.execute("""

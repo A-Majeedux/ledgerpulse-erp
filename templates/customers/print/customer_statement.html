@@ -1,0 +1,159 @@
+{% extends "vendors/print/_print_base.html" %}
+
+{# The Statement of Account - what goes to the customer.
+
+   Same printed frame as the receipt voucher and the invoice (company head, A4
+   margins, the four signature boxes, the Print button). That frame is only
+   READ from here - no vendor screen or template is changed.
+
+   statement  everything account_statement() returned (customers/services.py):
+                customer, rows, opening/closing and their texts,
+                open_invoices, buckets, start/end/as-of texts #}
+
+{% set customer = statement.customer %}
+{% set period = (statement.start_text ~ ' to ' ~ statement.end_text) if statement.start_text else ('Up to ' ~ (statement.end_text or statement.as_of_text)) %}
+
+{% block title %}Statement of Account — {{ customer.name }}{% endblock %}
+{% block toolbar_title %}Statement of Account — {{ customer.name }}{% endblock %}
+{% block back_url %}/customers/{{ customer.customer_id }}{% endblock %}
+
+{% block content %}
+<div class="title-block">
+  <div class="doc-main-title">Statement of Account</div>
+  <div class="doc-sub-number">{{ period }}</div>
+</div>
+
+<table class="info-table">
+  <tr>
+    <th>Customer</th>
+    <td><strong>{{ customer.name }}</strong>{% if customer.customer_no %} (ID {{ customer.customer_no }}){% endif %}</td>
+    <th>Statement Date</th>
+    <td>{{ statement.as_of_text }}</td>
+  </tr>
+  <tr>
+    <th>Address</th>
+    <td>
+      {% if customer.address %}{{ customer.address }}{% endif %}
+      {% if customer.street2 %}<br>{{ customer.street2 }}{% endif %}
+      {% if customer.city %}<br>{{ customer.city }}{% endif %}{% if customer.state %}, {{ customer.state }}{% endif %}
+      {% if customer.zip_code %} {{ customer.zip_code }}{% endif %}
+      {% if customer.country %}<br>{{ customer.country }}{% endif %}
+      {% if not customer.address and not customer.city %}&mdash;{% endif %}
+    </td>
+    <th>NTN / STRN</th>
+    <td>{{ customer.ntn or '—' }}{% if customer.strn %} / {{ customer.strn }}{% endif %}</td>
+  </tr>
+  <tr>
+    <th>Contact</th>
+    <td>{{ customer.phone or '' }}{% if customer.phone and customer.email %} &middot; {% endif %}{{ customer.email or '' }}{% if not customer.phone and not customer.email %}&mdash;{% endif %}</td>
+    <th>Payment Terms</th>
+    <td>{% if customer.payment_terms_days is not none %}{{ customer.payment_terms_days }} days{% else %}&mdash;{% endif %}</td>
+  </tr>
+</table>
+
+<div style="display:flex; gap:10px; margin-bottom:14px;">
+  <div style="flex:1; border:1px solid #ccc; padding:8px 12px; background:#fafafa;">
+    <div style="font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#555;">Balance brought forward</div>
+    <div style="font-size:14px; font-weight:bold;">{{ statement.opening_text }} Rs</div>
+  </div>
+  <div style="flex:1; border:1px solid #ccc; padding:8px 12px; background:#fafafa;">
+    <div style="font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#555;">Invoices in this period</div>
+    <div style="font-size:14px; font-weight:bold;">{{ statement.debit_total_text }} Rs</div>
+  </div>
+  <div style="flex:1; border:1px solid #ccc; padding:8px 12px; background:#fafafa;">
+    <div style="font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#555;">Received in this period</div>
+    <div style="font-size:14px; font-weight:bold;">{{ statement.credit_total_text }} Rs</div>
+  </div>
+  <div style="flex:1; border:1px solid #ccc; padding:8px 12px; background:#eef7f6;">
+    <div style="font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#555;">Balance carried forward</div>
+    <div style="font-size:14px; font-weight:bold;">{{ statement.closing_text }} Rs</div>
+  </div>
+</div>
+
+<table class="lines-table">
+  <thead>
+    <tr>
+      <th style="width:12%;">Date</th>
+      <th style="width:20%;">Document</th>
+      <th style="width:10%;">Type</th>
+      <th style="width:28%; text-align:left;">Description</th>
+      <th style="width:10%; text-align:right;">Debit</th>
+      <th style="width:10%; text-align:right;">Credit</th>
+      <th style="width:10%; text-align:right;">Balance</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% if statement.opening %}
+    <tr>
+      <td colspan="6" class="text-left"><strong>Balance brought forward</strong></td>
+      <td class="text-right">{{ statement.opening_text }}</td>
+    </tr>
+    {% endif %}
+    {% for row in statement.rows %}
+    <tr>
+      <td>{{ row.date.strftime('%d/%m/%Y') }}</td>
+      <td>{{ row.reference or '—' }}</td>
+      <td>{{ row.kind }}</td>
+      <td class="text-left">
+        {% if row.kind == 'Invoice' %}Sales invoice{% else %}Receipt - money received with thanks{% endif %}
+      </td>
+      <td style="text-align:right;">{{ row.debit_text }}</td>
+      <td style="text-align:right;">{{ row.credit_text }}</td>
+      <td class="text-right">{{ row.balance_text }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7">No documents in this period.</td></tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    <tr>
+      <td colspan="4" style="text-align:right;"><strong>Totals</strong></td>
+      <td style="text-align:right;"><strong>{{ statement.debit_total_text }}</strong></td>
+      <td style="text-align:right;"><strong>{{ statement.credit_total_text }}</strong></td>
+      <td class="text-right"><strong>{{ statement.closing_text }}</strong></td>
+    </tr>
+  </tfoot>
+</table>
+
+<div style="display:flex; gap:16px; align-items:flex-start; margin-bottom:16px;">
+  <table class="lines-table" style="width:52%; margin-bottom:0;">
+    <thead>
+      <tr>
+        <th style="text-align:left;">How old the balance is</th>
+        <th style="width:32%; text-align:right;">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td class="text-left">0 - 30 days</td><td style="text-align:right;">{{ statement.buckets.text['0-30'] }}</td></tr>
+      <tr><td class="text-left">31 - 60 days</td><td style="text-align:right;">{{ statement.buckets.text['31-60'] }}</td></tr>
+      <tr><td class="text-left">61 - 90 days</td><td style="text-align:right;">{{ statement.buckets.text['61-90'] }}</td></tr>
+      <tr><td class="text-left">Over 90 days</td><td style="text-align:right;">{{ statement.buckets.text['older'] }}</td></tr>
+      <tr><td class="text-left"><strong>Total open invoices</strong></td><td style="text-align:right;"><strong>{{ statement.buckets.text.total }}</strong></td></tr>
+    </tbody>
+  </table>
+
+  <div style="flex:1; font-size:10.5px; color:#444; line-height:1.55;">
+    <p style="margin:0 0 6px;"><strong>Invoices still owing as at {{ statement.as_of_text }}</strong></p>
+    {% if statement.open_invoices %}
+      <table style="width:100%; border-collapse:collapse; font-size:10.5px;">
+        {% for row in statement.open_invoices %}
+        <tr>
+          <td style="padding:2px 0;">{{ row.invoice_no or row.invoice_id }}</td>
+          <td style="padding:2px 0;">due {{ row.due_text or row.date_text }}</td>
+          <td style="padding:2px 0; text-align:right;">{{ row.remaining_text }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    {% else %}
+      <p style="margin:0;">Nothing is owed.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="terms-block">
+  This is a statement of account, not a tax invoice. Balances are counted from the invoices and the
+  receipts recorded in the books{{ ' up to ' ~ statement.end_text if statement.end_text else ' up to ' ~ statement.as_of_text }}.
+  A receipt shown here is money received; a cheque is subject to realisation.
+  If anything on this statement does not agree with your records, please tell us before paying.
+</div>
+{% endblock %}

@@ -57,7 +57,8 @@
             {% set text = customer.cells[column.key] %}
             {% if column.kind == 'name' %}
               <td>
-                <a href="{{ url_for('customers.edit_customer', customer_id=customer.customer_id) }}"
+                {# The name opens the customer's own page; changing anything is a click from there. #}
+                <a href="{{ url_for('customers.customer_view', customer_id=customer.customer_id) }}"
                    class="lp-clip lp-list-name" title="{{ text }}">{{ text or '(no name)' }}</a>
                 {% if not customer.is_active %}<span class="lp-pill draft" style="margin-top: 4px;">Inactive</span>{% endif %}
               </td>
