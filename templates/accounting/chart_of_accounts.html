@@ -7,7 +7,9 @@
     <h1 class="lp-page-title">Chart of Accounts</h1>
     <p class="lp-page-subtitle">Master list of ledger accounts for organization financial posting.</p>
   </div>
-  <a href="{{ url_for('accounting.new_account') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Account</a>
+  {% if may('accounting.create') %}
+    <a href="{{ url_for('accounting.new_account') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Account</a>
+  {% endif %}
 </div>
 
 <div class="lp-table-wrapper">

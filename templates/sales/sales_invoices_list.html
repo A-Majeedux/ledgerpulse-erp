@@ -8,7 +8,9 @@
     <h1 class="lp-page-title">Sales Invoices</h1>
     <p class="lp-page-subtitle">Manage customer invoices, sales tracking, and billing statuses.</p>
   </div>
-  <a href="{{ url_for('sales.new_sales_invoice') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Invoice</a>
+  {% if may('sales.create') %}
+    <a href="{{ url_for('sales.new_sales_invoice') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Invoice</a>
+  {% endif %}
 </div>
 
 {{ search_bar(url_for('sales.sales_invoices_list'), search,

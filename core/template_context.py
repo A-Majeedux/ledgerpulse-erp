@@ -70,6 +70,43 @@ def register_context_processors(app):
     app.template_filter('safe_str')(safe_str)
 
     @app.context_processor
+    def inject_may():
+        """`may('sales.create')` in a template: should this person be offered it?
+
+        Asked once per permission per request and remembered, because a page can
+        ask a dozen times and each answer would otherwise be a query. The route
+        checks the same permission again on its own - a hidden button is a
+        courtesy, not a lock.
+        """
+        from flask import g
+        from auth.services import current_user_id, has_permission, is_platform_admin
+
+        def may(permission):
+            if not permission:
+                return True
+            user_id = current_user_id()
+            org_id = current_organization_id()
+            answers = getattr(g, "_may_cache", None)
+            if answers is None:
+                answers = {}
+                g._may_cache = answers
+            # The key carries *whose* answer it is: an answer remembered for one
+            # person must never be handed to the next one to ask.
+            key = (user_id, org_id, permission)
+            if key in answers:
+                return answers[key]
+            if not user_id or not org_id:
+                answer = False
+            elif is_platform_admin():
+                answer = True
+            else:
+                answer = has_permission(user_id, org_id, permission)
+            answers[key] = answer
+            return answer
+
+        return {"may": may}
+
+    @app.context_processor
     def inject_active_organization():
         org_id = current_organization_id()
         if not org_id:

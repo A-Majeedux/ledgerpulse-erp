@@ -21,6 +21,7 @@
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
+      {% if may('sales.post') %}
       <form method="POST" action="{{ url_for('sales.post_sales_invoice', sales_invoice_id=invoice[0]) }}"
             style="display:inline-flex; gap:10px; align-items:center; margin-left:8px;">
         {{ csrf_field() }}
@@ -31,6 +32,7 @@
         {% endif %}
         <button type="submit" class="lp-btn primary sm">Post Invoice</button>
       </form>
+      {% endif %}
     {% endif %}
     {{ doc_actions(menu) }}
   </div>

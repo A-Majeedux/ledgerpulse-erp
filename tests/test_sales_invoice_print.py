@@ -16,6 +16,7 @@ database; every test makes its own company inside it and removes it again.
 """
 import unittest
 import uuid
+from _people import member
 
 
 class _OneCompanyPerTest(unittest.TestCase):
@@ -48,6 +49,7 @@ class _OneCompanyPerTest(unittest.TestCase):
             "VALUES ('Print Tester', %s, 'hash', TRUE) RETURNING user_id",
             (f"print_{uuid.uuid4().hex[:8]}@x.local",))
         self.user_id = cursor.fetchone()[0]
+        member(cursor, self.user_id, self.org_id)
         # the accounts an invoice leans on
         for code, name, kind in (("1100", "Trade Receivables", "Asset"),
                                  ("4000", "Sales Revenue", "Revenue"),
@@ -203,6 +205,10 @@ class SalesInvoicePrintTests(_OneCompanyPerTest):
             "INSERT INTO organizations (name, currency) VALUES (%s, 'PKR') RETURNING organization_id",
             ("TEST_SALES_PRINT_OTHER_" + uuid.uuid4().hex[:8],))
         other_org_id = cursor.fetchone()[0]
+        # a member there too, so this test is about the invoice being another
+        # company's - not about being turned away at the door (that is a 403,
+        # and tests/test_route_guard.py checks it)
+        member(cursor, self.user_id, other_org_id)
         conn.commit()
         cursor.close()
         conn.close()

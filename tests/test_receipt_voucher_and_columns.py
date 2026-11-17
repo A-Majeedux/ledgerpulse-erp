@@ -22,6 +22,8 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
+from _people import member
+
 from customers.services import amount_in_words
 
 
@@ -53,6 +55,7 @@ class _OneCompany(unittest.TestCase):
             "VALUES ('Voucher Tester', %s, 'hash', TRUE) RETURNING user_id",
             (f"voucher_{uuid.uuid4().hex[:8]}@x.local",))
         self.user_id = cursor.fetchone()[0]
+        member(cursor, self.user_id, self.org_id)
         for code, name, kind in (("1000", "Cash in Hand", "Asset"),
                                  ("1100", "Trade Receivables", "Asset"),
                                  ("1150", "WHT Receivable - Supplies", "Asset"),

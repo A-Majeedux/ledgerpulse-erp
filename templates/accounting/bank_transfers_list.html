@@ -9,7 +9,9 @@
       <p style="margin: 4px 0 0 0; font-size: 13px; color: var(--zyro-slate-blue);">Transfer funds between bank and cash accounts with automated ledger posting</p>
     </div>
     <div>
-      <a href="{{ url_for('accounting.new_bank_transfer') }}" class="lp-btn primary" style="background: var(--zyro-electric-teal); color: #fff; font-weight: 600;">+ New Bank Transfer</a>
+      {% if may('accounting.create') %}
+        <a href="{{ url_for('accounting.new_bank_transfer') }}" class="lp-btn primary" style="background: var(--zyro-electric-teal); color: #fff; font-weight: 600;">+ New Bank Transfer</a>
+      {% endif %}
     </div>
   </div>
 </div>

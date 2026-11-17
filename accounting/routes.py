@@ -23,6 +23,7 @@ bp = Blueprint("accounting", __name__, url_prefix="/accounting")
 
 @bp.route("/chart-of-accounts")
 @require_organization
+@require_permission("accounting.view")
 def chart_of_accounts_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -45,6 +46,7 @@ def chart_of_accounts_list():
 
 @bp.route("/chart-of-accounts/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("accounting.create")
 def new_account():
     org_id = current_organization_id()
     if request.method == "POST":
@@ -74,6 +76,7 @@ def new_account():
 
 @bp.route("/journal-entries")
 @require_organization
+@require_permission("accounting.view")
 def journal_entries_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -151,6 +154,7 @@ def _filter_accounts(cursor, org_id):
 
 @bp.route("/journal-entries/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("accounting.create")
 def new_journal_entry():
     org_id = current_organization_id()
     conn = get_conn()
@@ -216,6 +220,7 @@ def new_journal_entry():
 
 @bp.route("/journal-entries/<int:journal_header_id>")
 @require_organization
+@require_permission("accounting.view")
 def journal_entry_detail(journal_header_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -470,6 +475,7 @@ def delete_journal_entry_route(journal_header_id):
 
 @bp.route("/journal-entries/<int:journal_header_id>/post", methods=["POST"])
 @require_organization
+@require_permission("accounting.post")
 def post_journal_entry_route(journal_header_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -508,6 +514,7 @@ def _get_accounts(org_id):
 
 @bp.route("/intelligence/suggest", methods=["GET"])
 @require_organization
+@require_permission("accounting.view")
 def intelligence_suggest():
     org_id = current_organization_id()
     query_text = request.args.get("q", "")
@@ -526,6 +533,7 @@ def intelligence_suggest():
 
 @bp.route("/bank-transfers")
 @require_organization
+@require_permission("accounting.view")
 def bank_transfers_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -547,6 +555,7 @@ def bank_transfers_list():
 
 @bp.route("/bank-transfers/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("accounting.create")
 def new_bank_transfer():
     org_id = current_organization_id()
     conn = get_conn()

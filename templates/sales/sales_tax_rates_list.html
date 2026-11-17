@@ -7,7 +7,9 @@
     <h2 style="margin:0; font-size: 24px;">Sales Tax Rates</h2>
     <p style="color: var(--lp-text-muted); margin: 4px 0 0; font-size: 14px;">Maintain the Sales Tax rates applicable to invoices. These post to Output Tax Payable.</p>
   </div>
-  <a href="{{ url_for('sales.new_sales_tax_rate') }}" class="lp-btn primary sm">+ New Tax Rate</a>
+  {% if may('sales.create') %}
+    <a href="{{ url_for('sales.new_sales_tax_rate') }}" class="lp-btn primary sm">+ New Tax Rate</a>
+  {% endif %}
 </div>
 
 <div class="lp-table-wrapper">

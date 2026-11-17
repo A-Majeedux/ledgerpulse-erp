@@ -12,6 +12,7 @@ Needs DATABASE_URL set to a TEST database, like the other database tests:
 """
 import unittest
 import uuid
+from _people import member
 
 from sales.services import (
     clean_date, clean_lc_reference, give_invoice_a_number, invoice_number,
@@ -75,6 +76,11 @@ class InvoiceNumberDatabaseTests(unittest.TestCase):
         cursor.execute("INSERT INTO users (name, email, password_hash, is_active) "
                        "VALUES ('Invoice Number Tester', %s, 'hash', TRUE) RETURNING user_id", (cls.user_email,))
         cls.user_id = cursor.fetchone()[0]
+        # a member of both companies: the cross-company checks are about what a
+        # person may touch inside the company they are signed in to, not about
+        # being signed in to a company they do not belong to
+        member(cursor, cls.user_id, cls.org_id)
+        member(cursor, cls.user_id, cls.other_org_id)
         # 1100 Trade Receivables (the invoice debits it) and 4000 Sales Revenue
         for org_id in (cls.org_id, cls.other_org_id):
             for code, name, kind in (("1100", "Trade Receivables", "Asset"), ("4000", "Sales Revenue", "Revenue")):

@@ -14,10 +14,12 @@
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
-      <form method="POST" action="{{ url_for('accounting.post_journal_entry_route', journal_header_id=header[0]) }}" style="display:inline;">
-        {{ csrf_field() }}
-        <button type="submit" class="lp-btn primary">Post</button>
-      </form>
+      {% if may('accounting.post') %}
+        <form method="POST" action="{{ url_for('accounting.post_journal_entry_route', journal_header_id=header[0]) }}" style="display:inline;">
+          {{ csrf_field() }}
+          <button type="submit" class="lp-btn primary">Post</button>
+        </form>
+      {% endif %}
     {% endif %}
     {{ doc_actions(menu) }}
   </div>

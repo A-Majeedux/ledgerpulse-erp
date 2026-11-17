@@ -27,6 +27,8 @@ What it proves, slice by slice:
 """
 import unittest
 import uuid
+
+from _people import member
 from datetime import date, timedelta
 from decimal import Decimal as D
 
@@ -59,6 +61,7 @@ class CustomersModuleTests(unittest.TestCase):
         cursor.execute("INSERT INTO users (name, email, password_hash, is_active) "
                        "VALUES ('Customers Module Tester', %s, 'hash', TRUE) RETURNING user_id", (cls.user_email,))
         cls.user_id = cursor.fetchone()[0]
+        member(cursor, cls.user_id, cls.org_id)
         # the accounts the invoice and receipt screens insist on
         cls.revenue_account_id = None
         for code, name, account_type in (("1100", "Trade Receivables", "Asset"),

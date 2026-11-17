@@ -279,6 +279,9 @@ def require_permission(permission_code):
             if not has_permission(uid, org_id, permission_code):
                 abort(403, description=f"Access denied: Missing required permission '{permission_code}'.")
             return f(*args, **kwargs)
+        # Which permission this view asks for, written on the function itself so
+        # the whole route table can be read back and checked (tests/test_route_guard.py).
+        decorated_function.required_permission = permission_code
         return decorated_function
     return decorator
 

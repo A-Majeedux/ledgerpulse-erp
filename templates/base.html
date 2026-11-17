@@ -18,41 +18,41 @@
      and so is the command palette (Ctrl/Cmd + K), so the two can never drift
      apart. Each entry: (label, endpoint, icon). #}
   {% set NAV_GROUPS = [
-      ('Home', [('Dashboard', 'dashboard.home', 'dashboard')]),
+      ('Home', [('Dashboard', 'dashboard.home', 'dashboard', '')]),
       ('Sales', [
-        ('Sales Invoices', 'sales.sales_invoices_list', 'invoice'),
-        ('Products', 'sales.products_list', 'product'),
-        ('Customers', 'customers.customers_list', 'customers'),
-        ('Customer Receipts', 'customers.customer_receipts_list', 'receipt')
+        ('Sales Invoices', 'sales.sales_invoices_list', 'invoice', 'sales.view'),
+        ('Products', 'sales.products_list', 'product', 'sales.view'),
+        ('Customers', 'customers.customers_list', 'customers', 'sales.view'),
+        ('Customer Receipts', 'customers.customer_receipts_list', 'receipt', 'sales.view')
       ]),
       ('Purchases', [
-        ('Vendors', 'vendors.vendors_list', 'vendor'),
-        ('Vendor Bills', 'vendors.vendor_bills_list', 'bill'),
-        ('Vendor Credit Notes', 'vendors.vendor_credit_notes_list', 'credit-note'),
-        ('Vendor Payments', 'vendors.vendor_payments_list', 'payment'),
-        ('Batch Vendor Payments', 'vendors.batch_vendor_payments_list', 'batch')
+        ('Vendors', 'vendors.vendors_list', 'vendor', 'vendors.view'),
+        ('Vendor Bills', 'vendors.vendor_bills_list', 'bill', 'vendors.view'),
+        ('Vendor Credit Notes', 'vendors.vendor_credit_notes_list', 'credit-note', 'vendors.view'),
+        ('Vendor Payments', 'vendors.vendor_payments_list', 'payment', 'vendors.view'),
+        ('Batch Vendor Payments', 'vendors.batch_vendor_payments_list', 'batch', 'vendors.view')
       ]),
       ('Accounting', [
-        ('Chart of Accounts', 'accounting.chart_of_accounts_list', 'accounts'),
-        ('Journal Entries', 'accounting.journal_entries_list', 'journal'),
-        ('New Journal Entry (AI)', 'accounting.new_journal_entry', 'ai')
+        ('Chart of Accounts', 'accounting.chart_of_accounts_list', 'accounts', 'accounting.view'),
+        ('Journal Entries', 'accounting.journal_entries_list', 'journal', 'accounting.view'),
+        ('New Journal Entry (AI)', 'accounting.new_journal_entry', 'ai', 'accounting.create')
       ]),
       ('Reports', [
-        ('Trial Balance', 'reports.trial_balance', 'trial'),
-        ('General Ledger', 'reports.general_ledger', 'gl'),
-        ('Customer Partner Ledger', 'customers.customer_partner_ledger', 'ledger'),
-        ('Vendor Partner Ledger', 'vendors.vendor_ledger', 'ledger'),
-        ('Customer Aging Report', 'customers.customer_ageing_report', 'aging'),
-        ('Vendor Aging Report', 'vendors.vendor_aging', 'aging'),
-        ('Own Cheques Report', 'vendors.own_cheques_report', 'cheque')
+        ('Trial Balance', 'reports.trial_balance', 'trial', 'reports.view'),
+        ('General Ledger', 'reports.general_ledger', 'gl', 'reports.view'),
+        ('Customer Partner Ledger', 'customers.customer_partner_ledger', 'ledger', 'reports.view'),
+        ('Vendor Partner Ledger', 'vendors.vendor_ledger', 'ledger', 'reports.view'),
+        ('Customer Aging Report', 'customers.customer_ageing_report', 'aging', 'reports.view'),
+        ('Vendor Aging Report', 'vendors.vendor_aging', 'aging', 'reports.view'),
+        ('Own Cheques Report', 'vendors.own_cheques_report', 'cheque', 'reports.view')
       ]),
       ('Business Settings', [
-        ('Sales Tax Rates', 'sales.sales_tax_rates_list', 'percent'),
-        ('WHT Rates', 'wht.tax_rates_list', 'percent')
+        ('Sales Tax Rates', 'sales.sales_tax_rates_list', 'percent', 'sales.view'),
+        ('WHT Rates', 'wht.tax_rates_list', 'percent', 'accounting.view')
       ]),
       ('Setup & Admin', [
-        ('Organizations', 'organizations.manage_organizations', 'org'),
-        ('Subscription', 'organizations.renew_subscription', 'subscription')
+        ('Organizations', 'organizations.manage_organizations', 'org', ''),
+        ('Subscription', 'organizations.renew_subscription', 'subscription', 'subscription.view')
       ])
   ] %}
 
@@ -118,10 +118,12 @@
               <svg class="ico sm chev" aria-hidden="true"><use href="#i-chevron-down"/></svg>
             </button>
             <div class="lp-dropdown-menu" role="menu">
-              {% for label, endpoint, icon in items %}
-                <a href="{{ url_for(endpoint) }}" role="menuitem">
-                  <svg class="ico sm" aria-hidden="true"><use href="#i-{{ icon }}"/></svg>{{ label }}
-                </a>
+              {% for label, endpoint, icon, right in items %}
+                {% if may(right) %}
+                  <a href="{{ url_for(endpoint) }}" role="menuitem">
+                    <svg class="ico sm" aria-hidden="true"><use href="#i-{{ icon }}"/></svg>{{ label }}
+                  </a>
+                {% endif %}
               {% endfor %}
 
               {% if group == 'Setup & Admin' %}
@@ -239,26 +241,32 @@
   <script>
     window.ZYRO_NAV = [
       {%- set comma = namespace(first=true) -%}
-      {%- for group, items in NAV_GROUPS -%}{%- for label, endpoint, icon in items -%}
-        {%- if not comma.first %},{% endif %}{% set comma.first = false -%}
-        {"label": {{ label|tojson }}, "url": {{ url_for(endpoint)|tojson }}, "group": {{ group|tojson }}, "icon": {{ icon|tojson }}}
+      {%- for group, items in NAV_GROUPS -%}{%- for label, endpoint, icon, right in items -%}
+        {%- if may(right) -%}
+          {%- if not comma.first %},{% endif %}{% set comma.first = false -%}
+          {"label": {{ label|tojson }}, "url": {{ url_for(endpoint)|tojson }}, "group": {{ group|tojson }}, "icon": {{ icon|tojson }}}
+        {%- endif -%}
       {%- endfor -%}{%- endfor %}
     ];
 
-    // The things you create most often, so the palette can start them too.
+    // The things you create most often, so the palette can start them too - and
+    // only those this person is actually allowed to create, so the palette never
+    // offers a door that would refuse him.
     window.ZYRO_ACTIONS = [
       {%- set done = namespace(first=true) -%}
-      {%- for label, endpoint, icon in [
-            ('New sales invoice', 'sales.new_sales_invoice', 'invoice'),
-            ('New customer receipt', 'customers.new_customer_receipt', 'receipt'),
-            ('New vendor bill', 'vendors.new_vendor_bill', 'bill'),
-            ('New vendor payment', 'vendors.new_vendor_payment', 'payment'),
-            ('New journal entry', 'accounting.new_journal_entry', 'journal'),
-            ('New customer', 'customers.new_customer', 'customers'),
-            ('New vendor', 'vendors.new_vendor', 'vendor'),
-            ('Trial balance', 'reports.trial_balance', 'trial')] -%}
-        {%- if not done.first %},{% endif %}{% set done.first = false -%}
-        {"label": {{ label|tojson }}, "url": {{ url_for(endpoint)|tojson }}, "group": "Create", "icon": {{ icon|tojson }}}
+      {%- for label, endpoint, icon, right in [
+            ('New sales invoice', 'sales.new_sales_invoice', 'invoice', 'sales.create'),
+            ('New customer receipt', 'customers.new_customer_receipt', 'receipt', 'sales.post'),
+            ('New vendor bill', 'vendors.new_vendor_bill', 'bill', 'vendors.create'),
+            ('New vendor payment', 'vendors.new_vendor_payment', 'payment', 'vendors.post'),
+            ('New journal entry', 'accounting.new_journal_entry', 'journal', 'accounting.create'),
+            ('New customer', 'customers.new_customer', 'customers', 'sales.create'),
+            ('New vendor', 'vendors.new_vendor', 'vendor', 'vendors.create'),
+            ('Trial balance', 'reports.trial_balance', 'trial', 'reports.view')] -%}
+        {%- if may(right) -%}
+          {%- if not done.first %},{% endif %}{% set done.first = false -%}
+          {"label": {{ label|tojson }}, "url": {{ url_for(endpoint)|tojson }}, "group": "Create", "icon": {{ icon|tojson }}}
+        {%- endif -%}
       {%- endfor %}
     ];
   </script>

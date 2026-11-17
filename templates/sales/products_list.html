@@ -17,7 +17,9 @@
       <button type="submit" class="lp-btn secondary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-search"/></svg> Search</button>
       {% if q %}<a href="{{ url_for('sales.products_list') }}" class="lp-btn sm">Clear</a>{% endif %}
     </form>
-    <a href="{{ url_for('sales.new_product') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Product</a>
+    {% if may('sales.create') %}
+      <a href="{{ url_for('sales.new_product') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Product</a>
+    {% endif %}
   </div>
 </div>
 

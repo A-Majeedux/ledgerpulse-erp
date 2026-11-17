@@ -24,6 +24,8 @@ import unittest
 import uuid
 from decimal import Decimal
 
+from _people import member
+
 from vendors.landed_cost import (
     BASIS_LABELS, landed_unit_cost_by_product, normalise_basis, split_landed_cost,
 )
@@ -147,6 +149,7 @@ class _OneCompanyPerTest(unittest.TestCase):
             "VALUES ('Round Nine', %s, 'hash', TRUE) RETURNING user_id",
             (f"r9_{uuid.uuid4().hex[:8]}@x.local",))
         self.user_id = cursor.fetchone()[0]
+        member(cursor, self.user_id, self.org_id)
         for code, name, kind in (
                 ("1000", "Cash in Hand", "Asset"),
                 ("1100", "Trade Receivables", "Asset"),

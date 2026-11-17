@@ -88,6 +88,7 @@ def _get_active_customers(org_id):
 # ---------------------------------------------------------------------
 @bp.route("/products")
 @require_organization
+@require_permission("sales.view")
 def products_list():
     """The products screen as cards, with the search box on top and the two
     figures his own screen shows on every card: Price and On hand."""
@@ -145,6 +146,7 @@ def _product_price_and_stock(form):
 
 @bp.route("/products/<int:product_id>/edit", methods=["GET", "POST"])
 @require_organization
+@require_permission("sales.create")
 def edit_product(product_id):
     """Price, On hand, name, unit, revenue account and Active - all of it on
     the product itself. Nothing about an invoice already written changes."""
@@ -229,6 +231,7 @@ def edit_product(product_id):
 
 @bp.route("/products/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("sales.create")
 def new_product():
     org_id = current_organization_id()
     if request.method == "POST":
@@ -288,6 +291,7 @@ def new_product():
 # ---------------------------------------------------------------------
 @bp.route("/tax-rates")
 @require_organization
+@require_permission("sales.view")
 def sales_tax_rates_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -306,6 +310,7 @@ def sales_tax_rates_list():
 
 @bp.route("/tax-rates/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("sales.create")
 def new_sales_tax_rate():
     org_id = current_organization_id()
     if request.method == "POST":
@@ -329,6 +334,7 @@ def new_sales_tax_rate():
 
 @bp.route("/tax-rates/<int:tax_rate_id>/toggle", methods=["POST"])
 @require_organization
+@require_permission("sales.create")
 def toggle_sales_tax_rate(tax_rate_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -357,6 +363,7 @@ def toggle_sales_tax_rate(tax_rate_id):
 # ---------------------------------------------------------------------
 @bp.route("/invoices")
 @require_organization
+@require_permission("sales.view")
 def sales_invoices_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -412,6 +419,7 @@ def sales_invoices_list():
 
 @bp.route("/invoices/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("sales.create")
 def new_sales_invoice():
     org_id = current_organization_id()
     if request.method == "POST":
@@ -668,6 +676,7 @@ def _filter_accounts(cursor, org_id):
 
 @bp.route("/invoices/<int:sales_invoice_id>")
 @require_organization
+@require_permission("sales.view")
 def sales_invoice_detail(sales_invoice_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -782,7 +791,7 @@ def sales_invoice_detail(sales_invoice_id):
 
 @bp.route("/invoices/<int:sales_invoice_id>/apply-receipt", methods=["POST"])
 @require_organization
-@require_permission("sales.create")
+@require_permission("sales.post")
 def apply_receipt_to_invoice(sales_invoice_id):
     """Match an existing receipt of this customer to this invoice.
 
@@ -1042,6 +1051,7 @@ def delete_sales_invoice(sales_invoice_id):
 
 @bp.route("/invoices/<int:sales_invoice_id>/post", methods=["POST"])
 @require_organization
+@require_permission("sales.post")
 def post_sales_invoice(sales_invoice_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1091,6 +1101,7 @@ def post_sales_invoice(sales_invoice_id):
 
 @bp.route("/invoices/<int:sales_invoice_id>/print")
 @require_organization
+@require_permission("sales.view")
 def sales_invoice_print(sales_invoice_id):
     org_id = current_organization_id()
     conn = get_conn()
