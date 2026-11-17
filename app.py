@@ -49,6 +49,24 @@ def fmt_date(value, fmt='%d %b %Y'):
 
 app.template_filter('fmt_date')(fmt_date)
 
+
+def asset_version(filename):
+    """A short stamp for a stylesheet or a script, taken from when it changed.
+
+    Without it a browser keeps the copy it downloaded yesterday and a page looks
+    half-new - new HTML in old clothes. With it, "?v=<time>" changes the moment
+    the file does, so a normal reload is enough and nobody has to remember to
+    press Ctrl+F5.
+    """
+    path = os.path.join(app.static_folder or 'static', filename)
+    try:
+        return int(os.path.getmtime(path))
+    except OSError:
+        return 0
+
+
+app.template_global('asset_v')(asset_version)
+
 # Session security & secret key configuration
 secret_key = os.getenv("SECRET_KEY")
 if not secret_key:

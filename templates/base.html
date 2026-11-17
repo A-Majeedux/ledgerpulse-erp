@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;450;500;550;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='tokens.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='ui.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='tokens.css') }}?v={{ asset_v('tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='ui.css') }}?v={{ asset_v('ui.css') }}">
 </head>
 <body>
   {% include "_icons.html" %}
@@ -256,8 +256,8 @@
       {%- endfor %}
     ];
   </script>
-  <script src="{{ url_for('static', filename='app.js') }}"></script>
-  <script src="{{ url_for('static', filename='charts.js') }}"></script>
+  <script src="{{ url_for('static', filename='app.js') }}?v={{ asset_v('app.js') }}"></script>
+  <script src="{{ url_for('static', filename='charts.js') }}?v={{ asset_v('charts.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
