@@ -3,16 +3,17 @@
 {% block title %}Vendor Bill{% endblock %}
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <div>
+<div class="lp-page-header">
+  <div class="lp-page-heading">
     <h2 style="margin:0;">Bill from {{ bill[2] }}</h2>
     <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Bill #: <strong>{{ bill[1] }}</strong> · Date: {{ bill[3]|fmt_date }}{% if bill[4] %} · Due {{ bill[4]|fmt_date }}{% endif %}</p>
   </div>
-  <div>
+  <div class="lp-page-actions">
+    {# The bill itself is printed from the gear menu ("Print / PDF bill"); the
+       journal entry it wrote is a different document and keeps its own button. #}
     {% if bill[7] == 'Posted' %}
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
-      <a href="{{ url_for('vendors.vendor_bill_print', vendor_bill_id=bill[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Bill</a>
-      <a href="{{ url_for('vendors.vendor_bill_journal_print', vendor_bill_id=bill[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Journal Entry</a>
+      <a href="{{ url_for('vendors.vendor_bill_journal_print', vendor_bill_id=bill[0]) }}" target="_blank" class="lp-btn secondary">🖨️ Print Journal Entry</a>
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
       <form method="POST" action="{{ url_for('vendors.post_vendor_bill', vendor_bill_id=bill[0]) }}" style="display:inline; margin-left: 8px;">

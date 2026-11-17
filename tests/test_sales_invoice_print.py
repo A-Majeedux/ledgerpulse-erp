@@ -221,8 +221,10 @@ class SalesInvoicePrintTests(_OneCompanyPerTest):
         customer_id, product_id = self.make_customer_and_product()
         invoice_id = self.make_invoice(customer_id, product_id)
         page = self.client.get(f"/sales/invoices/{invoice_id}").get_data(as_text=True)
-        self.assertIn("Print / Save PDF", page)
+        # printing sits in the gear menu now, not as a button beside the title
+        self.assertIn("Print / PDF invoice", page)
         self.assertIn(f"/sales/invoices/{invoice_id}/print", page)
+        self.assertNotIn("Print / Save PDF", page)
 
     def test_an_invoice_that_does_not_exist(self):
         self.assertEqual(self.client.get("/sales/invoices/99999999/print").status_code, 404)

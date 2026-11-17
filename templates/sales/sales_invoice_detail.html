@@ -5,7 +5,7 @@
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
 <div class="lp-page-header">
-  <div>
+  <div class="lp-page-heading">
     <h1 class="lp-page-title">{{ invoice[7] or 'Draft invoice' }}</h1>
     <p class="lp-page-subtitle">
       Invoice to {{ invoice[1] }}
@@ -14,9 +14,9 @@
       {% if invoice[6] %} · Terms: {{ invoice[6] }}{% endif %}
     </p>
   </div>
-  <div>
-    <a href="{{ url_for('sales.sales_invoice_print', sales_invoice_id=invoice[0]) }}"
-       class="lp-btn secondary sm" target="_blank" rel="noopener">Print / Save PDF</a>
+  <div class="lp-page-actions">
+    {# Printing lives in the gear menu now ("Print / PDF invoice"), one place
+       for everything the page can do. #}
     {% if invoice[4] == 'Posted' %}
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
     {% else %}

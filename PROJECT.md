@@ -1201,3 +1201,8 @@ the one from before. Restart it and the footer changes with it.
 
 The stylesheets and scripts also carry their own change time (`ui.css?v=1794829312`), so an ordinary reload picks
 up a changed file and nobody has to remember Ctrl+F5.
+
+The same tidying was then applied to the other documents the menu already knew: the invoice's **Print / Save PDF**
+button, the bill's **Print Bill** and the payment's **Print Voucher** all moved into their gear menus, and those
+three headers were rebuilt on `.lp-page-header` / `.lp-page-actions`. A voucher's *journal entry* is a different
+document and keeps its own button.

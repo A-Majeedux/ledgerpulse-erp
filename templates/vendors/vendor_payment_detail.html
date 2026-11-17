@@ -4,11 +4,13 @@
 {% block title %}Vendor Payment{% endblock %}
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-  <h2 style="margin:0;">Payment Voucher {{ payment[1] }}</h2>
-  <div>
-    <a href="{{ url_for('vendors.vendor_payment_print', vendor_payment_id=payment[0]) }}" target="_blank" class="lp-btn secondary">🖨️ Print Voucher</a>
-    <a href="{{ url_for('vendors.vendor_payment_journal_print', vendor_payment_id=payment[0]) }}" target="_blank" class="lp-btn secondary" style="margin-left: 8px;">🖨️ Print Journal Entry</a>
+<div class="lp-page-header">
+  <div class="lp-page-heading">
+    <h2 style="margin:0;">Payment Voucher {{ payment[1] }}</h2>
+  </div>
+  <div class="lp-page-actions">
+    {# The voucher is printed from the gear menu; its journal entry keeps its own button. #}
+    <a href="{{ url_for('vendors.vendor_payment_journal_print', vendor_payment_id=payment[0]) }}" target="_blank" class="lp-btn secondary">🖨️ Print Journal Entry</a>
     {{ doc_actions(menu) }}
   </div>
 </div>
