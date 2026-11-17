@@ -645,12 +645,12 @@ class LedgerPulseVendorsTests(unittest.TestCase):
 
         # Test all 7 print routes
         print_routes = [
-            (f"/vendors/bills/{b_id}/print", b_num, "INVOICE LINES"),
-            (f"/vendors/bills/{b_id}/journal-print", b_num, "JOURNAL ENTRY"),
+            (f"/vendors/bills/{b_id}/print", b_num, "Invoice Lines"),
+            (f"/vendors/bills/{b_id}/journal-print", b_num, "Journal Entry"),
             (f"/vendors/payments/{p_id}/print", p_num, "Total Amount"),
-            (f"/vendors/payments/{p_id}/journal-print", p_num, "JOURNAL ENTRY"),
+            (f"/vendors/payments/{p_id}/journal-print", p_num, "Journal Entry"),
             (f"/vendors/credit-notes/{cn_id}/print", cn_num, "Credit Note Lines"),
-            (f"/vendors/credit-notes/{cn_id}/journal-print", cn_num, "JOURNAL ENTRY"),
+            (f"/vendors/credit-notes/{cn_id}/journal-print", cn_num, "Journal Entry"),
             (f"/vendors/batch-payments/{bp_id}/print", bp_num, "Batch Payment Items"),
         ]
 

@@ -3,7 +3,7 @@ The rules the Purchases screens follow, kept out of the pages so they can be
 checked on their own.
 """
 
-from core.money import money_round, to_decimal
+from core.money import to_decimal
 
 
 
@@ -28,7 +28,8 @@ def duplicate_vendor_bill(cursor, organization_id, vendor_bill_id, today=None):
     cursor.execute("""
         SELECT vendor_id, due_date, bill_date, payment_terms, journal_name, lc_reference,
                purchase_journal, landed_cost_basis, journal_header_id, notes,
-               payment_reference, recipient_bank
+               payment_reference, recipient_bank, COALESCE(bill_kind, 'Standard'),
+               COALESCE(tax_total, 0)
         FROM vendor_bills WHERE vendor_bill_id = %s AND organization_id = %s
     """, (vendor_bill_id, organization_id))
     source = cursor.fetchone()
@@ -36,7 +37,7 @@ def duplicate_vendor_bill(cursor, organization_id, vendor_bill_id, today=None):
         raise ValueError("That bill is not one of this company's.")
     (vendor_id, due_date, bill_date, payment_terms, journal_name, lc_reference,
      purchase_journal, landed_cost_basis, journal_header_id, notes,
-     payment_reference, recipient_bank) = source
+     payment_reference, recipient_bank, bill_kind, tax_total) = source
 
     new_due = None
     if due_date and bill_date:
@@ -46,20 +47,22 @@ def duplicate_vendor_bill(cursor, organization_id, vendor_bill_id, today=None):
         INSERT INTO vendor_bills
             (organization_id, vendor_id, bill_date, due_date, bill_number, payment_terms,
              journal_name, lc_reference, purchase_journal, landed_cost_basis, notes,
-             payment_reference, recipient_bank, status)
-        VALUES (%s, %s, %s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, 'Draft')
+             payment_reference, recipient_bank, status, bill_kind, tax_total, amount_due)
+        VALUES (%s, %s, %s, %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, 'Draft', %s, %s, %s)
         RETURNING vendor_bill_id
     """, (organization_id, vendor_id, today, new_due, payment_terms, journal_name,
           lc_reference, purchase_journal, landed_cost_basis, notes,
-          payment_reference, recipient_bank))
+          payment_reference, recipient_bank, bill_kind, tax_total, tax_total))
     new_id = cursor.fetchone()[0]
 
     cursor.execute("""
         INSERT INTO vendor_bill_lines
             (vendor_bill_id, account_id, total, label, quantity, rate, line_order,
-             discount_pct, product_id, line_kind)
+             discount_pct, product_id, line_kind, unit, discount_amount,
+             tax_rate_id, tax_amount, asset_life_years)
         SELECT %s, account_id, total, label, quantity, rate, line_order,
-               discount_pct, product_id, line_kind
+               discount_pct, product_id, line_kind, unit, discount_amount,
+               tax_rate_id, tax_amount, asset_life_years
         FROM vendor_bill_lines WHERE vendor_bill_id = %s ORDER BY line_order
     """, (new_id, vendor_bill_id))
 
@@ -113,15 +116,18 @@ def reset_vendor_bill_to_draft(cursor, organization_id, vendor_bill_id):
     return bill_number
 
 
-def replace_vendor_bill(cursor, organization_id, vendor_bill_id, header, raw_lines, trade_payables_id):
+def replace_vendor_bill(cursor, organization_id, vendor_bill_id, header, lines,
+                        trade_payables_id, input_tax_id=None):
     """Correct a DRAFT vendor bill: same bill, same number, new contents.
 
-    `raw_lines` is a list of dicts with label, account_id, quantity, rate, total,
-    product_id and line_kind - what the form posts. The bill keeps its vendor
-    number (the paper the supplier sent), its landed-cost basis and its place in
-    the books; the lines and the draft journal entry are written again.
+    `lines` is what the form posted, already worked out by the route (quantity x
+    rate, less the discount, plus the tax) - the same shape a new bill is
+    written from, so a corrected bill and a fresh one cannot disagree. The bill
+    keeps its vendor number (the paper the supplier sent), its kind, its
+    landed-cost basis and its place in the books; the lines, the tax total and
+    the draft journal entry are written again.
     """
-    from accounting.services import create_journal_entry
+    from accounting.services import create_journal_entry, refill_journal_entry
 
     cursor.execute("""
         SELECT bill_number, status FROM vendor_bills
@@ -149,43 +155,23 @@ def replace_vendor_bill(cursor, organization_id, vendor_bill_id, header, raw_lin
         UPDATE vendor_bills
         SET vendor_id = %s, bill_date = %s, due_date = %s, payment_terms = %s,
             lc_reference = %s, journal_name = %s, landed_cost_basis = %s,
-            accounting_date = %s
+            accounting_date = %s, payment_reference = %s, recipient_bank = %s
         WHERE vendor_bill_id = %s
     """, (header["vendor_id"], header["bill_date"], header.get("due_date"),
           header.get("payment_terms"), header.get("lc_reference"), header.get("journal_name"),
           header.get("landed_cost_basis"), header.get("accounting_date") or header["bill_date"],
-          vendor_bill_id))
+          header.get("payment_reference"), header.get("recipient_bank"), vendor_bill_id))
 
     cursor.execute("DELETE FROM vendor_bill_lines WHERE vendor_bill_id = %s", (vendor_bill_id,))
+    for order, line in enumerate(lines):
+        insert_bill_line(cursor, vendor_bill_id, line, order)
 
-    entry_lines = []
-    bill_total = to_decimal(0)
-    for order, line in enumerate(raw_lines):
-        quantity = to_decimal(line.get("quantity") or 1)
-        rate = to_decimal(line.get("rate") or 0)
-        raw_total = line.get("total")
-        total = money_round(raw_total) if raw_total not in (None, "") else money_round(quantity * rate)
-        bill_total += total
-        cursor.execute("""
-            INSERT INTO vendor_bill_lines
-                (vendor_bill_id, label, account_id, quantity, rate, total, line_order,
-                 product_id, line_kind)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        """, (vendor_bill_id, line.get("label"), line["account_id"], quantity, rate, total, order,
-              line.get("product_id"), line.get("line_kind") or "Goods"))
-        entry_lines.append({"account_id": line["account_id"], "label": line.get("label"),
-                            "debit": total, "credit": to_decimal(0)})
+    entry_lines, bill_total, tax_total = bill_posting_lines(
+        lines, vendor_name=vendor_name, bill_number=bill_number,
+        trade_payables_id=trade_payables_id, input_tax_id=input_tax_id)
 
-    entry_lines.append({
-        "account_id": trade_payables_id,
-        "partner_name": vendor_name,
-        "label": f"Vendor Bill - {vendor_name} ({bill_number})",
-        "debit": 0,
-        "credit": bill_total,
-    })
-
-    cursor.execute("UPDATE vendor_bills SET amount_due = %s WHERE vendor_bill_id = %s",
-                   (bill_total, vendor_bill_id))
+    cursor.execute("UPDATE vendor_bills SET amount_due = %s, tax_total = %s WHERE vendor_bill_id = %s",
+                   (bill_total, tax_total, vendor_bill_id))
 
     # The bill's own entry is written again - the same entry, so anything
     # pointing at it still points at it.
@@ -195,7 +181,6 @@ def replace_vendor_bill(cursor, organization_id, vendor_bill_id, header, raw_lin
     accounting_date = header.get("accounting_date") or header["bill_date"]
     journal_name = header.get("journal_name") or "Expenses"
     if old_header:
-        from accounting.services import refill_journal_entry
         refill_journal_entry(cursor, organization_id, old_header, reference,
                              accounting_date, journal_name, entry_lines)
     else:
@@ -206,3 +191,57 @@ def replace_vendor_bill(cursor, organization_id, vendor_bill_id, header, raw_lin
         cursor.execute("UPDATE vendor_bills SET journal_header_id = %s WHERE vendor_bill_id = %s",
                        (new_header, vendor_bill_id))
     return bill_number
+
+
+# ---------------------------------------------------------------------------
+# What a bill line and a bill posting look like, shared by the new-bill
+# screen and the correction screen, so a corrected bill and a fresh one
+# cannot disagree about the arithmetic.
+# ---------------------------------------------------------------------------
+def bill_posting_lines(lines, *, vendor_name, bill_number, trade_payables_id, input_tax_id):
+    """The journal entry a bill writes: each line net, the tax, and the debt.
+
+    The tax of several lines that share a rate is one journal line, because the
+    tax return only cares about the rate - and a bill with 40 lines at 18% does
+    not deserve 40 more lines in the ledger.
+    """
+    entry, tax_by_rate = [], {}
+    bill_total = to_decimal(0)
+    for line in lines:
+        bill_total += line["total"]
+        entry.append({"account_id": line["account_id"], "label": line["label"],
+                      "debit": line["net"], "credit": to_decimal(0)})
+        if line["tax_amount"] > 0 and line["tax_rate_id"]:
+            key = (line["tax_rate_id"], line["tax_label"], line["tax_percent"])
+            tax_by_rate[key] = tax_by_rate.get(key, to_decimal(0)) + line["tax_amount"]
+
+    tax_total = sum(tax_by_rate.values(), to_decimal(0))
+    if tax_total > 0:
+        if not input_tax_id:
+            raise ValueError(
+                "This company has no account 1250 Input Sales Tax Recoverable, so the sales tax "
+                "on this bill has nowhere to go. Add that account in Chart of Accounts, or take "
+                "the tax rates off the lines."
+            )
+        for (_rate_id, label, percent), amount in tax_by_rate.items():
+            entry.append({"account_id": input_tax_id,
+                          "label": f"Sales tax {percent:g}% - {label}",
+                          "debit": amount, "credit": to_decimal(0)})
+
+    entry.append({"account_id": trade_payables_id, "partner_name": vendor_name,
+                  "label": f"Vendor Bill - {vendor_name} ({bill_number})",
+                  "debit": to_decimal(0), "credit": bill_total})
+    return entry, bill_total, tax_total
+
+
+def insert_bill_line(cursor, vendor_bill_id, line, order):
+    cursor.execute("""
+        INSERT INTO vendor_bill_lines
+            (vendor_bill_id, label, account_id, quantity, rate, total, line_order,
+             product_id, line_kind, unit, discount_pct, discount_amount,
+             tax_rate_id, tax_amount, asset_life_years)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (vendor_bill_id, line["label"], line["account_id"], line["quantity"], line["rate"],
+          line["total"], order, line["product_id"], line["line_kind"], line["unit"],
+          line["discount_percent"], line["discount_amount"], line["tax_rate_id"],
+          line["tax_amount"], line["asset_life_years"]))

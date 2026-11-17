@@ -24,8 +24,8 @@ from wht.routes import get_active_tax_rates
 from core.money import to_decimal, money_round
 from vendors.landed_cost import (BASIS_LABELS, landed_unit_cost_by_product, normalise_basis,
                                  split_landed_cost)
-from vendors.services import (duplicate_vendor_bill, replace_vendor_bill,
-                             reset_vendor_bill_to_draft)
+from vendors.services import (bill_posting_lines, duplicate_vendor_bill, insert_bill_line,
+                             replace_vendor_bill, reset_vendor_bill_to_draft)
 from core.docmenu import build_menu
 from core.searchbar import read_search, search_filters, and_clauses, describe, suggest
 from auth.services import require_permission, current_user_id
@@ -533,13 +533,18 @@ def vendor_bills_list():
         clauses.append("EXISTS (SELECT 1 FROM vendor_bill_lines abl WHERE abl.vendor_bill_id = vb.vendor_bill_id "
                        "AND abl.account_id::text = %s)")
         params.append(search.account)
+    # The kind of paper: an everyday bill, or an import against an LC.
+    kind_filter = (request.args.get("kind") or "").strip()
+    if kind_filter in ("Import", "Standard"):
+        clauses.append("COALESCE(vb.bill_kind, 'Standard') = %s")
+        params.append(kind_filter)
     accounts = _filter_accounts(cursor, org_id)
     search.description = describe(search, accounts)
 
     cursor.execute("""
         SELECT vb.vendor_bill_id, v.name, vb.bill_date, vb.due_date, vb.status,
                COALESCE((SELECT SUM(vbl.total) FROM vendor_bill_lines vbl WHERE vbl.vendor_bill_id = vb.vendor_bill_id), 0) AS total,
-               vb.bill_number
+               vb.bill_number, COALESCE(vb.bill_kind, 'Standard'), vb.lc_reference
         FROM vendor_bills vb
         JOIN vendors v ON v.vendor_id = vb.vendor_id
         WHERE vb.organization_id = %s
@@ -560,7 +565,8 @@ def vendor_bills_list():
     cursor.close()
     conn.close()
     return render_template("vendors/vendor_bills_list.html", bills=bills, search=search,
-                           accounts=accounts, suggestions=suggestions)
+                           accounts=accounts, suggestions=suggestions,
+                           kind_filter=kind_filter if kind_filter in ("Import", "Standard") else "")
 
 
 def _filter_accounts(cursor, org_id):
@@ -572,161 +578,252 @@ def _filter_accounts(cursor, org_id):
     return cursor.fetchall()
 
 
+# ---------------------------------------------------------------------------
+# Vendor bills: one bill, two ways in
+#
+# A purchase is written on one of two screens. A STANDARD bill is the everyday
+# one - expenses, goods for resale, or an asset the company bought. An IMPORT
+# bill carries a letter of credit: it has the LC reference, the bank that is
+# paid, and the LC's own charges (freight, duty, clearing) as lines that are
+# spread over the goods. Both screens write the same table through the same
+# code, so the books cannot tell which screen made a bill - only the bill's
+# kind and the lines it carries.
+# ---------------------------------------------------------------------------
+
+LINE_UNITS = ["Units", "Kg", "Gm", "Ltr", "ML", "Bag", "Carton", "Box", "Set", "Hour"]
+STANDARD_LINE_KINDS = ["Goods", "Asset"]
+IMPORT_LINE_KINDS = ["Goods", "Landed Cost", "Asset"]
+LC_CHARGE_TYPES = ["Freight", "Customs duty", "Clearing", "Bank charges", "Insurance", "Other"]
+
+BILL_FORMS = {
+    "Standard": {"template": "vendors/new_vendor_bill.html", "kinds": STANDARD_LINE_KINDS},
+    "Import": {"template": "vendors/new_import_bill.html", "kinds": IMPORT_LINE_KINDS},
+}
+
+
+def _get_tax_rates(org_id):
+    """The company's own purchase tax rates: (id, label, percent)."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT sales_tax_rate_id, label, rate_percent FROM sales_tax_rates
+        WHERE organization_id = %s AND COALESCE(is_active, TRUE) = TRUE
+        ORDER BY rate_percent, label
+    """, (org_id,))
+    rates = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return rates
+
+
+def _input_tax_account_id(cursor, org_id):
+    """1250 Input Sales Tax Recoverable - where the tax on a purchase lands."""
+    cursor.execute("SELECT account_id FROM chart_of_accounts "
+                   "WHERE organization_id = %s AND code = '1250'", (org_id,))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def _read_bill_lines(cursor, org_id, form):
+    """The lines a bill form posted, with every figure worked out here.
+
+    The browser may do the arithmetic for the person typing, but the books are
+    not written from what a browser says: quantity x rate is the gross, the
+    discount comes off that, the tax is charged on what is left, and `total` is
+    the line as it stands on the vendor's paper - tax included. A tax rate that
+    is not one of this company's is refused, not trusted.
+    """
+    labels = form.getlist("label[]")
+    account_ids = form.getlist("account_id[]")
+    products = form.getlist("product_id[]")
+    quantities = form.getlist("quantity[]")
+    rates = form.getlist("rate[]")
+    totals = form.getlist("total[]")
+    kinds = form.getlist("line_kind[]")
+    units = form.getlist("unit[]")
+    discounts = form.getlist("discount_percent[]")
+    tax_ids = form.getlist("tax_rate_id[]")
+    asset_lives = form.getlist("asset_life[]")
+
+    cursor.execute("SELECT sales_tax_rate_id, label, rate_percent FROM sales_tax_rates "
+                   "WHERE organization_id = %s", (org_id,))
+    known_rates = {row[0]: (row[1], to_decimal(row[2])) for row in cursor.fetchall()}
+
+    # Only this company's accounts: a posted account id is not trusted to be
+    # ours just because the browser sent it.
+    cursor.execute("SELECT account_id FROM chart_of_accounts WHERE organization_id = %s", (org_id,))
+    own_accounts = {row[0] for row in cursor.fetchall()}
+
+    def at(values, index, default=None):
+        return values[index] if index < len(values) else default
+
+    lines = []
+    for index, account_id in enumerate(account_ids):
+        if not account_id:
+            continue
+        if not str(account_id).isdigit() or int(account_id) not in own_accounts:
+            raise ValueError("That account is not one of this company's. Pick it from the list.")
+        quantity = to_decimal(at(quantities, index) or 1)
+        rate = to_decimal(at(rates, index) or 0)
+        gross = money_round(quantity * rate)
+        if not rate and at(totals, index):
+            gross = money_round(at(totals, index))
+        discount_percent = to_decimal(at(discounts, index) or 0)
+        discount_percent = min(max(discount_percent, to_decimal(0)), to_decimal(100))
+        discount_amount = money_round(gross * discount_percent / 100)
+        net = gross - discount_amount
+
+        tax_id, tax_label, tax_percent, tax_amount = None, None, to_decimal(0), to_decimal(0)
+        posted_tax = str(at(tax_ids, index) or "").strip()
+        if posted_tax:
+            if not posted_tax.isdigit() or int(posted_tax) not in known_rates:
+                raise ValueError("That sales tax rate is not one of this company's. "
+                                 "Pick one from the list, or leave the line untaxed.")
+            tax_id = int(posted_tax)
+            tax_label, tax_percent = known_rates[tax_id]
+            tax_amount = money_round(net * tax_percent / 100)
+
+        kind = at(kinds, index) or "Goods"
+        if kind not in IMPORT_LINE_KINDS:
+            kind = "Goods"
+        # A life belongs to a thing the company keeps. A goods or charge line
+        # that happened to land on one (a short list in the form) is not one.
+        asset_life = at(asset_lives, index) if kind == "Asset" else None
+        label = labels[index].strip() if index < len(labels) and labels[index].strip() else None
+
+        lines.append({
+            "label": label,
+            "account_id": int(account_id),
+            "product_id": int(at(products, index)) if at(products, index) else None,
+            "quantity": quantity,
+            "rate": rate,
+            "unit": (at(units, index) or "Units")[:20],
+            "discount_percent": discount_percent,
+            "discount_amount": discount_amount,
+            "net": net,
+            "tax_rate_id": tax_id,
+            "tax_label": tax_label,
+            "tax_percent": tax_percent,
+            "tax_amount": tax_amount,
+            "total": net + tax_amount,
+            "line_kind": kind,
+            "asset_life_years": to_decimal(asset_life) if asset_life else None,
+        })
+    return lines
+
+
+def _bill_form_context(org_id, bill_kind, **extra):
+    """Everything a bill screen needs, whichever of the two it is."""
+    context = {
+        "bill_kind": bill_kind,
+        "line_kinds": BILL_FORMS[bill_kind]["kinds"],
+        "vendors": _get_vendors(org_id),
+        "accounts": _get_accounts(org_id),
+        "products": _get_products_for_bill(org_id),
+        "tax_rates": _get_tax_rates(org_id),
+        "units": LINE_UNITS,
+        "charge_types": LC_CHARGE_TYPES,
+        "basis_options": BASIS_LABELS,
+        "today": date.today().isoformat(),
+        "error": None,
+    }
+    context.update(extra)
+    return context
+
+
+def _create_bill(org_id, form, bill_kind):
+    """Write a new bill, its lines and its draft journal entry. Returns its id."""
+    vendor_id = int(form["vendor_id"])
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT name FROM vendors WHERE vendor_id = %s AND organization_id = %s",
+                       (vendor_id, org_id))
+        vendor_row = cursor.fetchone()
+        if not vendor_row:
+            abort(400)
+        vendor_name = vendor_row[0]
+
+        trade_creditors_id = _trade_payables_account_id(cursor, org_id)
+        lines = _read_bill_lines(cursor, org_id, form)
+        if not lines:
+            raise ValueError("A bill needs at least one line with an account on it.")
+
+        bill_number = form.get("bill_number", "").strip() or _generate_bill_number(cursor, org_id)
+        landed_cost_basis = normalise_basis(form.get("landed_cost_basis", "value"))
+        accounting_date = form.get("accounting_date") or form["bill_date"]
+        journal_name = form.get("journal_name", "Expenses").strip() or "Expenses"
+
+        entry, bill_total, tax_total = bill_posting_lines(
+            lines, vendor_name=vendor_name, bill_number=bill_number,
+            trade_payables_id=trade_creditors_id,
+            input_tax_id=_input_tax_account_id(cursor, org_id))
+
+        cursor.execute("""
+            INSERT INTO vendor_bills
+                (organization_id, vendor_id, bill_number, bill_date, due_date, receipt_date,
+                 accounting_date, payment_terms, payment_reference, recipient_bank, lc_reference,
+                 journal_name, status, amount_due, landed_cost_basis, bill_kind, tax_total)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Draft', %s, %s, %s, %s)
+            RETURNING vendor_bill_id
+        """, (
+            org_id, vendor_id, bill_number, form["bill_date"],
+            form.get("due_date") or None, form.get("receipt_date") or None,
+            accounting_date,
+            form.get("payment_terms", "").strip() or None,
+            form.get("payment_reference", "").strip() or None,
+            form.get("recipient_bank", "").strip() or None,
+            form.get("lc_reference", "").strip() or None,
+            journal_name, bill_total, landed_cost_basis, bill_kind, tax_total,
+        ))
+        vendor_bill_id = cursor.fetchone()[0]
+
+        for order, line in enumerate(lines):
+            insert_bill_line(cursor, vendor_bill_id, line, order)
+
+        journal_header_id = create_journal_entry(
+            cursor, organization_id=org_id,
+            reference=f"Vendor Bill {bill_number} - {vendor_name}",
+            accounting_date=accounting_date, journal_name=journal_name,
+            lines=entry, source_type="VendorBill", source_id=vendor_bill_id, auto_post=False)
+        cursor.execute("UPDATE vendor_bills SET journal_header_id = %s WHERE vendor_bill_id = %s",
+                       (journal_header_id, vendor_bill_id))
+        conn.commit()
+        return vendor_bill_id
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _bill_form(bill_kind, template):
+    """GET and POST for one of the two bill screens."""
+    org_id = current_organization_id()
+    if request.method == "POST":
+        try:
+            vendor_bill_id = _create_bill(org_id, request.form, bill_kind)
+        except (UnbalancedEntryError, ValueError) as error:
+            return render_template(template, **_bill_form_context(org_id, bill_kind, error=str(error)))
+        return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
+    return render_template(template, **_bill_form_context(org_id, bill_kind))
+
+
 @bp.route("/bills/new", methods=["GET", "POST"])
 @require_organization
 @require_permission("vendors.create")
 def new_vendor_bill():
-    org_id = current_organization_id()
+    """A standard purchase: expenses, goods, or an asset."""
+    return _bill_form("Standard", BILL_FORMS["Standard"]["template"])
 
-    if request.method == "POST":
-        vendor_id = int(request.form["vendor_id"])
-        labels = request.form.getlist("label[]")
-        account_ids = request.form.getlist("account_id[]")
-        quantities = request.form.getlist("quantity[]")
-        rates = request.form.getlist("rate[]")
-        totals = request.form.getlist("total[]")
-        # A line either brings goods in (and can name the product) or is one of
-        # the LC's own charges, which are spread over the goods afterwards.
-        line_products = request.form.getlist("product_id[]")
-        # One value per row, always sent (the tick box writes into it), so the
-        # kinds stay lined up with the lines even when only some are ticked.
-        line_kinds = request.form.getlist("line_kind[]")
-        landed_cost_basis = normalise_basis(request.form.get("landed_cost_basis", "value"))
 
-        conn = get_conn()
-        cursor = conn.cursor()
-
-        cursor.execute("SELECT 1 FROM vendors WHERE vendor_id = %s AND organization_id = %s", (vendor_id, org_id))
-        if not cursor.fetchone():
-            conn.rollback()
-            cursor.close()
-            conn.close()
-            abort(400)
-
-        # The company's Trade Payables account, asked for before anything is
-        # written: a chart without one is then reported on the form instead of
-        # leaving a half-saved bill behind.
-        try:
-            trade_creditors_id = _trade_payables_account_id(cursor, org_id)
-        except ValueError as error:
-            conn.rollback()
-            cursor.close()
-            conn.close()
-            return render_template(
-                "vendors/new_vendor_bill.html",
-                vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
-                products=_get_products_for_bill(org_id), basis_options=BASIS_LABELS,
-                error=str(error), today=date.today().isoformat(),
-            )
-
-        bill_number = request.form.get("bill_number", "").strip() or _generate_bill_number(cursor, org_id)
-
-        cursor.execute("""
-            INSERT INTO vendor_bills
-                (organization_id, vendor_id, bill_number, bill_date, due_date, receipt_date, accounting_date,
-                 payment_terms, payment_reference, recipient_bank, lc_reference, journal_name, status, amount_due,
-                 landed_cost_basis)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Draft', 0, %s)
-            RETURNING vendor_bill_id
-        """, (
-            org_id,
-            vendor_id,
-            bill_number,
-            request.form["bill_date"],
-            request.form.get("due_date") or None,
-            request.form.get("receipt_date") or None,
-            request.form.get("accounting_date") or request.form["bill_date"],
-            request.form.get("payment_terms", "").strip() or None,
-            request.form.get("payment_reference", "").strip() or None,
-            request.form.get("recipient_bank", "").strip() or None,
-            request.form.get("lc_reference", "").strip() or None,
-            request.form.get("journal_name", "Expenses").strip(),
-            landed_cost_basis,
-        ))
-        vendor_bill_id = cursor.fetchone()[0]
-
-        je_lines = []
-        line_total_sum = to_decimal(0)
-        for i in range(len(account_ids)):
-            if not account_ids[i]:
-                continue
-            qty = to_decimal(quantities[i] if i < len(quantities) else 1)
-            rate = to_decimal(rates[i] if i < len(rates) else 0)
-            raw_tot = totals[i] if i < len(totals) else None
-            total = money_round(raw_tot) if raw_tot else money_round(qty * rate)
-            line_total_sum += total
-            cursor.execute("""
-                INSERT INTO vendor_bill_lines
-                    (vendor_bill_id, label, account_id, quantity, rate, total, line_order,
-                     product_id, line_kind)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """, (
-                vendor_bill_id, labels[i].strip() or None, int(account_ids[i]),
-                qty, rate, total, i,
-                int(line_products[i]) if i < len(line_products) and line_products[i] else None,
-                "Landed Cost" if (i < len(line_kinds) and line_kinds[i] == "Landed Cost") else "Goods",
-            ))
-            je_lines.append({
-                "account_id": int(account_ids[i]),
-                "label": labels[i].strip() or None,
-                "debit": total,
-                "credit": to_decimal(0),
-            })
-
-        cursor.execute("SELECT name FROM vendors WHERE vendor_id = %s", (vendor_id,))
-        vendor_name = cursor.fetchone()[0]
-        # (trade_creditors_id was found before the bill was written.)
-        je_lines.append({
-            "account_id": trade_creditors_id,
-            "partner_name": vendor_name,
-            "label": f"Vendor Bill - {vendor_name} ({bill_number})",
-            "debit": 0,
-            "credit": line_total_sum,
-        })
-
-        cursor.execute("UPDATE vendor_bills SET amount_due = %s WHERE vendor_bill_id = %s", (line_total_sum, vendor_bill_id))
-
-        try:
-            journal_header_id = create_journal_entry(
-                cursor, organization_id=org_id,
-                reference=f"Vendor Bill {bill_number} - {vendor_name}",
-                accounting_date=request.form.get("accounting_date") or request.form["bill_date"],
-                journal_name=request.form.get("journal_name", "Expenses").strip(),
-                lines=je_lines, source_type="VendorBill", source_id=vendor_bill_id,
-                auto_post=False,
-            )
-            cursor.execute(
-                "UPDATE vendor_bills SET journal_header_id = %s WHERE vendor_bill_id = %s",
-                (journal_header_id, vendor_bill_id)
-            )
-            conn.commit()
-        except (UnbalancedEntryError, ValueError) as error:
-            conn.rollback()
-            cursor.close()
-            conn.close()
-            return render_template(
-                "vendors/new_vendor_bill.html",
-                vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
-                products=_get_products_for_bill(org_id), basis_options=BASIS_LABELS,
-                error=str(error), today=date.today().isoformat(),
-            )
-
-        cursor.close()
-        conn.close()
-        return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
-
-    conn = get_conn()
-    cursor = conn.cursor()
-    auto_num = _generate_bill_number(cursor, org_id)
-    cursor.close()
-    conn.close()
-
-    return render_template(
-        "vendors/new_vendor_bill.html",
-        vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
-        products=_get_products_for_bill(org_id), basis_options=BASIS_LABELS,
-        auto_number=auto_num, error=None, today=date.today().isoformat(),
-    )
+@bp.route("/bills/new-import", methods=["GET", "POST"])
+@require_organization
+@require_permission("vendors.create")
+def new_import_bill():
+    """An import against an LC, whose charges are spread over the goods."""
+    return _bill_form("Import", BILL_FORMS["Import"]["template"])
 
 
 @bp.route("/bills/<int:vendor_bill_id>")
@@ -740,7 +837,8 @@ def vendor_bill_detail(vendor_bill_id):
         SELECT vb.vendor_bill_id, vb.bill_number, v.name, vb.bill_date, vb.due_date, vb.receipt_date,
                vb.accounting_date, vb.status, vb.journal_header_id, vb.amount_due, vb.paid_amount,
                vb.payment_reference, vb.recipient_bank, vb.lc_reference, vb.journal_name, v.vendor_id,
-               vb.landed_cost_basis
+               vb.landed_cost_basis, COALESCE(vb.bill_kind, 'Standard'), COALESCE(vb.tax_total, 0),
+               vb.payment_terms
         FROM vendor_bills vb JOIN vendors v ON v.vendor_id = vb.vendor_id
         WHERE vb.vendor_bill_id = %s AND vb.organization_id = %s
     """, (vendor_bill_id, org_id))
@@ -752,10 +850,14 @@ def vendor_bill_detail(vendor_bill_id):
 
     cursor.execute("""
         SELECT vbl.label, coa.code, coa.name, vbl.quantity, vbl.rate, vbl.total,
-               COALESCE(vbl.line_kind, 'Goods'), product.name, vbl.product_id
+               COALESCE(vbl.line_kind, 'Goods'), product.name, vbl.product_id,
+               COALESCE(vbl.unit, 'Units'), COALESCE(vbl.discount_pct, 0),
+               COALESCE(vbl.discount_amount, 0), tax.label, COALESCE(tax.rate_percent, 0),
+               COALESCE(vbl.tax_amount, 0), vbl.asset_life_years
         FROM vendor_bill_lines vbl
         JOIN chart_of_accounts coa ON coa.account_id = vbl.account_id
         LEFT JOIN products product ON product.product_id = vbl.product_id
+        LEFT JOIN sales_tax_rates tax ON tax.sales_tax_rate_id = vbl.tax_rate_id
         WHERE vbl.vendor_bill_id = %s ORDER BY vbl.line_order
     """, (vendor_bill_id,))
     lines = cursor.fetchall()
@@ -778,12 +880,15 @@ def vendor_bill_detail(vendor_bill_id):
     # bill shows what each unit really cost once freight, duty and clearing are
     # on it. Every figure is already on the bill - nothing new is posted.
     goods_lines, landed_total = [], to_decimal(0)
-    for label, code, account_name, quantity, rate, line_total, kind, product_name, product_id in lines:
+    for (label, code, account_name, quantity, rate, line_total, kind, product_name,
+         product_id, unit, discount_pct, discount_amount, tax_label, tax_percent,
+         tax_amount, asset_life) in lines:
         if kind == "Landed Cost":
             landed_total += to_decimal(line_total)
         else:
             goods_lines.append({
                 "label": label or account_name or "",
+                "unit": unit,
                 "account": f"{code} {account_name}" if code else (account_name or ""),
                 "product_name": product_name or "",
                 "product_id": product_id,
@@ -831,7 +936,8 @@ def vendor_bill_print(vendor_bill_id):
     cursor.execute("""
         SELECT vb.vendor_bill_id, vb.bill_number, v.name, v.address, v.ntn, v.strn,
                vb.bill_date, vb.due_date, vb.status, vb.amount_due, vb.paid_amount,
-               vb.payment_reference, vb.recipient_bank, vb.lc_reference, org.name, org.default_bill_terms
+               vb.payment_reference, vb.recipient_bank, vb.lc_reference, org.name, org.default_bill_terms,
+               COALESCE(vb.tax_total, 0), COALESCE(vb.bill_kind, 'Standard')
         FROM vendor_bills vb
         JOIN vendors v ON v.vendor_id = vb.vendor_id
         JOIN organizations org ON org.organization_id = vb.organization_id
@@ -844,8 +950,12 @@ def vendor_bill_print(vendor_bill_id):
         abort(404)
 
     cursor.execute("""
-        SELECT vbl.label, coa.code, coa.name, vbl.quantity, vbl.rate, vbl.total
-        FROM vendor_bill_lines vbl JOIN chart_of_accounts coa ON coa.account_id = vbl.account_id
+        SELECT vbl.label, coa.code, coa.name, vbl.quantity, vbl.rate, vbl.total,
+               COALESCE(vbl.unit, 'Units'), COALESCE(vbl.tax_amount, 0),
+               COALESCE(vbl.discount_amount, 0), tax.label
+        FROM vendor_bill_lines vbl
+        JOIN chart_of_accounts coa ON coa.account_id = vbl.account_id
+        LEFT JOIN sales_tax_rates tax ON tax.sales_tax_rate_id = vbl.tax_rate_id
         WHERE vbl.vendor_bill_id = %s ORDER BY vbl.line_order
     """, (vendor_bill_id,))
     lines = cursor.fetchall()
@@ -853,7 +963,8 @@ def vendor_bill_print(vendor_bill_id):
     conn.close()
 
     total = sum((to_decimal(line[5]) for line in lines), to_decimal(0))
-    return render_template("vendors/print/vendor_bill_print.html", bill=bill, lines=lines, total=total)
+    return render_template("vendors/print/vendor_bill_print.html", bill=bill, lines=lines, total=total,
+                           tax_total=to_decimal(bill[16]))
 
 
 @bp.route("/bills/<int:vendor_bill_id>/journal-print")
@@ -933,25 +1044,28 @@ def _remember_landed_cost(cursor, org_id, vendor_bill_id):
 @require_organization
 @require_permission("vendors.create")
 def edit_vendor_bill(vendor_bill_id):
-    """Correct a draft bill, in the same form that writes a new one."""
+    """Correct a draft bill, on the same screen that writes a new one.
+
+    An import bill is corrected on the import screen and a standard bill on the
+    standard one: the LC fields only make sense where there is an LC.
+    """
     org_id = current_organization_id()
     conn = get_conn()
     cursor = conn.cursor()
     try:
-        cursor.execute("SELECT bill_number, status FROM vendor_bills "
+        cursor.execute("SELECT bill_number, status, COALESCE(bill_kind, 'Standard') FROM vendor_bills "
                        "WHERE vendor_bill_id = %s AND organization_id = %s", (vendor_bill_id, org_id))
         found = cursor.fetchone()
         if not found:
             abort(404)
-        bill_number, status = found
+        bill_number, status, bill_kind = found
+        bill_kind = bill_kind if bill_kind in BILL_FORMS else "Standard"
+        template = BILL_FORMS[bill_kind]["template"]
 
         def page(**kwargs):
-            return render_template(
-                "vendors/new_vendor_bill.html",
-                vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
-                products=_get_products_for_bill(org_id), basis_options=BASIS_LABELS,
-                today=date.today().isoformat(),
-                draft={"id": vendor_bill_id, "bill_number": bill_number}, **kwargs)
+            return render_template(template, **_bill_form_context(
+                org_id, bill_kind,
+                draft={"id": vendor_bill_id, "bill_number": bill_number}, **kwargs))
 
         if (status or "").lower() != "draft":
             flash(f"Bill {bill_number or ''} is posted. Reset it to a draft before changing it.", "error")
@@ -963,46 +1077,28 @@ def edit_vendor_bill(vendor_bill_id):
             return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
 
         if request.method == "POST":
-            account_ids = request.form.getlist("account_id[]")
-            labels = request.form.getlist("label[]")
-            quantities = request.form.getlist("quantity[]")
-            rates = request.form.getlist("rate[]")
-            totals = request.form.getlist("total[]")
-            products = request.form.getlist("product_id[]")
-            kinds = request.form.getlist("line_kind[]")
-
-            lines = []
-            for index, account_id in enumerate(account_ids):
-                if not account_id:
-                    continue
-                lines.append({
-                    "account_id": int(account_id),
-                    "label": (labels[index] or "").strip() or None if index < len(labels) else None,
-                    "quantity": quantities[index] if index < len(quantities) else 1,
-                    "rate": rates[index] if index < len(rates) else 0,
-                    "total": totals[index] if index < len(totals) else None,
-                    "product_id": int(products[index]) if index < len(products) and products[index] else None,
-                    "line_kind": "Landed Cost" if (index < len(kinds) and kinds[index] == "Landed Cost") else "Goods",
-                })
-            if not lines:
-                return page(error="A bill needs at least one line.")
-
             try:
                 trade_payables_id = _trade_payables_account_id(cursor, org_id)
-            except ValueError as error:
-                return page(error=str(error))
-
-            try:
-                replace_vendor_bill(cursor, org_id, vendor_bill_id, header={
-                    "vendor_id": int(request.form["vendor_id"]),
-                    "bill_date": request.form["bill_date"],
-                    "due_date": request.form.get("due_date") or None,
-                    "payment_terms": request.form.get("payment_terms", "").strip() or None,
-                    "lc_reference": request.form.get("lc_reference", "").strip() or None,
-                    "journal_name": request.form.get("journal_name", "Expenses").strip(),
-                    "landed_cost_basis": normalise_basis(request.form.get("landed_cost_basis", "value")),
-                    "accounting_date": request.form.get("accounting_date") or request.form["bill_date"],
-                }, raw_lines=lines, trade_payables_id=trade_payables_id)
+                lines = _read_bill_lines(cursor, org_id, request.form)
+                if not lines:
+                    raise ValueError("A bill needs at least one line with an account on it.")
+                replace_vendor_bill(
+                    cursor, org_id, vendor_bill_id,
+                    header={
+                        "vendor_id": int(request.form["vendor_id"]),
+                        "bill_date": request.form["bill_date"],
+                        "due_date": request.form.get("due_date") or None,
+                        "payment_terms": request.form.get("payment_terms", "").strip() or None,
+                        "payment_reference": request.form.get("payment_reference", "").strip() or None,
+                        "recipient_bank": request.form.get("recipient_bank", "").strip() or None,
+                        "lc_reference": request.form.get("lc_reference", "").strip() or None,
+                        "journal_name": request.form.get("journal_name", "Expenses").strip(),
+                        "landed_cost_basis": normalise_basis(request.form.get("landed_cost_basis", "value")),
+                        "accounting_date": request.form.get("accounting_date") or request.form["bill_date"],
+                    },
+                    lines=lines,
+                    trade_payables_id=trade_payables_id,
+                    input_tax_id=_input_tax_account_id(cursor, org_id))
                 conn.commit()
             except (UnbalancedEntryError, ValueError) as error:
                 conn.rollback()
@@ -1011,21 +1107,25 @@ def edit_vendor_bill(vendor_bill_id):
             return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
 
         # ---- the form, filled with what the bill says today ------------------
-        cursor.execute("""
-            SELECT vendor_id, bill_date, due_date, payment_terms, lc_reference, journal_name,
-                   landed_cost_basis, accounting_date
-            FROM vendor_bills WHERE vendor_bill_id = %s
-        """, (vendor_bill_id,))
+        cursor.execute(
+            "SELECT vendor_id, bill_date, due_date, payment_terms, lc_reference, journal_name, "
+            "landed_cost_basis, accounting_date, payment_reference, recipient_bank "
+            "FROM vendor_bills WHERE vendor_bill_id = %s", (vendor_bill_id,))
         (vendor_id, bill_date, due_date, payment_terms, lc_reference, journal_name,
-         landed_basis, accounting_date) = cursor.fetchone()
+         landed_basis, accounting_date, payment_reference, recipient_bank) = cursor.fetchone()
         cursor.execute("""
-            SELECT label, product_id, account_id, quantity, rate, total, line_kind
+            SELECT label, product_id, account_id, quantity, rate, total, line_kind,
+                   COALESCE(unit, 'Units'), COALESCE(discount_pct, 0), tax_rate_id,
+                   COALESCE(tax_amount, 0), asset_life_years
             FROM vendor_bill_lines WHERE vendor_bill_id = %s ORDER BY line_order
         """, (vendor_bill_id,))
         draft_lines = [{
             "label": row[0] or "", "product_id": row[1], "account_id": row[2],
             "quantity": str(row[3]), "rate": str(row[4]), "total": str(row[5]),
-            "line_kind": row[6] or "Goods",
+            "line_kind": row[6] or "Goods", "unit": row[7],
+            "discount_percent": str(row[8]), "tax_rate_id": row[9],
+            "tax_amount": str(row[10]),
+            "asset_life": "" if row[11] is None else str(row[11]),
         } for row in cursor.fetchall()]
         header = {
             "vendor_id": vendor_id,
@@ -1036,6 +1136,8 @@ def edit_vendor_bill(vendor_bill_id):
             "journal_name": journal_name or "Expenses",
             "landed_cost_basis": landed_basis or "value",
             "accounting_date": accounting_date.isoformat() if accounting_date else "",
+            "payment_reference": payment_reference or "",
+            "recipient_bank": recipient_bank or "",
         }
         return page(draft_header=header, draft_lines=draft_lines)
     finally:

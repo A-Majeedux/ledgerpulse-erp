@@ -1126,6 +1126,18 @@ label { color: var(--lp-ink-2); }
    one at a time, the way the reference system shows a bill. The strip is a row
    of buttons; the panels are all in the page, so printing or Ctrl+F still finds
    them, and with no JavaScript every panel simply stays open. */
+/* A document's tabs (a bill, a voucher) are a strip ABOVE a stack of panels.
+   `.lp-tabs` on its own is the older pill navigation - a single row of links,
+   as the receipt screens use - and it stays a row. Without this, the strip and
+   the three panels share one flex row and the bill's lines end up squeezed
+   beside its journal instead of underneath them. */
+.lp-tabs[data-lp-tabs] {
+  display: block;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  margin-bottom: 4px;
+}
 .lp-tabs { margin-bottom: 4px; }
 .lp-tab-strip {
   display: flex;
@@ -1165,3 +1177,11 @@ label { color: var(--lp-ink-2); }
 }
 .lp-tab.on .lp-tab-count { background: rgba(107, 79, 163, .12); color: inherit; }
 .lp-tab-panel[hidden] { display: none; }
+
+/* ---- The lines of a purchase bill --------------------------------------
+   Money is right-aligned in the editor, the way it is on the paper, and the
+   two columns that only mean something for certain kinds of line (a liquid
+   asset's life, a landed-cost charge) are kept narrow. */
+#lines-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+#lines-table .asset-life { width: 72px; }
+#lines-table .line-total { white-space: nowrap; }

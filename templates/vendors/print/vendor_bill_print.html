@@ -8,6 +8,7 @@
 <div class="title-block">
   <div class="doc-main-title">Vendor Bill</div>
   <div class="doc-sub-number">{{ bill[1] | safe_str }}</div>
+  {% if bill[17] == 'Import' %}<div style="font-size:11px; color:#555;">Import against a letter of credit</div>{% endif %}
 </div>
 
 <table class="info-table">
@@ -35,19 +36,26 @@
 <table class="lines-table">
   <thead>
     <tr>
-      <th style="width: 8%;">No.</th>
-      <th style="width: 42%; text-align: left;">Description</th>
-      <th style="width: 10%;">Qty</th>
-      <th style="width: 20%; text-align: right;">Unit Price</th>
-      <th style="width: 20%; text-align: right;">Amount</th>
+      <th style="width: 6%;">No.</th>
+      <th style="width: 40%; text-align: left;">Description</th>
+      <th style="width: 9%;">Qty</th>
+      <th style="width: 9%;">Unit</th>
+      <th style="width: 17%; text-align: right;">Unit Price</th>
+      <th style="width: 19%; text-align: right;">Amount</th>
     </tr>
   </thead>
   <tbody>
     {% for l in lines %}
     <tr>
       <td>{{ loop.index }}</td>
-      <td class="text-left"><strong>{{ l[0] | safe_str }}</strong><br><small style="color: #666;">Account: {{ l[1] | safe_str }} — {{ l[2] | safe_str }}</small></td>
+      <td class="text-left">
+        <strong>{{ l[0] | safe_str }}</strong><br>
+        <small style="color: #666;">Account: {{ l[1] | safe_str }} — {{ l[2] | safe_str }}</small>
+        {% if l[8] and l[8] > 0 %}<br><small style="color: #666;">Less discount {{ l[8] | fmt_money_print }}</small>{% endif %}
+        {% if l[7] and l[7] > 0 %}<br><small style="color: #666;">{{ l[9] | safe_str or 'Sales tax' }}: {{ l[7] | fmt_money_print }}</small>{% endif %}
+      </td>
       <td>{{ l[3] | fmt_qty_print }}</td>
+      <td>{{ l[6] | safe_str }}</td>
       <td style="text-align: right;">{{ l[4] | fmt_money_print }}</td>
       <td class="text-right">{{ l[5] | fmt_money_print }}</td>
     </tr>
@@ -58,8 +66,14 @@
 <div class="totals-box">
   <div class="totals-row">
     <span>Untaxed Amount:</span>
-    <span>{{ total | fmt_money_print }}</span>
+    <span>{{ (total - tax_total) | fmt_money_print }}</span>
   </div>
+  {% if tax_total and tax_total > 0 %}
+  <div class="totals-row">
+    <span>Sales Tax:</span>
+    <span>{{ tax_total | fmt_money_print }}</span>
+  </div>
+  {% endif %}
   <div class="totals-row">
     <span>Total:</span>
     <span>{{ total | fmt_money_print }}</span>

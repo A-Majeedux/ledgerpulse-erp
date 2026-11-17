@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}New Import Bill{% endblock %}
+{% block active_nav %}vendor_bills{% endblock %}
+{% block content %}
+{# An import against a letter of credit: the goods, the bank, and the LC's own
+   charges as lines that are spread over the goods. Same books, different paper. #}
+{% set editing = draft and draft.id %}
+<div class="lp-page-header">
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">{{ ('Correct import bill ' ~ (draft.bill_number or '')) if editing else 'New Import Bill (LC)' }}</h1>
+    <p class="lp-page-subtitle">
+      {% if editing %}
+        This import bill is a draft. Its LC, its bank and its charges can all be corrected until it is posted.
+      {% else %}
+        Goods arriving against a letter of credit, with freight, customs duty and clearing charges spread over them.
+      {% endif %}
+    </p>
+  </div>
+  <div class="lp-page-actions">
+    {% if editing %}
+      <a href="{{ url_for('vendors.vendor_bill_detail', vendor_bill_id=draft.id) }}"
+         class="lp-btn secondary sm">Back to the bill</a>
+    {% else %}
+      <a href="{{ url_for('vendors.new_vendor_bill') }}" class="lp-btn secondary sm">Standard bill &rarr;</a>
+      <a href="{{ url_for('vendors.vendor_bills_list') }}" class="lp-btn secondary sm">Back to Bills</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if error %}
+  <div class="alert alert-danger">{{ error }}</div>
+{% endif %}
+
+<form method="POST" id="bill-form"
+      {% if editing %}action="{{ url_for('vendors.edit_vendor_bill', vendor_bill_id=draft.id) }}"{% endif %}>
+  {{ csrf_field() }}
+  <div class="lp-form-section">
+    <div class="lp-form-grid">
+      <div class="lp-form-group">
+        <label class="form-label">Vendor (the foreign supplier)</label>
+        <select name="vendor_id" class="form-select" required>
+          <option value="">Select vendor…</option>
+          {% for v in vendors %}<option value="{{ v[0] }}"{% if draft_header and draft_header.vendor_id|string == v[0]|string %} selected{% endif %}>{{ v[1] }} ({{ v[2] }})</option>{% endfor %}
+        </select>
+      </div>
+      <div class="lp-form-group">
+        <label class="form-label">Bill Date</label>
+        <input type="date" name="bill_date" value="{{ draft_header.bill_date if draft_header else today }}" class="form-control" required>
+      </div>
+      <div class="lp-form-group">
+        <label class="form-label">Due Date</label>
+        <input type="date" name="due_date" class="form-control" value="{{ draft_header.due_date if draft_header else '' }}">
+      </div>
+      <div class="lp-form-group">
+        <label class="form-label">Payment Terms</label>
+        <input type="text" name="payment_terms" placeholder="e.g. at sight" class="form-control" value="{{ draft_header.payment_terms if draft_header else '' }}">
+      </div>
+      <div class="lp-form-group">
+        <label class="form-label">LC Reference</label>
+        <input type="text" name="lc_reference" maxlength="100" placeholder="e.g. LC 123/2026"
+               class="form-control" value="{{ draft_header.lc_reference if draft_header else '' }}">
+      </div>
+      <div class="lp-form-group">
+        <label class="form-label">Recipient Bank</label>
+        <input type="text" name="recipient_bank" maxlength="100" placeholder="the bank the LC is drawn on"
+               class="form-control" value="{{ draft_header.recipient_bank if draft_header else '' }}">
+      </div>
+      <div class="lp-form-group">
+        <label class="form-label">Vendor's Bill Reference</label>
+        <input type="text" name="payment_reference" maxlength="100" placeholder="the number on the supplier's paper"
+               class="form-control" value="{{ draft_header.payment_reference if draft_header else '' }}">
+      </div>
+      <div class="lp-form-group">
+        <label class="form-label">Spread LC charges</label>
+        <select name="landed_cost_basis" class="form-select">
+          {% for value, label in basis_options.items() %}
+            <option value="{{ value }}" {{ 'selected' if (draft_header.landed_cost_basis if draft_header else 'value') == value }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <p style="margin: 10px 0 0; font-size: 12px; line-height: 1.55; color: var(--lp-text-muted);">
+      The goods go in at what the supplier charged. The LC's own charges
+      ({{ charge_types|join(', ') }}) go on their own lines with the kind
+      <strong>Landed cost</strong> - they are already in the journal once, and the bill spreads them over the goods
+      to show what each unit really cost. The unit, the discount and the tax work on these lines exactly as on a
+      standard bill.
+    </p>
+  </div>
+
+  <div class="lp-table-wrapper" style="margin-bottom: 20px;">
+    <table class="lp-table" id="lines-table">
+      <thead>
+        <tr>
+          <th style="min-width:180px;">Label</th>
+          <th>Product (goods only)</th>
+          <th>Account</th>
+          <th>Kind</th>
+          <th>Unit</th>
+          <th class="amount">Qty</th>
+          <th class="amount">Rate ({{ active_currency|default('PKR') }})</th>
+          <th class="amount">Disc %</th>
+          <th>Tax</th>
+          <th class="amount">Total</th>
+          <th class="amount" title="Only for an asset: how many years it will be used">Life (yrs)</th>
+          <th class="col-actions"></th>
+        </tr>
+      </thead>
+      <tbody id="lines-body"></tbody>
+    </table>
+  </div>
+
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; flex-wrap: wrap;">
+    <button type="button" onclick="LPBillLines.add()" class="lp-btn secondary sm">+ Add line</button>
+    <div style="background: var(--lp-white); padding: 12px 20px; border-radius: var(--lp-radius-md); border: 1px solid var(--lp-border); font-size: 14px; min-width: 260px;">
+      <div style="display:flex; justify-content:space-between; gap:24px; font-size:12.5px; color: var(--lp-text-muted);">
+        <span>Untaxed</span><span id="untaxed-total">0.00</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; gap:24px; font-size:12.5px; color: var(--lp-text-muted);">
+        <span>Sales tax</span><span id="tax-total">0.00</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; gap:24px; margin-top:4px;">
+        Bill Total: <strong id="grand-total" style="color: var(--lp-teal); font-size: 16px;">0.00</strong>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <button type="submit" class="lp-btn primary">{{ 'Save the correction' if editing else 'Save Draft Import Bill' }}</button>
+  </div>
+</form>
+
+<script>
+window.BILL_LINE_DATA = {
+  accounts: [{% for a in accounts %}{ id: {{ a[0] }}, label: {{ (a[1] ~ ' - ' ~ a[2])|tojson }} },{% endfor %}],
+  products: [{% for p in products %}{ id: {{ p[0] }}, label: {{ (p[1] ~ ((' (' ~ p[2] ~ ')') if p[2] else ''))|tojson }}, unit: {{ (p[2] or 'Units')|tojson }} },{% endfor %}],
+  taxRates: [{% for t in tax_rates %}{ id: {{ t[0] }}, label: {{ t[1]|tojson }}, percent: {{ t[2]|float }} },{% endfor %}],
+  units: {{ units|tojson }},
+  kinds: {{ line_kinds|tojson }},
+  chargeTypes: {{ charge_types|tojson }},
+  draftLines: {{ (draft_lines or [])|tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='bill_lines.js') }}?v={{ asset_v('bill_lines.js') }}"></script>
+{% endblock %}

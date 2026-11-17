@@ -372,13 +372,24 @@ class LandedCostOnABillTests(_OneCompanyPerTest):
         self.assertEqual(response.status_code, 200)     # the form again, not a crash
         self.assertIn("no Trade Payables account", response.get_data(as_text=True))
 
-    def test_the_form_offers_the_product_and_the_landed_cost_tick(self):
+    def test_the_standard_screen_keeps_the_letter_of_credit_out_of_it(self):
+        """An LC is a different paper: the everyday bill does not carry one."""
         page = self.client.get("/vendors/bills/new").get_data(as_text=True)
+        self.assertNotIn("LC Reference", page)
+        self.assertNotIn("Spread LC charges", page)
+        self.assertIn("Import against an LC", page)      # the way across to it
+        self.assertIn("Urea 50kg", page)                  # the product picker
+        self.assertIn("bill_lines.js", page)
+
+    def test_the_import_screen_offers_the_lc_the_bank_and_the_landed_cost_kind(self):
+        page = self.client.get("/vendors/bills/new-import").get_data(as_text=True)
         self.assertIn("LC Reference", page)
+        self.assertIn("Recipient Bank", page)
         self.assertIn("Spread LC charges", page)
         self.assertIn("By quantity", page)
-        self.assertIn("Urea 50kg", page)          # the product picker
-        self.assertIn("line_kind[]", page)        # the tick writes this, always sent
+        self.assertIn("Urea 50kg", page)
+        self.assertIn("Landed Cost", page)                # the kind of an LC charge
+        self.assertIn("bill_lines.js", page)
 
 
 class ReceiptAllocationTests(_OneCompanyPerTest):

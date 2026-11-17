@@ -1337,3 +1337,40 @@ a real membership in both, so a 404 means "not this company's document" rather t
 403 and belongs to the guard test.
 
 Suite: **288 passed, 1 known failure**.
+
+## 35. What a purchase line can say, and two papers instead of one (Round 19)
+
+**The page he was looking at was broken by a rule, not by a layout choice.** `.lp-tabs` had been
+`display: inline-flex` since it was written for the receipt screens, where it is one row of links. Round 17
+then put a strip and three panels inside the same box - so the strip and the three panels shared a single
+flex row, and the bill's lines ended up squeezed beside its journal, the "other info" flung to the right of
+the screen. One rule now settles it: `.lp-tabs[data-lp-tabs] { display: block }`. The document tabs stack,
+the strip sits above the panels, and a test reads the stylesheet to keep it that way.
+
+**A standard bill and an import bill are now two papers.** `/vendors/bills/new` is the everyday one -
+expenses, goods for resale, an asset - and carries no letter of credit at all. `/vendors/bills/new-import`
+is the LC: the LC reference, the bank that is paid, the basis on which charges are spread, and the
+**Landed cost** kind on a line. Both screens post through the same code and land in the same tables, so the
+ledger cannot tell which screen wrote a bill; only `vendor_bills.bill_kind` can, and the list shows it
+(`Type` column, and a filter for All / Standard / Import).
+
+**A line now says what it is measured in and what was taken off it.** `unit`, `discount_pct`,
+`discount_amount`, `tax_rate_id` and `tax_amount` are on `vendor_bill_lines`. The arithmetic is the
+server's, not the browser's: quantity x rate is the gross, the discount comes off that, the sales tax is
+charged on what is left, and the line total is what the vendor's paper says. The tax is debited to
+**1250 Input Sales Tax Recoverable** - never to the expense - and lines that share a rate share one
+journal line, because the tax return cares about the rate and not about how many lines carried it.
+
+**An asset is capitalised, not expensed.** A line's kind can be `Asset`; it debits the fixed-asset account
+it names (1500 Plant & Machinery, 1510 Furniture & Fixtures, 1520 Office Equipment, 1530 Vehicles are
+seeded per company) and keeps the years it will be used on the line. Depreciation is not posted yet - the
+life is kept so it can be.
+
+Two firm rules the tests hold: an account or a tax rate posted by the browser must belong to **this**
+company, and a life in years is only kept on an `Asset` line - a short list in a form must not hang a
+van's five years on a carton. Both were caught live, not by reasoning.
+
+The printed bill carries the unit, the discount, the rate's name and the tax, and says "Import against a
+letter of credit" when it is one. Suite: **309 passed**, and for the first time nothing is failing: the
+stale `'INVOICE LINES'` / `'JOURNAL ENTRY'` assertions in `test_vendors.py` were about headings that the
+Round 17 prints renamed, and they were corrected rather than left to rot.

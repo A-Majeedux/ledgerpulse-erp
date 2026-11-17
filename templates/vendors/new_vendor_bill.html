@@ -2,7 +2,7 @@
 {% block title %}New Vendor Bill{% endblock %}
 {% block active_nav %}vendor_bills{% endblock %}
 {% block content %}
-{# The same form writes a new bill and corrects a draft one. #}
+{# The same form writes a new standard bill and corrects a draft one. #}
 {% set editing = draft and draft.id %}
 <div class="lp-page-header">
   <div class="lp-page-heading">
@@ -12,7 +12,7 @@
         This bill is a draft. Change what is wrong and save it - the vendor's own number and the bill's place in
         the books stay as they are.
       {% else %}
-        Record a purchase bill from a vendor with expense accounts and line amounts.
+        What a vendor is owed for expenses, goods bought for resale, or an asset the company is buying.
       {% endif %}
     </p>
   </div>
@@ -21,6 +21,7 @@
       <a href="{{ url_for('vendors.vendor_bill_detail', vendor_bill_id=draft.id) }}"
          class="lp-btn secondary sm">Back to the bill</a>
     {% else %}
+      <a href="{{ url_for('vendors.new_import_bill') }}" class="lp-btn secondary sm">Import against an LC &rarr;</a>
       <a href="{{ url_for('vendors.vendor_bills_list') }}" class="lp-btn secondary sm">Back to Bills</a>
     {% endif %}
   </div>
@@ -55,23 +56,16 @@
         <input type="text" name="payment_terms" placeholder="e.g. 30 days" class="form-control" value="{{ draft_header.payment_terms if draft_header else '' }}">
       </div>
       <div class="lp-form-group">
-        <label class="form-label">LC Reference</label>
-        <input type="text" name="lc_reference" maxlength="100" placeholder="e.g. LC 123/2026 (imports only)"
-               class="form-control" value="{{ draft_header.lc_reference if draft_header else '' }}">
-      </div>
-      <div class="lp-form-group">
-        <label class="form-label">Spread LC charges</label>
-        <select name="landed_cost_basis" class="form-select">
-          {% for value, label in basis_options.items() %}
-            <option value="{{ value }}" {{ 'selected' if (draft_header.landed_cost_basis if draft_header else 'value') == value }}>{{ label }}</option>
-          {% endfor %}
-        </select>
+        <label class="form-label">Vendor's Bill Reference</label>
+        <input type="text" name="payment_reference" maxlength="100" placeholder="the number on the supplier's paper"
+               class="form-control" value="{{ draft_header.payment_reference if draft_header else '' }}">
       </div>
     </div>
     <p style="margin: 10px 0 0; font-size: 12px; line-height: 1.55; color: var(--lp-text-muted);">
-      Tick <strong>Landed cost</strong> on a line for the LC's own charges — freight, customs duty, clearing,
-      bank charges — and name the product on the goods lines. The bill then shows what each unit really cost.
-      The charges are spread over the goods, not added twice.
+      A line is an expense (rent, salaries, a service), goods bought for resale, or an <strong>asset</strong> -
+      a machine, a vehicle, furniture - which is capitalised rather than expensed. Buying against a letter of
+      credit, where freight, duty and clearing are spread over the goods, is a different paper:
+      use <a href="{{ url_for('vendors.new_import_bill') }}">Import against an LC</a>.
     </p>
   </div>
 
@@ -79,13 +73,17 @@
     <table class="lp-table" id="lines-table">
       <thead>
         <tr>
-          <th>Label</th>
-          <th>Product (goods only)</th>
+          <th style="min-width:180px;">Label</th>
+          <th>Product</th>
           <th>Account</th>
+          <th>Kind</th>
+          <th>Unit</th>
           <th class="amount">Qty</th>
           <th class="amount">Rate ({{ active_currency|default('PKR') }})</th>
+          <th class="amount">Disc %</th>
+          <th>Tax</th>
           <th class="amount">Total</th>
-          <th>Landed cost</th>
+          <th class="amount" title="Only for an asset: how many years it will be used">Life (yrs)</th>
           <th class="col-actions"></th>
         </tr>
       </thead>
@@ -93,12 +91,17 @@
     </table>
   </div>
 
-  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
-    <button type="button" onclick="addLine()" class="lp-btn secondary sm">+ Add line</button>
-    <div style="background: var(--lp-white); padding: 12px 20px; border-radius: var(--lp-radius-md); border: 1px solid var(--lp-border); font-size: 14px;">
-      Bill Total: <strong id="grand-total" style="color: var(--lp-teal); font-size: 16px;">0.00</strong>
-      <div style="font-size: 12px; color: var(--lp-text-muted); margin-top: 2px;">
-        Goods <span id="goods-total">0.00</span> · LC charges <span id="charges-total">0.00</span>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; flex-wrap: wrap;">
+    <button type="button" onclick="LPBillLines.add()" class="lp-btn secondary sm">+ Add line</button>
+    <div style="background: var(--lp-white); padding: 12px 20px; border-radius: var(--lp-radius-md); border: 1px solid var(--lp-border); font-size: 14px; min-width: 260px;">
+      <div style="display:flex; justify-content:space-between; gap:24px; font-size:12.5px; color: var(--lp-text-muted);">
+        <span>Untaxed</span><span id="untaxed-total">0.00</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; gap:24px; font-size:12.5px; color: var(--lp-text-muted);">
+        <span>Sales tax</span><span id="tax-total">0.00</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; gap:24px; margin-top:4px;">
+        Bill Total: <strong id="grand-total" style="color: var(--lp-teal); font-size: 16px;">0.00</strong>
       </div>
     </div>
   </div>
@@ -109,112 +112,15 @@
 </form>
 
 <script>
-const ACCOUNTS = [{% for a in accounts %}{ id: {{ a[0] }}, label: {{ (a[1] ~ ' - ' ~ a[2])|tojson }} },{% endfor %}];
-const PRODUCTS = [{% for p in products %}{ id: {{ p[0] }}, label: {{ (p[1] ~ ((' (' ~ p[2] ~ ')') if p[2] else ''))|tojson }} },{% endfor %}];
-
-function accountOptions() {
-  return '<option value="">Select account…</option>' + ACCOUNTS.map(a => `<option value="${a.id}">${a.label}</option>`).join('');
-}
-
-function productOptions() {
-  return '<option value="">—</option>' + PRODUCTS.map(p => `<option value="${p.id}">${p.label}</option>`).join('');
-}
-
-function recalcRow(row) {
-  const qty = parseFloat(row.querySelector('[name="quantity[]"]').value || 0);
-  const rate = parseFloat(row.querySelector('[name="rate[]"]').value || 0);
-  row.querySelector('[name="total[]"]').value = (qty * rate).toFixed(2);
-  recalcGrandTotal();
-}
-
-function recalcGrandTotal() {
-  let sum = 0, goods = 0, charges = 0;
-  document.querySelectorAll('#lines-body tr').forEach(row => {
-    const total = parseFloat((row.querySelector('[name="total[]"]') || {}).value || 0);
-    const kind = (row.querySelector('[name="line_kind[]"]') || {}).value;
-    sum += total;
-    if (kind === 'Landed Cost') charges += total; else goods += total;
-  });
-  document.getElementById('grand-total').textContent = sum.toFixed(2);
-  const goodsBox = document.getElementById('goods-total');
-  const chargesBox = document.getElementById('charges-total');
-  if (goodsBox) goodsBox.textContent = goods.toFixed(2);
-  if (chargesBox) chargesBox.textContent = charges.toFixed(2);
-}
-
-function addLine() {
-  const tbody = document.getElementById('lines-body');
-  const row = document.createElement('tr');
-  row.innerHTML = `
-    <td><input type="text" name="label[]" class="form-control" placeholder="Description"></td>
-    <td><select name="product_id[]" class="form-select">${productOptions()}</select></td>
-    <td><select name="account_id[]" class="form-select" required>${accountOptions()}</select></td>
-    <td><input type="number" step="0.01" name="quantity[]" value="1" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
-    <td><input type="number" step="0.01" name="rate[]" value="0" class="form-control" style="text-align:right;" oninput="recalcRow(this.closest('tr'))"></td>
-    <td><input type="number" step="0.01" name="total[]" value="0" class="form-control" style="text-align:right;" oninput="recalcGrandTotal()"></td>
-    <td style="text-align:center;">
-      <input type="hidden" name="line_kind[]" value="Goods">
-      <input type="checkbox" class="landed-tick" title="This line is an LC charge, not goods"
-             onchange="markLanded(this)">
-    </td>
-    <td class="col-actions"><button type="button" onclick="this.closest('tr').remove(); recalcGrandTotal();" class="lp-btn ghost sm" title="Remove line" aria-label="Remove line"><svg class="ico sm" aria-hidden="true"><use href="#i-trash"/></svg></button></td>
-  `;
-  tbody.appendChild(row);
-}
-
-// The tick writes the line's kind into a hidden box, which is always sent, so
-// one ticked line does not shift the kind of every line after it.
-function markLanded(box) {
-  const row = box.closest('tr');
-  const kind = row.querySelector('[name="line_kind[]"]');
-  if (kind) kind.value = box.checked ? 'Landed Cost' : 'Goods';
-  recalcGrandTotal();
-  const product = row.querySelector('[name="product_id[]"]');
-  const label = row.querySelector('[name="label[]"]');
-  if (!product) return;
-  // Not `disabled`: a disabled box is left out of the form and every later
-  // line would shift by one. Dim it and empty it instead.
-  product.style.opacity = box.checked ? '.45' : '';
-  product.style.pointerEvents = box.checked ? 'none' : '';
-  if (box.checked) {
-    product.value = '';
-    row.style.background = '#FFFBF3';
-    if (label && !label.value) label.placeholder = 'e.g. Freight, customs duty, clearing';
-  } else {
-    row.style.background = '';
-  }
-}
-
-// The lines of the bill being corrected, if this form was opened for one.
-const DRAFT_LINES = {{ (draft_lines or [])|tojson }};
-
-function fillDraftRow(row, line) {
-  const set = (name, value) => {
-    const box = row.querySelector('[name="' + name + '"]');
-    if (box) box.value = value;
-  };
-  set('label[]', line.label || '');
-  set('product_id[]', line.product_id || '');
-  set('account_id[]', line.account_id || '');
-  set('quantity[]', line.quantity);
-  set('rate[]', line.rate);
-  set('total[]', line.total);
-  const kind = row.querySelector('[name="line_kind[]"]');
-  const tick = row.querySelector('.landed-tick');
-  if (line.line_kind === 'Landed Cost') {
-    if (kind) kind.value = 'Landed Cost';
-    if (tick) tick.checked = true;
-  }
-}
-
-if (DRAFT_LINES.length) {
-  DRAFT_LINES.forEach(function (line) {
-    addLine();
-    fillDraftRow(document.querySelector('#lines-body tr:last-child'), line);
-  });
-  recalcGrandTotal();
-} else {
-  addLine();
-}
+window.BILL_LINE_DATA = {
+  accounts: [{% for a in accounts %}{ id: {{ a[0] }}, label: {{ (a[1] ~ ' - ' ~ a[2])|tojson }} },{% endfor %}],
+  products: [{% for p in products %}{ id: {{ p[0] }}, label: {{ (p[1] ~ ((' (' ~ p[2] ~ ')') if p[2] else ''))|tojson }}, unit: {{ (p[2] or 'Units')|tojson }} },{% endfor %}],
+  taxRates: [{% for t in tax_rates %}{ id: {{ t[0] }}, label: {{ t[1]|tojson }}, percent: {{ t[2]|float }} },{% endfor %}],
+  units: {{ units|tojson }},
+  kinds: {{ line_kinds|tojson }},
+  chargeTypes: {{ charge_types|tojson }},
+  draftLines: {{ (draft_lines or [])|tojson }}
+};
 </script>
+<script src="{{ url_for('static', filename='bill_lines.js') }}?v={{ asset_v('bill_lines.js') }}"></script>
 {% endblock %}

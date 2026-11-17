@@ -6,7 +6,9 @@
 <div class="lp-page-header">
   <div class="lp-page-heading">
     <h2 style="margin:0;">Bill from {{ bill[2] }}</h2>
-    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Bill #: <strong>{{ bill[1] }}</strong> · Date: {{ bill[3]|fmt_date }}{% if bill[4] %} · Due {{ bill[4]|fmt_date }}{% endif %}</p>
+    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Bill #: <strong>{{ bill[1] }}</strong> · Date: {{ bill[3]|fmt_date }}{% if bill[4] %} · Due {{ bill[4]|fmt_date }}{% endif %}
+      {% if bill[17] == 'Import' %}<span class="lp-pill pending" style="margin-left:8px;">Import / LC</span>{% endif %}
+      {% if bill[19] %} · Terms: {{ bill[19] }}{% endif %}</p>
   </div>
   <div class="lp-page-actions">
     {# The bill itself is printed from the gear menu ("Print / PDF bill"); the
@@ -43,26 +45,58 @@
 <div class="lp-card">
   <h3 style="margin-top:0; font-size:16px;">Invoice Lines</h3>
   <table class="lp-table">
-    <thead><tr><th>Label</th><th>Product</th><th>Kind</th><th>Account</th><th class="amount">Qty</th><th class="amount">Rate</th><th class="amount">Total</th></tr></thead>
+    <thead>
+      <tr>
+        <th>Label</th>
+        <th>Product</th>
+        <th>Kind</th>
+        <th>Account</th>
+        <th class="amount">Qty</th>
+        <th>Unit</th>
+        <th class="amount">Rate</th>
+        <th class="amount">Disc %</th>
+        <th>Tax</th>
+        <th class="amount">Total</th>
+      </tr>
+    </thead>
     <tbody>
       {% for line in lines %}
       <tr>
-        <td>{{ line[0] or '—' }}</td>
+        <td>{{ line[0] or '—' }}{% if line[15] %}<div style="font-size:11.5px; color:var(--lp-text-muted);">{{ line[15]|float|round(1) }} years of use</div>{% endif %}</td>
         <td>{{ line[7] or '—' }}</td>
         <td>
           {% if line[6] == 'Landed Cost' %}
             <span class="lp-pill pending">Landed cost</span>
+          {% elif line[6] == 'Asset' %}
+            <span class="lp-pill posted">Asset</span>
           {% else %}
             <span class="lp-pill draft">Goods</span>
           {% endif %}
         </td>
         <td>{{ line[1] }} — {{ line[2] }}</td>
         <td class="amount">{{ "%.2f"|format(line[3]) }}</td>
+        <td>{{ line[9] }}</td>
         <td class="amount">{{ "%.2f"|format(line[4]) }}</td>
+        <td class="amount">{{ ("%.2f"|format(line[10])) if line[10] and line[10] > 0 else '—' }}</td>
+        <td>
+          {% if line[14] and line[14] > 0 %}
+            {{ line[12] or 'Tax' }}<div style="font-size:11.5px; color:var(--lp-text-muted);">{{ "%.2f"|format(line[14]) }} at {{ line[13]|float|round(2) }}%</div>
+          {% else %}—{% endif %}
+        </td>
         <td class="amount">{{ "%.2f"|format(line[5]) }}</td>
       </tr>
       {% endfor %}
-      <tr style="font-weight:700;"><td colspan="6">Total Amount Due</td><td class="amount">Rs. {{ "%.2f"|format(total) }}</td></tr>
+      {% if bill[18] and bill[18] > 0 %}
+      <tr style="color:var(--lp-text-muted);">
+        <td colspan="9" style="text-align:right;">Untaxed</td>
+        <td class="amount">{{ "%.2f"|format(total - bill[18]) }}</td>
+      </tr>
+      <tr style="color:var(--lp-text-muted);">
+        <td colspan="9" style="text-align:right;">Sales tax</td>
+        <td class="amount">{{ "%.2f"|format(bill[18]) }}</td>
+      </tr>
+      {% endif %}
+      <tr style="font-weight:700;"><td colspan="9">Total Amount Due</td><td class="amount">Rs. {{ "%.2f"|format(total) }}</td></tr>
     </tbody>
   </table>
 </div>
@@ -177,6 +211,8 @@
   <table class="lp-table">
     <tr><td style="width:230px; color:var(--lp-text-muted);">Vendor</td>
         <td><a href="{{ url_for('vendors.vendor_detail', vendor_id=bill[15]) }}">{{ bill[2] }}</a></td></tr>
+    <tr><td style="width:230px; color:var(--lp-text-muted);">Bill type</td>
+        <td>{{ 'Import against an LC' if bill[17] == 'Import' else 'Standard purchase' }}</td></tr>
     <tr><td style="color:var(--lp-text-muted);">Bill reference</td><td>{{ bill[11] or '—' }}</td></tr>
     <tr><td style="color:var(--lp-text-muted);">Recipient bank</td><td>{{ bill[12] or '—' }}</td></tr>
     <tr><td style="color:var(--lp-text-muted);">LC reference</td><td>{{ bill[13] or '—' }}</td></tr>

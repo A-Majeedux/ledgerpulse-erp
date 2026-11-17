@@ -87,6 +87,28 @@ def ensure_schema(cursor):
     # How the LC charges are spread: by the value of the goods, or by quantity.
     cursor.execute("ALTER TABLE vendor_bills ADD COLUMN IF NOT EXISTS landed_cost_basis VARCHAR(10) DEFAULT 'value'")
 
+    # What the line is measured in, what the supplier took off it and what the
+    # government puts on top of it. quantity x rate is the gross figure; the
+    # discount comes off that, and the tax is charged on what is left.
+    cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS unit VARCHAR(20) DEFAULT 'Units'")
+    cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(14, 2) DEFAULT 0")
+    # A purchase tax rate from the company's own list. No foreign key: the
+    # rates table is made later in startup, by the sales segment.
+    cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS tax_rate_id INTEGER")
+    cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS tax_amount NUMERIC(14, 2) DEFAULT 0")
+    # Buying an asset is a line whose account is a fixed-asset account rather
+    # than an expense. Its life is kept on the line so the depreciation can be
+    # worked out later; nothing is depreciated yet.
+    cursor.execute("ALTER TABLE vendor_bill_lines ADD COLUMN IF NOT EXISTS asset_life_years NUMERIC(5, 1)")
+
+    # 'Standard' (expenses and assets) or 'Import' (an LC, whose charges are
+    # spread over the goods). The tax total is kept on the bill so the detail
+    # screen does not have to add up the lines again to show it.
+    cursor.execute("ALTER TABLE vendor_bills ADD COLUMN IF NOT EXISTS bill_kind VARCHAR(12) DEFAULT 'Standard'")
+    cursor.execute("ALTER TABLE vendor_bills ADD COLUMN IF NOT EXISTS tax_total NUMERIC(14, 2) DEFAULT 0")
+
+    _ensure_purchase_accounts(cursor)
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS payment_voucher_counters (
             organization_id INTEGER REFERENCES organizations(organization_id),
@@ -207,3 +229,32 @@ def ensure_schema(cursor):
                         (organization_id, code, name, account_type, allow_reconciliation)
                     VALUES (%s, %s, %s, 'Liability', FALSE)
                 """, (org_id, code, name))
+
+
+# The accounts a purchase needs beyond expenses: the sales tax paid on what we
+# bought (recoverable from the government) and the fixed assets a company buys
+# instead of expensing. Seeded once per company, by code, and never overwriting
+# an account the owner has changed.
+PURCHASE_ACCOUNTS = [
+    ("1250", "Input Sales Tax Recoverable", "Asset"),
+    ("1500", "Plant & Machinery", "Asset"),
+    ("1510", "Furniture & Fixtures", "Asset"),
+    ("1520", "Office Equipment", "Asset"),
+    ("1530", "Vehicles", "Asset"),
+]
+
+
+def _ensure_purchase_accounts(cursor):
+    cursor.execute("SELECT DISTINCT organization_id FROM organizations")
+    for (org_id,) in cursor.fetchall():
+        for code, name, account_type in PURCHASE_ACCOUNTS:
+            cursor.execute(
+                "SELECT 1 FROM chart_of_accounts WHERE organization_id = %s AND code = %s",
+                (org_id, code)
+            )
+            if cursor.fetchone() is None:
+                cursor.execute("""
+                    INSERT INTO chart_of_accounts
+                        (organization_id, code, name, account_type, allow_reconciliation)
+                    VALUES (%s, %s, %s, %s, FALSE)
+                """, (org_id, code, name, account_type))
