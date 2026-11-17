@@ -11,7 +11,9 @@
     <h1 class="lp-page-title">Customers</h1>
     <p class="lp-page-subtitle">Customer directory for sales invoicing, receipts and receivables.</p>
   </div>
-  <a href="{{ url_for('customers.new_customer') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Customer</a>
+  {% if may('sales.create') %}
+    <a href="{{ url_for('customers.new_customer') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Customer</a>
+  {% endif %}
 </div>
 
 <div class="lp-card">

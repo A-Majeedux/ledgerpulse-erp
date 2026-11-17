@@ -18,6 +18,8 @@ database; every test makes its own company inside it and removes it again.
 import unittest
 import uuid
 
+from _people import member
+
 from customers.services import (
     ADDRESS_TYPE_OPTIONS, PAYMENT_METHOD_OPTIONS, PAYMENT_TYPE_OPTIONS,
     clean_contact_form, receipt_voucher_number,
@@ -78,6 +80,7 @@ class _OneCompanyPerTest(unittest.TestCase):
             "VALUES ('Receipt Tester', %s, 'hash', TRUE) RETURNING user_id",
             (f"receipt_{uuid.uuid4().hex[:8]}@x.local",))
         self.user_id = cursor.fetchone()[0]
+        member(cursor, self.user_id, self.org_id)
         for code, name, kind in (("1100", "Trade Receivables", "Asset"),
                                  ("1150", "WHT Receivable - Supplies", "Asset"),
                                  ("1160", "WHT Receivable - Services", "Asset"),
@@ -225,6 +228,7 @@ class ReceiptScreenTests(_OneCompanyPerTest):
             "INSERT INTO organizations (name, currency) VALUES (%s, 'PKR') RETURNING organization_id",
             ("TEST_RECEIPTS_OTHER_" + uuid.uuid4().hex[:8],))
         other_org_id = cursor.fetchone()[0]
+        member(cursor, self.user_id, other_org_id)     # inside the second company
         conn.commit()
         cursor.close()
         conn.close()

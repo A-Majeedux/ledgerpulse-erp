@@ -222,6 +222,9 @@ class ReceiptVoucherTests(_OneCompany):
                        "VALUES ('Other', %s, 'hash', TRUE) RETURNING user_id",
                        (f"other_{uuid.uuid4().hex[:8]}@x.local",))
         other_user = cursor.fetchone()[0]
+        # a member of the other company: this test is about its receipt being
+        # unprintable here, not about being turned away at the door (a 403)
+        member(cursor, other_user, other_org)
         conn.commit()
         cursor.close()
         conn.close()

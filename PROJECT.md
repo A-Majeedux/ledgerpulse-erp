@@ -1317,3 +1317,23 @@ that they hold the lines, the entry and the references; the voucher's two tabs w
 withholding; paying a bill and the bill becoming Paid; both refusals leaving the bill and the books untouched; a
 draft bill not offering Pay; the journal print answering 200 with the ledger's own columns; and a Viewer refused at
 every one of twelve doors. Suite: **287 passed, 1 known failure**.
+
+## 34. The customers, and the end of the open routes (Round 18)
+
+The last module with open doors is closed: **21 customer routes**, every one behind a permission. The reading
+(`sales.view` eight times) covers the list, the customer, the statement, the terms, the receipts and their voucher;
+the writing (`sales.create` eight times) covers the customer, its notes, its contacts and its link to a vendor;
+taking money in - a new receipt, deleting one, unmatching one from an invoice - asks for `sales.post`, because that
+is posting; and the two customer reports (partner ledger, ageing) ask for `reports.view`. Buttons follow: a Viewer
+sees no *New Customer* and no *New Receipt*, and the routes refuse him with **403** if he asks anyway.
+
+The route-table guard now walks **four modules** - sales 16, accounting 13, vendors 33, customers 21: **83 routes,
+none of them open**. `tests/test_route_guard.py` is what keeps that true as new routes arrive, and it also refuses
+to let a *write* route be satisfied by a `.view` right.
+
+Two fixture lessons came out of this round, both the same lesson as last time: the tests that check one company
+cannot see another's data were signing in as somebody who belonged to **neither** company. They now give that person
+a real membership in both, so a 404 means "not this company's document" rather than "not a member" - the latter is a
+403 and belongs to the guard test.
+
+Suite: **288 passed, 1 known failure**.

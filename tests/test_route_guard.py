@@ -22,7 +22,7 @@ from decimal import Decimal as D
 from _people import member, viewer
 
 # The modules whose every route is behind a permission. Grows a module per round.
-GUARDED_MODULES = {"sales", "accounting", "vendors"}
+GUARDED_MODULES = {"sales", "accounting", "vendors", "customers"}
 
 # Routes that are not a company's business: signing in, setting up the very first
 # account, and the platform's own administration.
@@ -252,6 +252,23 @@ class AViewerUnTests(_OneCompany):
         self.assertEqual(self.client.get("/accounting/journal-entries").status_code, 200)
         body = self.client.get("/accounting/journal-entries").get_data(as_text=True)
         self.assertNotIn("/accounting/journal-entries/new", body)
+
+    def test_the_customers_are_closed_to_him_as_well(self):
+        """He may read the customers and their receipts (sales.view); he may not
+        write them, and may not take money in (sales.post)."""
+        self.sign_in("viewer")
+        self.assertEqual(self.client.get("/customers/").status_code, 200)
+        self.assertEqual(self.client.get("/customers/receipts").status_code, 200)
+        for method, url in (("GET", "/customers/new"), ("POST", "/customers/new"),
+                            ("POST", "/customers/1/notes"),
+                            ("GET", "/customers/receipts/new"), ("POST", "/customers/receipts/new"),
+                            ("POST", "/customers/receipts/1/unmatch/1")):
+            response = self.client.open(url, method=method, data={"csrf_token": "test-csrf"})
+            self.assertEqual(response.status_code, 403, f"{method} {url} let a viewer through")
+        listing = self.client.get("/customers/").get_data(as_text=True)
+        self.assertNotIn("/customers/new", listing)
+        receipts = self.client.get("/customers/receipts").get_data(as_text=True)
+        self.assertNotIn("/customers/receipts/new", receipts)
 
     def test_the_admin_is_let_through_the_same_doors(self):
         invoice_id = self.make_invoice()

@@ -5,7 +5,9 @@
 {% from "_search.html" import search_bar with context %}
 <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
   <h2 style="margin:0;">Customer Receipts</h2>
-  <a href="{{ url_for('customers.new_customer_receipt') }}" class="lp-btn primary"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Receipt</a>
+  {% if may('sales.post') %}
+    <a href="{{ url_for('customers.new_customer_receipt') }}" class="lp-btn primary"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Receipt</a>
+  {% endif %}
 </div>
 
 <div class="lp-tabs" role="tablist">

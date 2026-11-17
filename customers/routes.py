@@ -162,6 +162,7 @@ def _show_edit_card(cursor, org_id, customer, *, values=None, problems=None,
 
 @bp.route("/")
 @require_organization
+@require_permission("sales.view")
 def customers_list():
     org_id = current_organization_id()
     search = clean_search(request.args.get("q"))
@@ -182,6 +183,7 @@ def customers_list():
 
 @bp.route("/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("sales.create")
 def new_customer():
     org_id = current_organization_id()
     conn = get_conn()
@@ -208,6 +210,7 @@ def new_customer():
 
 @bp.route("/<int:customer_id>")
 @require_organization
+@require_permission("sales.view")
 def customer_view(customer_id):
     """The customer's own page, for reading.
 
@@ -245,6 +248,7 @@ def customer_view(customer_id):
 
 @bp.route("/<int:customer_id>/statement")
 @require_organization
+@require_permission("sales.view")
 def customer_statement(customer_id):
     """The Statement of Account - the sheet that goes to the customer.
 
@@ -274,6 +278,7 @@ def customer_statement(customer_id):
 
 @bp.route("/<int:customer_id>/terms")
 @require_organization
+@require_permission("sales.view")
 def customer_terms(customer_id):
     """What the invoice and receipt screens need to know about one customer.
 
@@ -309,6 +314,7 @@ def customer_terms(customer_id):
 
 @bp.route("/<int:customer_id>/edit", methods=["GET", "POST"])
 @require_organization
+@require_permission("sales.create")
 def edit_customer(customer_id):
     """
     Change a customer's card. The ID never changes. The name can be changed
@@ -364,6 +370,7 @@ def edit_customer(customer_id):
 
 @bp.route("/<int:customer_id>/vendor", methods=["POST"])
 @require_organization
+@require_permission("sales.create")
 def link_customer_vendor(customer_id):
     """Link this customer to the vendor he is on the buying side, or unlink him.
 
@@ -392,6 +399,7 @@ def link_customer_vendor(customer_id):
 
 @bp.route("/<int:customer_id>/notes", methods=["POST"])
 @require_organization
+@require_permission("sales.create")
 def save_customer_notes(customer_id):
     """Write what he typed in the Notes tab. Nothing else on the card changes."""
     org_id = current_organization_id()
@@ -425,6 +433,7 @@ def _customer_or_404(cursor, org_id, customer_id):
 
 @bp.route("/<int:customer_id>/contacts", methods=["POST"])
 @require_organization
+@require_permission("sales.create")
 def add_customer_contact(customer_id):
     """Add one contact card. The first contact of a customer becomes primary."""
     org_id = current_organization_id()
@@ -451,6 +460,7 @@ def add_customer_contact(customer_id):
 
 @bp.route("/<int:customer_id>/contacts/<int:contact_id>", methods=["POST"])
 @require_organization
+@require_permission("sales.create")
 def edit_customer_contact(customer_id, contact_id):
     """Save one contact card. Which contact is primary is changed by the two actions below."""
     org_id = current_organization_id()
@@ -478,6 +488,7 @@ def edit_customer_contact(customer_id, contact_id):
 
 @bp.route("/<int:customer_id>/contacts/<int:contact_id>/primary", methods=["POST"])
 @require_organization
+@require_permission("sales.create")
 def make_customer_contact_primary(customer_id, contact_id):
     """Make this contact the primary one for the customer."""
     org_id = current_organization_id()
@@ -498,6 +509,7 @@ def make_customer_contact_primary(customer_id, contact_id):
 
 @bp.route("/<int:customer_id>/contacts/<int:contact_id>/delete", methods=["POST"])
 @require_organization
+@require_permission("sales.create")
 def delete_customer_contact(customer_id, contact_id):
     """Remove a contact. If it was the primary one, the oldest left takes over."""
     org_id = current_organization_id()
@@ -522,6 +534,7 @@ def delete_customer_contact(customer_id, contact_id):
 
 @bp.route("/receipts")
 @require_organization
+@require_permission("sales.view")
 def customer_receipts_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -580,6 +593,7 @@ def customer_receipts_list():
 
 @bp.route("/reports/partner-ledger")
 @require_organization
+@require_permission("reports.view")
 def customer_partner_ledger():
     """Reports > Customer Partner Ledger.
 
@@ -625,6 +639,7 @@ def customer_partner_ledger():
 
 @bp.route("/receipts/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("sales.post")
 def new_customer_receipt():
     org_id = current_organization_id()
 
@@ -891,6 +906,7 @@ def _can_delete_posted():
 
 @bp.route("/receipts/<int:customer_receipt_id>")
 @require_organization
+@require_permission("sales.view")
 def customer_receipt_detail(customer_receipt_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -968,6 +984,7 @@ def unmatch_receipt_from_invoice_route(customer_receipt_id, sales_invoice_id):
 
 @bp.route("/<int:customer_id>/open-invoices")
 @require_organization
+@require_permission("sales.view")
 def customer_open_invoices(customer_id):
     """The posted invoices of one customer that still have something owed.
 
@@ -1002,6 +1019,7 @@ def customer_open_invoices(customer_id):
 
 @bp.route("/reports/ageing")
 @require_organization
+@require_permission("reports.view")
 def customer_ageing_report():
     """What each customer still owes, split 0-30 / 31-60 / 61-90 / older."""
     org_id = current_organization_id()
@@ -1028,6 +1046,7 @@ def customer_ageing_report():
 
 @bp.route("/receipts/<int:customer_receipt_id>/print")
 @require_organization
+@require_permission("sales.view")
 def customer_receipt_print(customer_receipt_id):
     """The printable voucher for one customer receipt (CPV/2026/00001).
 

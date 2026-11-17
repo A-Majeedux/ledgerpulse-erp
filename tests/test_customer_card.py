@@ -21,6 +21,8 @@ Two kinds of check, in the same file, kept apart by class:
 import os
 import unittest
 import uuid
+
+from _people import member
 from datetime import date
 from decimal import Decimal as D
 
@@ -440,6 +442,11 @@ class CustomerCardDatabaseTests(unittest.TestCase):
         cursor.execute("INSERT INTO users (name, email, password_hash, is_active) "
                        "VALUES ('Customer Card Tester', %s, 'hash', TRUE) RETURNING user_id", (cls.user_email,))
         cls.user_id = cursor.fetchone()[0]
+        member(cursor, cls.user_id, cls.org_id)
+        # a member of the second company too: the cross-company tests are about
+        # one company's customers being invisible from the other, not about being
+        # turned away at the door (that is a 403, checked in test_route_guard.py)
+        member(cursor, cls.user_id, cls.other_org_id)
         # 1100 Trade Receivables, as the receipt and invoice screens expect
         for org_id in (cls.org_id, cls.other_org_id):
             cursor.execute("""
