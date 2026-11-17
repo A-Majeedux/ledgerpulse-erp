@@ -13,7 +13,12 @@
        journal entry it wrote is a different document and keeps its own button. #}
     {% if bill[7] == 'Posted' %}
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
-      <a href="{{ url_for('vendors.vendor_bill_journal_print', vendor_bill_id=bill[0]) }}" target="_blank" class="lp-btn secondary">🖨️ Print Journal Entry</a>
+      {# Paying the bill is the one thing done from the page; its own voucher and
+         its journal entry are printed from the gear menu, as the reference has them. #}
+      {% if may('vendors.post') %}
+        <a href="{{ url_for('vendors.new_vendor_payment', bill_id=bill[0]) }}" class="lp-btn primary"
+           style="margin-left:8px;">Pay</a>
+      {% endif %}
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
       <form method="POST" action="{{ url_for('vendors.post_vendor_bill', vendor_bill_id=bill[0]) }}" style="display:inline; margin-left: 8px;">
@@ -25,6 +30,16 @@
   </div>
 </div>
 
+{# The three faces of one bill, the way the reference system shows it: what the
+   supplier's paper says, what it did to the ledger, and the rest of its terms. #}
+<div class="lp-tabs" data-lp-tabs>
+  <div class="lp-tab-strip">
+    <button type="button" class="lp-tab on">Invoice Lines<span class="lp-tab-count">{{ lines|length }}</span></button>
+    <button type="button" class="lp-tab">Journal Items<span class="lp-tab-count">{{ journal_lines|length }}</span></button>
+    <button type="button" class="lp-tab">Other Info</button>
+  </div>
+
+  <div class="lp-tab-panel">
 <div class="lp-card">
   <h3 style="margin-top:0; font-size:16px;">Invoice Lines</h3>
   <table class="lp-table">
@@ -112,10 +127,18 @@
   </p>
 </div>
 {% endif %}
+  </div>{# /Invoice Lines #}
 
+  <div class="lp-tab-panel">
 {% if journal_lines %}
-<div class="lp-card" style="margin-top: 20px;">
-  <h3 style="margin-top:0; font-size:16px;">Journal Items (Double-Entry Posting View)</h3>
+<div class="lp-card">
+  <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap;">
+    <h3 style="margin:0 0 6px; font-size:16px;">Journal Items</h3>
+    {% if bill[8] %}
+      <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=bill[8]) }}"
+         style="font-size:12.5px;">the entry this bill wrote &rarr;</a>
+    {% endif %}
+  </div>
   <table class="lp-table">
     <thead>
       <tr>
@@ -139,7 +162,32 @@
     </tbody>
   </table>
 </div>
+{% else %}
+<div class="lp-card">
+  <p style="margin:0; color:var(--lp-text-muted);">
+    This bill has written no journal entry yet — it is still a draft, so the books do not carry it.
+  </p>
+</div>
 {% endif %}
+  </div>{# /Journal Items #}
+
+  <div class="lp-tab-panel">
+<div class="lp-card">
+  <h3 style="margin-top:0; font-size:16px;">Other Info</h3>
+  <table class="lp-table">
+    <tr><td style="width:230px; color:var(--lp-text-muted);">Vendor</td>
+        <td><a href="{{ url_for('vendors.vendor_detail', vendor_id=bill[15]) }}">{{ bill[2] }}</a></td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Bill reference</td><td>{{ bill[11] or '—' }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Recipient bank</td><td>{{ bill[12] or '—' }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">LC reference</td><td>{{ bill[13] or '—' }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Journal</td><td>{{ bill[14] or '—' }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Receipt date</td><td>{{ bill[5]|fmt_date if bill[5] else '—' }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Accounting date</td><td>{{ bill[6]|fmt_date if bill[6] else '—' }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Bill total</td><td class="amount">Rs. {{ "%.2f"|format(total) }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Paid so far</td><td class="amount">Rs. {{ "%.2f"|format(bill[10] or 0) }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Amount due</td><td class="amount"><strong>Rs. {{ "%.2f"|format(bill[9] or 0) }}</strong></td></tr>
+  </table>
+</div>
 
 {% if allocations %}
 <div class="lp-card" style="margin-top: 20px;">
@@ -158,4 +206,6 @@
   </table>
 </div>
 {% endif %}
+  </div>{# /Other Info #}
+</div>{# /lp-tabs #}
 {% endblock %}

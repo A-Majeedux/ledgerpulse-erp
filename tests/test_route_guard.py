@@ -22,7 +22,7 @@ from decimal import Decimal as D
 from _people import member, viewer
 
 # The modules whose every route is behind a permission. Grows a module per round.
-GUARDED_MODULES = {"sales", "accounting"}
+GUARDED_MODULES = {"sales", "accounting", "vendors"}
 
 # Routes that are not a company's business: signing in, setting up the very first
 # account, and the platform's own administration.

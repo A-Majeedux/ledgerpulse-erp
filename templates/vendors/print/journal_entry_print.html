@@ -20,8 +20,14 @@
   <tr>
     <th>Journal</th>
     <td>{{ je[3] | safe_str }}</td>
-    <th>Memo</th>
+    <th>Written by</th>
+    <td>{{ je[5] | safe_str }}</td>
+  </tr>
+  <tr>
+    <th>Status</th>
     <td>{{ je[4] | safe_str }}</td>
+    <th></th>
+    <td></td>
   </tr>
 </table>
 
@@ -31,7 +37,6 @@
     <tr>
       <th style="width: 28%; text-align: left;">Account</th>
       <th style="width: 18%; text-align: left;">Partner</th>
-      <th style="width: 14%; text-align: left;">Analytic</th>
       <th style="width: 20%; text-align: left;">Label</th>
       <th style="width: 10%; text-align: right;">Debit</th>
       <th style="width: 10%; text-align: right;">Credit</th>
@@ -43,15 +48,14 @@
       <td class="text-left"><strong>{{ l[0] | safe_str }}</strong> — {{ l[1] | safe_str }}</td>
       <td class="text-left">{{ l[2] | safe_str }}</td>
       <td class="text-left">{{ l[3] | safe_str }}</td>
-      <td class="text-left">{{ l[4] | safe_str }}</td>
+      <td class="text-right">{{ l[4] | fmt_money_print }}</td>
       <td class="text-right">{{ l[5] | fmt_money_print }}</td>
-      <td class="text-right">{{ l[6] | fmt_money_print }}</td>
     </tr>
     {% endfor %}
   </tbody>
   <tfoot>
     <tr>
-      <th colspan="4" style="text-align: right;">Total:</th>
+      <th colspan="3" style="text-align: right;">Total:</th>
       <th class="text-right">{{ total_debit | fmt_money_print }}</th>
       <th class="text-right">{{ total_credit | fmt_money_print }}</th>
     </tr>

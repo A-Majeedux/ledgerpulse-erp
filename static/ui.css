@@ -1120,3 +1120,48 @@ label { color: var(--lp-ink-2); }
   letter-spacing: .01em;
 }
 .lp-build strong { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+
+/* ---- Tabs on a document -------------------------------------------------
+   The sections of one company's paper (the lines, the ledger entry, the rest),
+   one at a time, the way the reference system shows a bill. The strip is a row
+   of buttons; the panels are all in the page, so printing or Ctrl+F still finds
+   them, and with no JavaScript every panel simply stays open. */
+.lp-tabs { margin-bottom: 4px; }
+.lp-tab-strip {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--lp-hairline, #E5EDF1);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.lp-tab {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 9px 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lp-text-muted, #64748B);
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+}
+.lp-tab:hover { color: var(--lp-text, #0F172A); background: #F4FAFC; }
+.lp-tab.on {
+  color: var(--lp-accent-600, #6B4FA3);
+  border-bottom-color: var(--lp-accent-600, #6B4FA3);
+  background: transparent;
+}
+.lp-tab-count {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #EEF4F7;
+  color: var(--lp-text-muted, #64748B);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.lp-tab.on .lp-tab-count { background: rgba(107, 79, 163, .12); color: inherit; }
+.lp-tab-panel[hidden] { display: none; }

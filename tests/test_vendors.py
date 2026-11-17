@@ -10,6 +10,8 @@ os.environ["TESTING"] = "true"
 import unittest
 import uuid
 from decimal import Decimal
+
+from _people import member
 from flask import session
 
 import app
@@ -44,6 +46,10 @@ class LedgerPulseVendorsTests(unittest.TestCase):
         # Insert test user
         cursor.execute("INSERT INTO users (name, email, password_hash, is_active) VALUES ('Vendor Tester', %s, 'hash', TRUE) RETURNING user_id", (self.test_user_email,))
         self.user_id = cursor.fetchone()[0]
+        # a member of both companies: the isolation tests are about one company's
+        # data being invisible from the other, not about signed-in strangers
+        member(cursor, self.user_id, self.org_id)
+        member(cursor, self.user_id, self.other_org_id)
 
         # Ensure accounts for both orgs with is_active = TRUE
         for org in [self.org_id, self.other_org_id]:

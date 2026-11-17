@@ -177,6 +177,7 @@ def _generate_batch_number(cursor, org_id):
 
 @bp.route("/")
 @require_organization
+@require_permission("vendors.view")
 def vendors_list():
     org_id = current_organization_id()
     search = request.args.get("q", "").strip()
@@ -215,6 +216,7 @@ def vendors_list():
 
 @bp.route("/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("vendors.create")
 def new_vendor():
     org_id = current_organization_id()
     form_data = {}
@@ -313,6 +315,7 @@ def new_vendor():
 
 @bp.route("/<int:vendor_id>/edit", methods=["GET", "POST"])
 @require_organization
+@require_permission("vendors.create")
 def edit_vendor(vendor_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -440,6 +443,7 @@ def edit_vendor(vendor_id):
 
 @bp.route("/<int:vendor_id>")
 @require_organization
+@require_permission("vendors.view")
 def vendor_detail(vendor_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -503,6 +507,7 @@ def vendor_detail(vendor_id):
 
 @bp.route("/bills")
 @require_organization
+@require_permission("vendors.view")
 def vendor_bills_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -569,6 +574,7 @@ def _filter_accounts(cursor, org_id):
 
 @bp.route("/bills/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("vendors.create")
 def new_vendor_bill():
     org_id = current_organization_id()
 
@@ -725,6 +731,7 @@ def new_vendor_bill():
 
 @bp.route("/bills/<int:vendor_bill_id>")
 @require_organization
+@require_permission("vendors.view")
 def vendor_bill_detail(vendor_bill_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -786,9 +793,27 @@ def vendor_bill_detail(vendor_bill_id):
     basis = normalise_basis(bill[16]) if len(bill) > 16 else "value"
     landed_rows, landed_summary = split_landed_cost(goods_lines, landed_total, basis)
 
+    # The bill's own journal items - the "Journal Items" tab, and the proof that
+    # this bill and the ledger say the same thing.
+    journal_lines = []
+    if bill[8]:
+        conn2 = get_conn()
+        cursor2 = conn2.cursor()
+        cursor2.execute("""
+            SELECT coa.code, coa.name, jl.partner_name, jl.label, jl.debit, jl.credit
+            FROM journal_lines jl
+            JOIN chart_of_accounts coa ON coa.account_id = jl.account_id
+            WHERE jl.journal_header_id = %s
+            ORDER BY jl.line_order, jl.journal_line_id
+        """, (bill[8],))
+        journal_lines = cursor2.fetchall()
+        cursor2.close()
+        conn2.close()
+
     return render_template(
         "vendors/vendor_bill_detail.html",
         bill=bill, lines=lines, total=total, allocations=allocations,
+        journal_lines=journal_lines,
         landed_rows=landed_rows, landed_summary=landed_summary,
         landed_basis_options=BASIS_LABELS,
         menu=build_menu("vendor_bill", vendor_bill_id, status=bill[7],
@@ -798,6 +823,7 @@ def vendor_bill_detail(vendor_bill_id):
 
 @bp.route("/bills/<int:vendor_bill_id>/print")
 @require_organization
+@require_permission("vendors.view")
 def vendor_bill_print(vendor_bill_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -832,6 +858,7 @@ def vendor_bill_print(vendor_bill_id):
 
 @bp.route("/bills/<int:vendor_bill_id>/journal-print")
 @require_organization
+@require_permission("vendors.view")
 def vendor_bill_journal_print(vendor_bill_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -847,6 +874,7 @@ def vendor_bill_journal_print(vendor_bill_id):
 
 @bp.route("/bills/<int:vendor_bill_id>/post", methods=["POST"])
 @require_organization
+@require_permission("vendors.post")
 def post_vendor_bill(vendor_bill_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1093,6 +1121,7 @@ def delete_vendor_bill(vendor_bill_id):
 
 @bp.route("/credit-notes")
 @require_organization
+@require_permission("vendors.view")
 def vendor_credit_notes_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -1113,6 +1142,7 @@ def vendor_credit_notes_list():
 
 @bp.route("/credit-notes/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("vendors.create")
 def new_vendor_credit_note():
     org_id = current_organization_id()
     original_bill_id = request.args.get("bill_id", type=int)
@@ -1232,6 +1262,7 @@ def new_vendor_credit_note():
 
 @bp.route("/credit-notes/<int:vendor_credit_note_id>")
 @require_organization
+@require_permission("vendors.view")
 def vendor_credit_note_detail(vendor_credit_note_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1263,6 +1294,7 @@ def vendor_credit_note_detail(vendor_credit_note_id):
 
 @bp.route("/credit-notes/<int:vendor_credit_note_id>/post", methods=["POST"])
 @require_organization
+@require_permission("vendors.post")
 def post_vendor_credit_note(vendor_credit_note_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1291,6 +1323,7 @@ def post_vendor_credit_note(vendor_credit_note_id):
 
 @bp.route("/payments")
 @require_organization
+@require_permission("vendors.view")
 def vendor_payments_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -1332,6 +1365,7 @@ def vendor_payments_list():
 
 @bp.route("/payments/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("vendors.post")
 def new_vendor_payment():
     org_id = current_organization_id()
 
@@ -1443,6 +1477,27 @@ def new_vendor_payment():
                     b_id = int(bill_ids[i])
                     a_amt = to_decimal(alloc_amounts[i])
                     if a_amt > 0:
+                        # A bill cannot be paid past what it still owes - the rest
+                        # would be money handed over with nothing behind it.
+                        cursor.execute("""
+                            SELECT bill_number, amount_due - COALESCE(paid_amount, 0)
+                            FROM vendor_bills WHERE vendor_bill_id = %s AND organization_id = %s
+                            FOR UPDATE
+                        """, (b_id, org_id))
+                        owing = cursor.fetchone()
+                        if not owing:
+                            raise ValueError("That bill is not one of this company's.")
+                        if a_amt > to_decimal(owing[1]):
+                            raise ValueError(
+                                f"Bill {owing[0]} still owes {money_round(owing[1])}; "
+                                f"a payment of {money_round(a_amt)} cannot be matched to it.")
+                        # Compared against the gross: withholding tax is still
+                        # money that settles the bill - it goes to the tax office
+                        # instead of to the vendor, not nowhere.
+                        if a_amt > base_amount:
+                            raise ValueError(
+                                f"A payment of {money_round(base_amount)} cannot settle {money_round(a_amt)} "
+                                "of a bill - raise the amount first.")
                         cursor.execute("""
                             INSERT INTO vendor_payment_allocations (vendor_payment_id, vendor_bill_id, allocated_amount)
                             VALUES (%s, %s, %s)
@@ -1469,6 +1524,29 @@ def new_vendor_payment():
         conn.close()
         return redirect(url_for("vendors.vendor_payment_detail", vendor_payment_id=payment_id))
 
+    # ?bill_id= comes from a bill's own "Pay" button: the vendor, the amount and
+    # the match are filled in from the bill, so paying it is one step and the two
+    # documents are tied together as they are created.
+    paying_bill = None
+    bill_id = request.args.get("bill_id", type=int)
+    if bill_id:
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT vb.vendor_bill_id, vb.bill_number, vb.vendor_id, v.name,
+                   vb.amount_due, COALESCE(vb.paid_amount, 0), vb.status
+            FROM vendor_bills vb JOIN vendors v ON v.vendor_id = vb.vendor_id
+            WHERE vb.vendor_bill_id = %s AND vb.organization_id = %s
+        """, (bill_id, org_id))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if row and (row[6] or "").lower() != "draft":
+            paying_bill = {
+                "id": row[0], "bill_number": row[1], "vendor_id": row[2], "vendor_name": row[3],
+                "open_amount": to_decimal(row[4] or 0), "paid": to_decimal(row[5] or 0),
+            }
+
     conn = get_conn()
     cursor = conn.cursor()
     auto_bpv = _generate_voucher_number(cursor, org_id, True)
@@ -1478,13 +1556,14 @@ def new_vendor_payment():
     return render_template(
         "vendors/new_vendor_payment.html",
         vendors=_get_vendors(org_id), accounts=_get_bank_accounts(org_id),
-        tax_rates=get_active_tax_rates(org_id),
+        tax_rates=get_active_tax_rates(org_id), paying_bill=paying_bill,
         auto_voucher=auto_bpv, error=None, today=date.today().isoformat(),
     )
 
 
 @bp.route("/payments/<int:vendor_payment_id>")
 @require_organization
+@require_permission("vendors.view")
 def vendor_payment_detail(vendor_payment_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1568,31 +1647,41 @@ def delete_vendor_payment(vendor_payment_id):
 
 
 def render_journal_print(journal_header_id, back_url):
+    """The entry a vendor document wrote, on one page, in the reference system's shape.
+
+    The columns are the ones this ledger actually keeps: a reference, a date and
+    a journal name on the header (there is no voucher number or memo of its own -
+    the entry IS the voucher), and code, name, partner, label, debit, credit on
+    each line. Anything the ledger does not hold is not printed as though it did.
+    """
+    from accounting.services import _source_words
     org_id = current_organization_id()
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT journal_header_id, voucher_number, journal_name, entry_date, memo
+        SELECT journal_header_id, reference, accounting_date, journal_name, status, source_type
         FROM journal_headers WHERE journal_header_id = %s AND organization_id = %s
     """, (journal_header_id, org_id))
-    je = cursor.fetchone()
-    if not je:
+    header = cursor.fetchone()
+    if not header:
         cursor.close()
         conn.close()
         abort(404)
+    je = (header[0], header[1], header[2], header[3], header[4],
+          _source_words(header[5]).title() if header[5] else "Journal entry")
     cursor.execute("""
-        SELECT coa.code, coa.name, jl.partner_name, jl.analytic_tag, jl.label, jl.debit, jl.credit
+        SELECT coa.code, coa.name, jl.partner_name, jl.label, jl.debit, jl.credit
         FROM journal_lines jl
         JOIN chart_of_accounts coa ON coa.account_id = jl.account_id
         WHERE jl.journal_header_id = %s
-        ORDER BY jl.line_order
+        ORDER BY jl.line_order, jl.journal_line_id
     """, (journal_header_id,))
     lines = cursor.fetchall()
     cursor.close()
     conn.close()
 
-    total_debit = sum((to_decimal(l[5]) for l in lines), to_decimal(0))
-    total_credit = sum((to_decimal(l[6]) for l in lines), to_decimal(0))
+    total_debit = sum((to_decimal(l[4]) for l in lines), to_decimal(0))
+    total_credit = sum((to_decimal(l[5]) for l in lines), to_decimal(0))
     return render_template(
         "vendors/print/journal_entry_print.html",
         je=je, lines=lines, total_debit=total_debit, total_credit=total_credit, back_url=back_url
@@ -1601,6 +1690,7 @@ def render_journal_print(journal_header_id, back_url):
 
 @bp.route("/payments/<int:vendor_payment_id>/print")
 @require_organization
+@require_permission("vendors.view")
 def vendor_payment_print(vendor_payment_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1638,6 +1728,7 @@ def vendor_payment_print(vendor_payment_id):
 
 @bp.route("/payments/<int:vendor_payment_id>/journal-print")
 @require_organization
+@require_permission("vendors.view")
 def vendor_payment_journal_print(vendor_payment_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1653,6 +1744,7 @@ def vendor_payment_journal_print(vendor_payment_id):
 
 @bp.route("/credit-notes/<int:vendor_credit_note_id>/print")
 @require_organization
+@require_permission("vendors.view")
 def vendor_credit_note_print(vendor_credit_note_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1685,6 +1777,7 @@ def vendor_credit_note_print(vendor_credit_note_id):
 
 @bp.route("/credit-notes/<int:vendor_credit_note_id>/journal-print")
 @require_organization
+@require_permission("vendors.view")
 def vendor_credit_note_journal_print(vendor_credit_note_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1700,6 +1793,7 @@ def vendor_credit_note_journal_print(vendor_credit_note_id):
 
 @bp.route("/batch-payments/<int:batch_payment_id>/print")
 @require_organization
+@require_permission("vendors.view")
 def batch_vendor_payment_print(batch_payment_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1734,6 +1828,7 @@ def batch_vendor_payment_print(batch_payment_id):
 
 @bp.route("/batch-payments")
 @require_organization
+@require_permission("vendors.view")
 def batch_vendor_payments_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -1753,6 +1848,7 @@ def batch_vendor_payments_list():
 
 @bp.route("/batch-payments/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("vendors.post")
 def new_batch_vendor_payment():
     org_id = current_organization_id()
 
@@ -1854,6 +1950,7 @@ def new_batch_vendor_payment():
 
 @bp.route("/batch-payments/<int:batch_payment_id>")
 @require_organization
+@require_permission("vendors.view")
 def batch_vendor_payment_detail(batch_payment_id):
     org_id = current_organization_id()
     conn = get_conn()
@@ -1889,6 +1986,7 @@ def batch_vendor_payment_detail(batch_payment_id):
 
 @bp.route("/reports/own-cheques")
 @require_organization
+@require_permission("vendors.view")
 def own_cheques_report():
     org_id = current_organization_id()
     start_date = request.args.get("start_date", "")
@@ -1936,6 +2034,7 @@ def own_cheques_report():
 
 @bp.route("/reports/ledger")
 @require_organization
+@require_permission("vendors.view")
 def vendor_ledger():
     org_id = current_organization_id()
     vendor_id = request.args.get("vendor_id", type=int)
@@ -2002,6 +2101,7 @@ def vendor_ledger():
 
 @bp.route("/reports/aging")
 @require_organization
+@require_permission("vendors.view")
 def vendor_aging():
     org_id = current_organization_id()
     conn = get_conn()

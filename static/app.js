@@ -309,3 +309,35 @@
     pendingG = 0;
   });
 })();
+
+/* ---- Tabs on a document ------------------------------------------------
+   Every panel is in the page already; this only decides which one is shown.
+   `[data-lp-tabs]` is a strip of .lp-tab buttons followed by .lp-tab-panel
+   panels, in the same order. No JavaScript means every panel stays visible,
+   which is the right way round to fail. */
+(function () {
+  document.querySelectorAll('[data-lp-tabs]').forEach(function (tabs) {
+    var buttons = Array.prototype.slice.call(tabs.querySelectorAll('.lp-tab'));
+    var panels = Array.prototype.slice.call(tabs.querySelectorAll('.lp-tab-panel'));
+    if (!buttons.length || buttons.length !== panels.length) return;
+
+    function show(index) {
+      buttons.forEach(function (button, i) { button.classList.toggle('on', i === index); });
+      panels.forEach(function (panel, i) { panel.hidden = i !== index; });
+      buttons.forEach(function (button, i) {
+        button.setAttribute('aria-selected', i === index ? 'true' : 'false');
+      });
+    }
+
+    buttons.forEach(function (button, i) {
+      button.type = 'button';
+      button.setAttribute('role', 'tab');
+      button.addEventListener('click', function () { show(i); });
+    });
+    panels.forEach(function (panel) { panel.setAttribute('role', 'tabpanel'); });
+
+    // Which one starts open: the one the page names, else the first.
+    var start = buttons.findIndex(function (button) { return button.classList.contains('on'); });
+    show(start === -1 ? 0 : start);
+  });
+})();

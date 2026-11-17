@@ -1282,3 +1282,38 @@ palette holding only *Trial balance*; `/sales/invoices/new`, `/sales/invoices/30
 still has every button and gets **200**. Suite: **276 passed, 1 known failure**.
 
 Next in this line: **vendors** (33 routes, 5 gated) and **customers** (21 routes, 2 gated), one per round.
+
+## 33. The purchases, in the reference's shape (Round 17)
+
+The vendor module was closed the way sales and accounting were closed last round - **33 routes, every one behind a
+permission**: `vendors.view` for the lists, the bills, the vouchers, the prints and the three reports;
+`vendors.create` for writing a vendor, a bill or a credit note; `vendors.post` for posting a bill or a credit note,
+for money leaving the bank, and for matching it to a bill. A Viewer keeps the reading and is refused the rest
+(**403**, and no button that would refuse him). The guard test now walks three modules.
+
+Then the papers were brought up to the reference screenshots:
+
+* **A bill has three faces** - *Invoice Lines* / *Journal Items* / *Other Info* - with counts on the tabs, the
+  ledger entry one click from the tab that shows it, and the terms (bill reference, recipient bank, LC reference,
+  journal, receipt and accounting dates, paid and due) gathered in one place. The **Journal Items** tab had been
+  drawing from a variable the route never passed, so it was always empty; it is now filled from the bill's own
+  `journal_header_id`.
+* **A payment voucher has two** - *Cheques* / *Withholding* - with the cheque row (number, label, bank, date, amount)
+  and, when tax was withheld, the rate, the amount withheld and the net that left the bank.
+* **Pay** - a posted bill now carries the reference's **PAY** button, and its gear menu a *Pay this bill*. It opens
+  the payment form with the vendor, the open amount, the memo and the **match** filled in, so the payment and the
+  bill are tied together as the payment is written; the bill turns *Paid* when nothing is left of it. Two things
+  are refused, in words that say why: matching more than the bill still owes, and matching more than the payment is
+  worth **gross** - withholding tax still settles the bill, it goes to the tax office rather than to the vendor
+  (the existing suite caught exactly this: a Rs 10,000 bill paid with 5% WHT is settled by Rs 9,500 of cash plus
+  Rs 500 to the tax office, and the match is Rs 10,000, not Rs 9,500).
+* **The journal-entry print of a vendor document had never worked.** It asked the ledger for `voucher_number`,
+  `entry_date`, `memo` and `analytic_tag` - none of which exist - and answered **500** on every bill, payment and
+  credit note. It now prints the columns the ledger keeps (reference, date, journal, status, written by; account,
+  partner, label, debit, credit) and both prints for a bill and a payment sit in the gear menu, as in the reference.
+
+`tests/test_vendors_module.py` (11 tests) does each of these rather than reading the template: the three tabs and
+that they hold the lines, the entry and the references; the voucher's two tabs with a real cheque and a real
+withholding; paying a bill and the bill becoming Paid; both refusals leaving the bill and the books untouched; a
+draft bill not offering Pay; the journal print answering 200 with the ledger's own columns; and a Viewer refused at
+every one of twelve doors. Suite: **287 passed, 1 known failure**.

@@ -100,6 +100,12 @@ ACTIONS = {
     "vendor_bill": [
         {"key": "print", "label": "Print / PDF bill", "icon": "i-print",
          "url": "/vendors/bills/{id}/print", "post": False},
+        {"key": "print_journal", "label": "Print its journal entry", "icon": "i-journal",
+         "url": "/vendors/bills/{id}/journal-print", "post": False},
+        {"key": "pay", "label": "Pay this bill", "icon": "i-payment",
+         "url": "/vendors/payments/new?bill_id={id}", "post": False, "permission": "vendors.post",
+         "posted_only": True,
+         "blocked_note": "Only a posted bill can be paid - post it first."},
         {"key": "edit", "label": "Edit this draft", "icon": "i-edit",
          "url": "/vendors/bills/{id}/edit", "post": False, "permission": "vendors.create",
          "draft_only": True,
@@ -121,6 +127,8 @@ ACTIONS = {
     "vendor_payment": [
         {"key": "print", "label": "Print / PDF voucher", "icon": "i-print",
          "url": "/vendors/payments/{id}/print", "post": False},
+        {"key": "print_journal", "label": "Print its journal entry", "icon": "i-journal",
+         "url": "/vendors/payments/{id}/journal-print", "post": False},
         {"key": "delete", "label": "Delete this payment", "icon": "i-trash",
          "url": "/vendors/payments/{id}/delete", "post": True, "permission": "vendors.post",
          "tone": "danger", "blocked_by": "has_allocations",
