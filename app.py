@@ -67,6 +67,37 @@ def asset_version(filename):
 
 app.template_global('asset_v')(asset_version)
 
+
+def _build_stamp():
+    """Which commit this running program was started from, and when.
+
+    Read once, when the program starts - not on every page. That is the point:
+    if the code has been pulled but the server has not been restarted, the
+    footer still names the OLD commit, and the page keeps showing the old
+    screens. It is the quickest answer to "have I got the new version?".
+    """
+    root = os.path.dirname(os.path.abspath(__file__))
+    stamp = 'unknown'
+    try:
+        head = open(os.path.join(root, '.git', 'HEAD')).read().strip()
+        if head.startswith('ref:'):
+            ref = head.split(' ', 1)[1].strip()
+            stamp = open(os.path.join(root, '.git', ref)).read().strip()[:7]
+        else:
+            stamp = head[:7]
+    except OSError:
+        stamp = 'dev'
+    return stamp
+
+
+BUILD_STAMP = _build_stamp()
+BUILD_STARTED = datetime.now().strftime('%d %b %Y %H:%M')
+
+
+@app.context_processor
+def inject_build_stamp():
+    return {"build_stamp": BUILD_STAMP, "build_started": BUILD_STARTED}
+
 # Session security & secret key configuration
 secret_key = os.getenv("SECRET_KEY")
 if not secret_key:

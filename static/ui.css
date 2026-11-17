@@ -286,6 +286,10 @@ body.is-leaving .lp-content { opacity: 0; transform: translate3d(0, -6px, 0); tr
   display: flex; justify-content: space-between; align-items: flex-end;
   gap: 16px; flex-wrap: wrap;
   margin-bottom: 20px;
+  /* The header paints above what follows it, so an open menu drops over the
+     page instead of being crossed by the row of links underneath. */
+  position: relative;
+  z-index: 30;
 }
 /* The heading gives way before the buttons do, so a long voucher number or a
    long customer name wraps instead of running under the Actions button. */
@@ -924,16 +928,23 @@ label { color: var(--lp-ink-2); }
 /* A <details> element: the browser opens and closes it, no JavaScript. The
    panel sits under the button and over the page. */
 .lp-docmenu { position: relative; display: inline-block; flex: none; }
+.lp-docmenu[open] { z-index: 40; }
 .lp-docmenu > summary { list-style: none; cursor: pointer; user-select: none; white-space: nowrap; }
 .lp-docmenu-text { white-space: nowrap; }
 .lp-docmenu > summary::-webkit-details-marker { display: none; }
 .lp-docmenu > summary .chev { transition: transform .18s var(--lp-ease); opacity: .6; }
 .lp-docmenu[open] > summary .chev { transform: rotate(180deg); }
 .lp-docmenu-list {
-  position: absolute; right: 0; top: calc(100% + 6px); z-index: 60;
-  min-width: 260px; padding: 6px; border-radius: 12px;
-  background: var(--lp-surface, #fff); border: 1px solid var(--lp-border);
-  box-shadow: 0 12px 32px rgba(16, 38, 48, .16);
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 999;
+  min-width: 268px; padding: 6px; border-radius: 12px;
+  /* Written twice on purpose: a plain colour first, then the token. If a
+     stylesheet is out of date and the token is missing, the panel is still
+     opaque - a menu nobody can read through. */
+  background: #FFFFFF;
+  background: var(--lp-surface, #FFFFFF);
+  border: 1px solid var(--lp-border);
+  box-shadow: 0 12px 32px rgba(16, 38, 48, .22);
+  isolation: isolate;
 }
 .lp-docmenu-list form { margin: 0; }
 .lp-docmenu-item {
@@ -1097,3 +1108,15 @@ label { color: var(--lp-ink-2); }
   background: linear-gradient(180deg, #FBFDFE 0%, #F2F8F9 100%);
   box-shadow: 0 6px 18px rgba(16, 38, 48, .08);
 }
+
+/* The build stamp at the foot of every page - a quiet line that answers
+   "is the server running the code I just pulled?". */
+.lp-build {
+  margin: 26px 0 0;
+  font-size: 11.5px;
+  color: var(--lp-text-muted);
+  opacity: .75;
+  text-align: right;
+  letter-spacing: .01em;
+}
+.lp-build strong { font-family: ui-monospace, Menlo, monospace; font-weight: 600; }

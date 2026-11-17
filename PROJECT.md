@@ -1171,3 +1171,33 @@ Two places, one rule - the books already know the figure, so nobody should type 
   posted with the receipt, and a receipt recorded through the form still matches by allocation rows (section 20, C).
 - **Printing still opens the browser's own dialog** rather than writing a server-side PDF; "Print / PDF" is the
   browser's *Save as PDF*.
+
+### F. The menu you could read the page through (17 Nov 2026)
+
+He restarted, reloaded, and was still shown a page where the open Actions menu had the row of links
+underneath showing straight through it: *"now look at this, the same problem"*.
+
+Two causes, both now closed at the root rather than nudged:
+
+1. **The panel took its background from a stylesheet variable only.** If the browser is holding an older
+   `ui.css` - or the server is holding older templates - the variable is not there, the background falls back to
+   nothing, and the menu becomes a pane of glass over the page. The rule now carries a plain `#FFFFFF` **first**
+   and the token after it, so the panel is opaque whatever the stylesheet says.
+2. **The header did not outrank the row beneath it.** `.lp-page-header` is now `position: relative; z-index: 30`
+   and an open `.lp-docmenu` takes `z-index: 40` with its panel at `z-index: 999`, so the menu drops over the
+   page instead of being crossed by the trail chips, whatever the order of painting.
+
+Two tests hold both rules in place, reading `static/ui.css` itself.
+
+**And the question behind the question - "have I actually got the new version?"** - now has an answer on every
+page: a quiet line at the foot of each screen,
+
+    Build 4e4c63b · started 17 Nov 2026 12:52
+
+The commit and the time the **running server** started, read from `.git` once at startup. If the footer names an
+older commit than the one just pulled, the code is on disk but the server has not been restarted - which is
+exactly what was happening: the branch had been pulled in the Codespace, and the process on port 5000 was still
+the one from before. Restart it and the footer changes with it.
+
+The stylesheets and scripts also carry their own change time (`ui.css?v=1794829312`), so an ordinary reload picks
+up a changed file and nobody has to remember Ctrl+F5.

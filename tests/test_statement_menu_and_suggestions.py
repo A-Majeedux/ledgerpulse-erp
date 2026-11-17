@@ -266,6 +266,32 @@ class DocumentChromeTests(_Pages):
         self.assertIn("match-receipt-amount", page)                    # the box it fills
         self.assertIn("parseFloat(option.dataset.left)", page)         # the script that fills it
 
+    def test_the_page_says_which_build_it_is_running(self):
+        _, page = self.page("/sales/invoices")
+        self.assertIn("lp-build", page)
+        self.assertRegex(page, r"Build <strong>[0-9a-f]{7}</strong>|Build <strong>dev</strong>")
+        self.assertIn("started", page)
+
+    def test_the_menu_panel_cannot_be_read_through(self):
+        """The panel and the row beneath it: opaque, and painted on top.
+
+        A menu whose background comes only from a stylesheet variable turns
+        see-through when that stylesheet is out of date, and the links below it
+        show through the words. Both rules are checked here so the fix cannot be
+        quietly dropped.
+        """
+        import os
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        css = open(os.path.join(root, "static", "ui.css")).read()
+        start = css.index(".lp-docmenu-list {")
+        block = css[start:css.index("}", start)]
+        self.assertIn("background: #FFFFFF", block)          # a plain colour, not only a token
+        self.assertIn("z-index: 999", block)
+        header = css[css.index(".lp-page-header {"):]
+        header = header[:header.index("}")]
+        self.assertIn("position: relative", header)          # the header outranks what follows
+        self.assertIn("z-index: 30", header)
+
     def test_the_receipt_form_shares_the_amount_out_by_itself(self):
         status, page = self.page("/customers/receipts/new")
         self.assertEqual(status, 200)

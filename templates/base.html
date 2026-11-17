@@ -206,6 +206,12 @@
         {% endfor %}
       {% endwith %}
       {% block content %}{% endblock %}
+
+      {# Which version is actually running. If this names an older commit than
+         the one you have just pulled, the server has not been restarted yet. #}
+      <p class="lp-build" title="The commit this server was started from, and when">
+        Build <strong>{{ build_stamp }}</strong> · started {{ build_started }}
+      </p>
     </main>
   </div>
 
