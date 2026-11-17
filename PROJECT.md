@@ -1244,3 +1244,41 @@ documents with the ledger balance before and after, the three refusals, a correc
 entry with it, an entry corrected in place (same `journal_header_id`), an unbalanced correction left untouched,
 and a reader - a member with a role that holds no permission - who is not offered the reset and gets **403** if
 he asks for it anyway. Suite: **268 passed, 1 known failure**.
+
+## 32. Every door, not just the menu (Round 16)
+
+Round 15 gated the reset item and left the module around it open. The count said it plainly: **126 routes, 28
+with a permission**; in `accounting/routes.py` 4 of 13, in `vendors/routes.py` 5 of 33, in `customers/routes.py`
+2 of 21. `POST /accounting/journal-entries/new` and `POST /sales/invoices/new` asked only *"is somebody signed in
+to a company"* - so a Viewer, whose role holds five *reading* permissions, could create and post vouchers, and
+then could not reset them.
+
+Two modules are now closed, and closed in a way that can be checked rather than trusted:
+
+* **Every route in sales and accounting asks for a permission** - 29 routes, none open. Reads ask for
+  `sales.view` / `accounting.view`; writing asks for `.create`; posting, and matching money to an invoice, ask for
+  `.post`. (`apply-receipt` was asking for `sales.create`; matching a receipt moves money, so it asks for
+  `sales.post` now.)
+* **The route table can be read back.** `require_permission` writes its code on the view function, so
+  `tests/test_route_guard.py` walks `app.url_map` and fails on any route in a finished module that carries no
+  permission - and on any *write* route that is satisfied by a `.view` right. Modules are added to the set one per
+  round; the hole cannot quietly reopen in a module that has been done.
+* **A hidden button is a courtesy; the route is the lock.** The Viewer is now shown nothing that would refuse him:
+  the *New invoice*, *New product*, *New tax rate*, *New account*, *New journal entry*, *New bank transfer* buttons
+  and the *Post* buttons are filtered by a new `may('sales.create')` template helper (asked once per permission per
+  request, and keyed by *whose* answer it is), and the command palette's create actions and the menu itself now
+  carry the permission that opens them.
+* **The tests sign in as a real person.** The fixtures used to set `user_id` in the session and leave it there - a
+  person who belongs to no company. That was invisible while every page only asked *"is somebody signed in"*, and
+  it is fatal once a module asks *"may this person write"*. `tests/_people.py` gives the fixture a membership with
+  the Admin role, which is what the app expects of anyone using these pages; the fixtures then keep testing what
+  they were written to test.
+
+Proved on the running preview with a real second person in the demo company - **`viewer@zyro.local` /
+`viewer2026`**, a role holding `sales.view`, `vendors.view`, `accounting.view`, `reports.view`,
+`subscription.view` and nothing else: he sees the invoices, opens one, sees **no** *New Invoice* button and a
+palette holding only *Trial balance*; `/sales/invoices/new`, `/sales/invoices/30/post`,
+`/accounting/journal-entries/new` and `/sales/products/new` all answer **403**. The Admin, on the same pages,
+still has every button and gets **200**. Suite: **276 passed, 1 known failure**.
+
+Next in this line: **vendors** (33 routes, 5 gated) and **customers** (21 routes, 2 gated), one per round.
