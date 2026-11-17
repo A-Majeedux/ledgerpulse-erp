@@ -1206,3 +1206,41 @@ The same tidying was then applied to the other documents the menu already knew: 
 button, the bill's **Print Bill** and the payment's **Print Voucher** all moved into their gear menus, and those
 three headers were rebuilt on `.lp-page-header` / `.lp-page-actions`. A voucher's *journal entry* is a different
 document and keeps its own button.
+
+## 31. Reset To Draft, and editing a draft (Round 15)
+
+A posted voucher could not be corrected. The gear menu could print it, copy it, or - while it was still a draft -
+delete it, and that was all. A wrong figure on a posted invoice had no way back except a manual journal entry,
+which is how books quietly stop matching the paper.
+
+The gear menu of a sales invoice, a vendor bill and a journal entry now carries two items that work as a pair:
+
+* **Reset to draft (to correct it)** - shown on a *posted* document, asks before it happens, and needs the posting
+  permission of its own module (`sales.post`, `vendors.post`, `accounting.post`). It takes the document back to
+  Draft **and its journal entry with it**, so the books stop carrying a voucher that is about to change. Nothing
+  is deleted: the number, the lines and the entry are all still there, waiting to be posted again.
+* **Edit this draft** - shown on a *draft*, and needs the writing permission (`sales.create`, `vendors.create`,
+  `accounting.create`). It opens the same form that writes a new document, filled with what the document says
+  today, and saves the correction in place: same document, same number, and **its own journal entry written
+  again rather than replaced** (`refill_journal_entry`), so anything pointing at that entry still points at it.
+
+Three refusals keep the two from lying:
+
+1. A document with money already matched to it cannot go back to a draft - the invoice says *"Unmatch that money
+   first"*, the bill *"Remove that payment match first"*. Otherwise a receipt would be pointing at a draft.
+2. A journal entry that belongs to a document (`source_id IS NOT NULL`) is refused on its own page: *"Reset that
+   document to a draft from its own page."* The document and its entry can never be reset separately.
+3. An entry that is posted says *"Reset it to a draft before changing it"* when its edit page is opened, and the
+   edit route checks the same thing server-side - the menu is a convenience, not the lock.
+
+Customer receipts and vendor payments have no draft state at all (`customer_receipts` has no status column;
+`vendor_payments` is written straight as paid), so there is nothing to reset them *to*: their correction path
+stays **Delete**, which the gear already offers, gated on the posting permission and blocked while money is
+matched. Making them draftable would mean giving them a status, and their lists, statements and tie-out would
+all have to learn to leave them out - a step of its own, not a menu item.
+
+Everything above is proved by `tests/test_reset_to_draft.py` (14 tests): the round trip on each of the three
+documents with the ledger balance before and after, the three refusals, a correction that moves a line and the
+entry with it, an entry corrected in place (same `journal_header_id`), an unbalanced correction left untouched,
+and a reader - a member with a role that holds no permission - who is not offered the reset and gets **403** if
+he asks for it anyway. Suite: **268 passed, 1 known failure**.

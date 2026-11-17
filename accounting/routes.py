@@ -8,7 +8,9 @@ from core.searchbar import read_search, search_filters, and_clauses, describe, s
 from auth.services import require_permission, current_user_id
 from accounting.schema import ACCOUNT_TYPES
 from accounting.services import (create_journal_entry, delete_draft_journal_entry,
-                               duplicate_journal_entry, post_journal_entry, UnbalancedEntryError)
+                               duplicate_journal_entry, post_journal_entry,
+                               replace_journal_entry, reset_journal_entry_to_draft,
+                               UnbalancedEntryError)
 from accounting.intelligence import suggest_account_for_entry
 from core.money import to_decimal
 
@@ -283,6 +285,145 @@ def _journal_trail(journal_header_id, header):
     chips.append({"icon": "i-accounts", "label": "Journal entries", "meta": "all of them",
                   "url": url_for("accounting.journal_entries_list")})
     return chips
+
+
+@bp.route("/journal-entries/<int:journal_header_id>/edit", methods=["GET", "POST"])
+@require_organization
+@require_permission("accounting.create")
+def edit_journal_entry(journal_header_id):
+    """Correct a draft entry, in the same form that writes a new one.
+
+    The entry keeps its identity - its number, its source, anything pointing at
+    it - and only its date, wording and lines change.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        accounts = _get_accounts(org_id)
+        cursor.execute("""
+            SELECT journal_header_id, reference, accounting_date, journal_name, status, source_id
+            FROM journal_headers WHERE journal_header_id = %s AND organization_id = %s
+        """, (journal_header_id, org_id))
+        header = cursor.fetchone()
+        if not header:
+            abort(404)
+
+        def refusal(message):
+            flash(message, "error")
+            return redirect(url_for("accounting.journal_entry_detail",
+                                    journal_header_id=journal_header_id))
+
+        if (header[4] or "").lower() != "draft":
+            return refusal("That entry is posted. Reset it to a draft before changing it.")
+        if header[5] is not None:
+            return refusal("This entry belongs to a document - correct the document instead.")
+
+        if request.method == "POST":
+            account_ids = request.form.getlist("account_id[]")
+            partner_names = request.form.getlist("partner_name[]")
+            labels = request.form.getlist("label[]")
+            debits = request.form.getlist("debit[]")
+            credits = request.form.getlist("credit[]")
+            lines = []
+            for index, account_id in enumerate(account_ids):
+                if not account_id:
+                    continue
+                lines.append({
+                    "account_id": int(account_id),
+                    "partner_name": partner_names[index].strip() or None,
+                    "label": labels[index].strip() or None,
+                    "debit": to_decimal(debits[index] or 0),
+                    "credit": to_decimal(credits[index] or 0),
+                })
+            try:
+                replace_journal_entry(
+                    cursor, org_id, journal_header_id,
+                    reference=request.form.get("reference", "").strip() or None,
+                    accounting_date=request.form["accounting_date"],
+                    journal_name=request.form.get("journal_name", "Miscellaneous Operations").strip(),
+                    lines=lines)
+                conn.commit()
+            except (UnbalancedEntryError, ValueError) as error:
+                conn.rollback()
+                return render_template(
+                    "accounting/new_journal_entry.html", accounts=accounts,
+                    draft=_draft_from_form(request.form, journal_header_id),
+                    draft_lines=_lines_from_form(request.form),
+                    error=str(error), today=date.today().isoformat())
+            flash("The entry is corrected. Post it when you are ready.", "success")
+            return redirect(url_for("accounting.journal_entry_detail",
+                                    journal_header_id=journal_header_id))
+
+        cursor.execute("""
+            SELECT account_id, partner_name, label, debit, credit
+            FROM journal_lines WHERE journal_header_id = %s
+            ORDER BY line_order, journal_line_id
+        """, (journal_header_id,))
+        # as text: the numbers go straight into the page's JavaScript
+        draft_lines = [{"account_id": row[0], "partner_name": row[1] or "", "label": row[2] or "",
+                        "debit": str(row[3] or 0), "credit": str(row[4] or 0)}
+                       for row in cursor.fetchall()]
+        draft = {"id": journal_header_id, "reference": header[1] or "",
+                 "accounting_date": header[2].isoformat() if header[2] else "",
+                 "journal_name": header[3] or ""}
+        return render_template(
+            "accounting/new_journal_entry.html", accounts=accounts,
+            draft=draft, draft_lines=draft_lines, error=None, today=date.today().isoformat())
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def _draft_from_form(form, journal_header_id):
+    return {"id": journal_header_id,
+            "reference": (form.get("reference") or "").strip(),
+            "accounting_date": form.get("accounting_date") or "",
+            "journal_name": (form.get("journal_name") or "").strip()}
+
+
+def _lines_from_form(form):
+    account_ids = form.getlist("account_id[]")
+    partner_names = form.getlist("partner_name[]")
+    labels = form.getlist("label[]")
+    debits = form.getlist("debit[]")
+    credits = form.getlist("credit[]")
+    rows = []
+    for index, account_id in enumerate(account_ids):
+        if not account_id:
+            continue
+        rows.append({"account_id": int(account_id),
+                     "partner_name": partner_names[index] if index < len(partner_names) else "",
+                     "label": labels[index] if index < len(labels) else "",
+                     "debit": debits[index] if index < len(debits) else 0,
+                     "credit": credits[index] if index < len(credits) else 0})
+    return rows
+
+
+@bp.route("/journal-entries/<int:journal_header_id>/reset-to-draft", methods=["POST"])
+@require_organization
+@require_permission("accounting.post")
+def reset_journal_entry_route(journal_header_id):
+    """Take a posted entry back to a draft so it can be corrected.
+
+    An entry that belongs to an invoice, a bill or a receipt is refused here -
+    it is reset from that document's own page, so the two never disagree.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        reference = reset_journal_entry_to_draft(cursor, org_id, journal_header_id)
+        conn.commit()
+    except ValueError as error:
+        conn.rollback()
+        flash(str(error), "error")
+    else:
+        flash(f"{reference or 'The entry'} is a draft again. Correct it, then post it.", "success")
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for("accounting.journal_entry_detail", journal_header_id=journal_header_id))
 
 
 @bp.route("/journal-entries/<int:journal_header_id>/duplicate", methods=["POST"])

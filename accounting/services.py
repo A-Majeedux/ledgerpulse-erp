@@ -182,3 +182,167 @@ def delete_draft_journal_entry(cursor, organization_id, journal_header_id):
     cursor.execute("DELETE FROM journal_lines WHERE journal_header_id = %s", (journal_header_id,))
     cursor.execute("DELETE FROM journal_headers WHERE journal_header_id = %s", (journal_header_id,))
     return reference
+
+
+# ---------------------------------------------------------------------------
+# Taking a posted entry back to a draft
+#
+# His words: "add a new option into side gear for every transaction 'Reset To
+# Draft' to make correction into any voucher, based on role authority".
+#
+# A draft entry does not count in the trial balance, the ledger or any report -
+# only posted entries do. So taking an entry back to Draft *is* the reversal: the
+# books stop carrying it, and posting it again puts the corrected version in.
+# Nothing is deleted, so nothing is lost.
+# ---------------------------------------------------------------------------
+SOURCED = ("salesinvoice", "customerreceipt", "vendorbill", "vendorpayment",
+           "vendorcreditnote", "salescreditnote", "customerpayment")
+
+
+def reset_journal_entry_to_draft(cursor, organization_id, journal_header_id):
+    """Return a posted entry to Draft. Returns its reference.
+
+    An entry that was written by an invoice, a bill, a receipt or a payment is
+    refused: that document owns the entry, and resetting one without the other
+    would leave the document posted against an entry the books no longer carry.
+    It is reset from the document's own page instead.
+    """
+    cursor.execute("""
+        SELECT reference, status, source_type, source_id
+        FROM journal_headers WHERE journal_header_id = %s AND organization_id = %s
+    """, (journal_header_id, organization_id))
+    row = cursor.fetchone()
+    if not row:
+        raise ValueError("That entry is not one of this company's.")
+    reference, status, source_type, source_id = row
+    if (status or "").lower() == "draft":
+        raise ValueError(f"{reference or 'That entry'} is already a draft.")
+    if source_id is not None or (source_type or "").strip().lower() in SOURCED:
+        raise ValueError(
+            "%s was written by a %s. Reset that document to a draft from its own page - "
+            "the entry follows it." % (reference or "That entry", _source_words(source_type)))
+    cursor.execute("""
+        UPDATE journal_headers SET status = 'Draft', posted_at = NULL
+        WHERE journal_header_id = %s
+    """, (journal_header_id,))
+    return reference
+
+
+def _source_words(source_type):
+    words = {
+        "salesinvoice": "sales invoice",
+        "customerreceipt": "customer receipt",
+        "vendorbill": "vendor bill",
+        "vendorpayment": "vendor payment",
+        "vendorcreditnote": "vendor credit note",
+        "salescreditnote": "sales credit note",
+        "customerpayment": "customer payment",
+    }
+    return words.get((source_type or "").strip().lower(), "document")
+
+
+def set_linked_entry_to_draft(cursor, organization_id, journal_header_id):
+    """Send the entry a document owns back to Draft (used when the document is).
+
+    The document and its entry move together: the invoice is reset, and the
+    entry it wrote stops counting at the same moment.
+    """
+    if not journal_header_id:
+        return False
+    cursor.execute("""
+        UPDATE journal_headers SET status = 'Draft', posted_at = NULL
+        WHERE journal_header_id = %s AND organization_id = %s
+    """, (journal_header_id, organization_id))
+    return cursor.rowcount > 0
+
+
+def _checked_lines(cursor, organization_id, lines):
+    """The lines as the ledger wants them: accounts named, money rounded, balanced.
+
+    Everything that writes an entry passes through here, so a line can never
+    reach the books pointing at another company's account, and an entry can never
+    be written with debits that do not equal its credits.
+    """
+    normalized = []
+    for line in lines:
+        account_id = line.get("account_id")
+        cursor.execute("SELECT 1 FROM chart_of_accounts WHERE account_id = %s AND organization_id = %s",
+                       (account_id, organization_id))
+        if not cursor.fetchone():
+            raise ValueError("One of the lines names an account that is not this company's.")
+        normalized.append({
+            "account_id": account_id,
+            "partner_name": line.get("partner_name"),
+            "label": line.get("label"),
+            "debit": money_round(line.get("debit", 0)),
+            "credit": money_round(line.get("credit", 0)),
+        })
+
+    if not normalized:
+        raise ValueError("An entry needs at least one line.")
+    total_debit = sum((line["debit"] for line in normalized), to_decimal(0))
+    total_credit = sum((line["credit"] for line in normalized), to_decimal(0))
+    if total_debit != total_credit:
+        raise UnbalancedEntryError(
+            f"Journal entry does not balance: debits {total_debit} != credits {total_credit}")
+    return normalized
+
+
+def _write_lines(cursor, journal_header_id, normalized):
+    """Lay an entry's lines out again, in the order given."""
+    cursor.execute("DELETE FROM journal_lines WHERE journal_header_id = %s", (journal_header_id,))
+    for order, line in enumerate(normalized):
+        cursor.execute("""
+            INSERT INTO journal_lines
+                (journal_header_id, account_id, partner_name, label, debit, credit, line_order)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (journal_header_id, line["account_id"], line["partner_name"], line["label"],
+              line["debit"], line["credit"], order))
+
+
+def refill_journal_entry(cursor, organization_id, journal_header_id, reference,
+                         accounting_date, journal_name, lines):
+    """Write a DRAFT entry's lines and heading again, in place.
+
+    The entry keeps its identity - its id, its number, anything pointing at it -
+    and only what it says changes. Used by the documents (an invoice's entry is
+    rewritten when the invoice is corrected) and by the entry's own edit page.
+    A posted entry is refused: it is reset to a draft first, on purpose.
+    """
+    cursor.execute("SELECT status FROM journal_headers WHERE journal_header_id = %s AND organization_id = %s",
+                   (journal_header_id, organization_id))
+    row = cursor.fetchone()
+    if not row:
+        raise ValueError("That entry is not one of this company's.")
+    if (row[0] or "").lower() != "draft":
+        raise ValueError("That entry is posted. Reset it to a draft before changing it.")
+
+    normalized = _checked_lines(cursor, organization_id, lines)
+    cursor.execute("""
+        UPDATE journal_headers SET reference = %s, accounting_date = %s, journal_name = %s
+        WHERE journal_header_id = %s
+    """, (reference, accounting_date, journal_name, journal_header_id))
+    _write_lines(cursor, journal_header_id, normalized)
+    return journal_header_id
+
+
+def replace_journal_entry(cursor, organization_id, journal_header_id, reference,
+                          accounting_date, journal_name, lines):
+    """Correct a DRAFT entry: same entry, same number, new lines.
+
+    An entry that belongs to a document is refused here - the document is
+    corrected on its own page, so the two can never disagree.
+    """
+    cursor.execute("""
+        SELECT status, source_id FROM journal_headers
+        WHERE journal_header_id = %s AND organization_id = %s
+    """, (journal_header_id, organization_id))
+    row = cursor.fetchone()
+    if not row:
+        raise ValueError("That entry is not one of this company's.")
+    if (row[0] or "").lower() != "draft":
+        raise ValueError("That entry is posted. Reset it to a draft before changing it.")
+    if row[1] is not None:
+        raise ValueError("This entry belongs to a document - correct the document instead.")
+    return refill_journal_entry(cursor, organization_id, journal_header_id, reference,
+                                accounting_date, journal_name, lines)

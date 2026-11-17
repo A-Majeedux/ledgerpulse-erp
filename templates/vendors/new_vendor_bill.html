@@ -2,19 +2,36 @@
 {% block title %}New Vendor Bill{% endblock %}
 {% block active_nav %}vendor_bills{% endblock %}
 {% block content %}
+{# The same form writes a new bill and corrects a draft one. #}
+{% set editing = draft and draft.id %}
 <div class="lp-page-header">
-  <div>
-    <h1 class="lp-page-title">New Vendor Bill</h1>
-    <p class="lp-page-subtitle">Record a purchase bill from a vendor with expense accounts and line amounts.</p>
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">{{ ('Correct bill ' ~ (draft.bill_number or '')) if editing else 'New Vendor Bill' }}</h1>
+    <p class="lp-page-subtitle">
+      {% if editing %}
+        This bill is a draft. Change what is wrong and save it - the vendor's own number and the bill's place in
+        the books stay as they are.
+      {% else %}
+        Record a purchase bill from a vendor with expense accounts and line amounts.
+      {% endif %}
+    </p>
   </div>
-  <a href="{{ url_for('vendors.vendor_bills_list') }}" class="lp-btn secondary sm">Back to Bills</a>
+  <div class="lp-page-actions">
+    {% if editing %}
+      <a href="{{ url_for('vendors.vendor_bill_detail', vendor_bill_id=draft.id) }}"
+         class="lp-btn secondary sm">Back to the bill</a>
+    {% else %}
+      <a href="{{ url_for('vendors.vendor_bills_list') }}" class="lp-btn secondary sm">Back to Bills</a>
+    {% endif %}
+  </div>
 </div>
 
 {% if error %}
   <div class="alert alert-danger">{{ error }}</div>
 {% endif %}
 
-<form method="POST" id="bill-form">
+<form method="POST" id="bill-form"
+      {% if editing %}action="{{ url_for('vendors.edit_vendor_bill', vendor_bill_id=draft.id) }}"{% endif %}>
   {{ csrf_field() }}
   <div class="lp-form-section">
     <div class="lp-form-grid">
@@ -22,31 +39,31 @@
         <label class="form-label">Vendor</label>
         <select name="vendor_id" class="form-select" required>
           <option value="">Select vendor…</option>
-          {% for v in vendors %}<option value="{{ v[0] }}">{{ v[1] }} ({{ v[2] }})</option>{% endfor %}
+          {% for v in vendors %}<option value="{{ v[0] }}"{% if draft_header and draft_header.vendor_id|string == v[0]|string %} selected{% endif %}>{{ v[1] }} ({{ v[2] }})</option>{% endfor %}
         </select>
       </div>
       <div class="lp-form-group">
         <label class="form-label">Bill Date</label>
-        <input type="date" name="bill_date" value="{{ today }}" class="form-control" required>
+        <input type="date" name="bill_date" value="{{ draft_header.bill_date if draft_header else today }}" class="form-control" required>
       </div>
       <div class="lp-form-group">
         <label class="form-label">Due Date</label>
-        <input type="date" name="due_date" class="form-control">
+        <input type="date" name="due_date" class="form-control" value="{{ draft_header.due_date if draft_header else '' }}">
       </div>
       <div class="lp-form-group">
         <label class="form-label">Payment Terms</label>
-        <input type="text" name="payment_terms" placeholder="e.g. 30 days" class="form-control">
+        <input type="text" name="payment_terms" placeholder="e.g. 30 days" class="form-control" value="{{ draft_header.payment_terms if draft_header else '' }}">
       </div>
       <div class="lp-form-group">
         <label class="form-label">LC Reference</label>
         <input type="text" name="lc_reference" maxlength="100" placeholder="e.g. LC 123/2026 (imports only)"
-               class="form-control">
+               class="form-control" value="{{ draft_header.lc_reference if draft_header else '' }}">
       </div>
       <div class="lp-form-group">
         <label class="form-label">Spread LC charges</label>
         <select name="landed_cost_basis" class="form-select">
           {% for value, label in basis_options.items() %}
-            <option value="{{ value }}" {{ 'selected' if value == 'value' }}>{{ label }}</option>
+            <option value="{{ value }}" {{ 'selected' if (draft_header.landed_cost_basis if draft_header else 'value') == value }}>{{ label }}</option>
           {% endfor %}
         </select>
       </div>
@@ -87,7 +104,7 @@
   </div>
 
   <div>
-    <button type="submit" class="lp-btn primary">Save Draft Bill</button>
+    <button type="submit" class="lp-btn primary">{{ 'Save the correction' if editing else 'Save Draft Bill' }}</button>
   </div>
 </form>
 
@@ -168,6 +185,36 @@ function markLanded(box) {
   }
 }
 
-addLine();
+// The lines of the bill being corrected, if this form was opened for one.
+const DRAFT_LINES = {{ (draft_lines or [])|tojson }};
+
+function fillDraftRow(row, line) {
+  const set = (name, value) => {
+    const box = row.querySelector('[name="' + name + '"]');
+    if (box) box.value = value;
+  };
+  set('label[]', line.label || '');
+  set('product_id[]', line.product_id || '');
+  set('account_id[]', line.account_id || '');
+  set('quantity[]', line.quantity);
+  set('rate[]', line.rate);
+  set('total[]', line.total);
+  const kind = row.querySelector('[name="line_kind[]"]');
+  const tick = row.querySelector('.landed-tick');
+  if (line.line_kind === 'Landed Cost') {
+    if (kind) kind.value = 'Landed Cost';
+    if (tick) tick.checked = true;
+  }
+}
+
+if (DRAFT_LINES.length) {
+  DRAFT_LINES.forEach(function (line) {
+    addLine();
+    fillDraftRow(document.querySelector('#lines-body tr:last-child'), line);
+  });
+  recalcGrandTotal();
+} else {
+  addLine();
+}
 </script>
 {% endblock %}

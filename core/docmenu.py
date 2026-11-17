@@ -46,6 +46,16 @@ ACTIONS = {
     "sales_invoice": [
         {"key": "print", "label": "Print / PDF invoice", "icon": "i-print",
          "url": "/sales/invoices/{id}/print", "post": False},
+        {"key": "edit", "label": "Edit this draft", "icon": "i-edit",
+         "url": "/sales/invoices/{id}/edit", "post": False, "permission": "sales.create",
+         "draft_only": True,
+         "blocked_note": "A posted invoice is corrected by resetting it to a draft first."},
+        {"key": "reset", "label": "Reset to draft (to correct it)", "icon": "i-arrow-up",
+         "url": "/sales/invoices/{id}/reset-to-draft", "post": True, "permission": "sales.post",
+         "posted_only": True,
+         "confirm": "Reset this invoice to a draft? It stops counting in the books until it is posted "
+                    "again, and you can then correct it.",
+         "blocked_note": "Only a posted invoice can be reset."},
         {"key": "duplicate", "label": "Duplicate as a new draft", "icon": "i-refresh",
          "url": "/sales/invoices/{id}/duplicate", "post": True, "permission": "sales.create"},
         {"key": "delete", "label": "Delete this draft", "icon": "i-trash",
@@ -69,6 +79,15 @@ ACTIONS = {
                     "money is no longer received. This cannot be undone."},
     ],
     "journal_entry": [
+        {"key": "edit", "label": "Edit this draft", "icon": "i-edit",
+         "url": "/accounting/journal-entries/{id}/edit", "post": False,
+         "permission": "accounting.create", "draft_only": True,
+         "blocked_note": "A posted entry is corrected by resetting it to a draft first."},
+        {"key": "reset", "label": "Reset to draft (to correct it)", "icon": "i-arrow-up",
+         "url": "/accounting/journal-entries/{id}/reset-to-draft", "post": True,
+         "permission": "accounting.post", "posted_only": True,
+         "confirm": "Reset this entry to a draft? It stops counting in the books until it is posted again.",
+         "blocked_note": "Only a posted entry can be reset."},
         {"key": "duplicate", "label": "Duplicate as a new draft", "icon": "i-refresh",
          "url": "/accounting/journal-entries/{id}/duplicate", "post": True,
          "permission": "accounting.create"},
@@ -81,6 +100,16 @@ ACTIONS = {
     "vendor_bill": [
         {"key": "print", "label": "Print / PDF bill", "icon": "i-print",
          "url": "/vendors/bills/{id}/print", "post": False},
+        {"key": "edit", "label": "Edit this draft", "icon": "i-edit",
+         "url": "/vendors/bills/{id}/edit", "post": False, "permission": "vendors.create",
+         "draft_only": True,
+         "blocked_note": "A posted bill is corrected by resetting it to a draft first."},
+        {"key": "reset", "label": "Reset to draft (to correct it)", "icon": "i-arrow-up",
+         "url": "/vendors/bills/{id}/reset-to-draft", "post": True, "permission": "vendors.post",
+         "posted_only": True,
+         "confirm": "Reset this bill to a draft? It stops counting in the books until it is posted "
+                    "again, and you can then correct it.",
+         "blocked_note": "Only a posted bill can be reset."},
         {"key": "duplicate", "label": "Duplicate as a new draft", "icon": "i-refresh",
          "url": "/vendors/bills/{id}/duplicate", "post": True, "permission": "vendors.create"},
         {"key": "delete", "label": "Delete this draft", "icon": "i-trash",
@@ -128,6 +157,9 @@ def build_menu(kind, document_id, status=None, user_id=None, organization_id=Non
         if action.get("draft_only") and (status or "").lower() != "draft":
             item["allowed"] = False
             item["note"] = action.get("blocked_note") or "Only a draft can be changed this way."
+        if action.get("posted_only") and (status or "").lower() == "draft":
+            item["allowed"] = False
+            item["note"] = action.get("blocked_note") or "Only a posted document can be reset."
         if action.get("blocked_by") and extra.get(action["blocked_by"]):
             item["allowed"] = False
             item["note"] = action.get("blocked_note") or "This cannot be deleted."

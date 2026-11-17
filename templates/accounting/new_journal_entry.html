@@ -2,33 +2,51 @@
 {% block title %}New Journal Entry{% endblock %}
 {% block active_nav %}journals{% endblock %}
 {% block content %}
+{# The same form writes a new entry and corrects a draft one: `draft` is empty
+   for a new entry, and carries the entry being corrected when there is one. #}
+{% set editing = draft and draft.id %}
 <div class="lp-page-header">
-  <div>
-    <h1 class="lp-page-title">New Journal Entry</h1>
-    <p class="lp-page-subtitle">Record a double-entry general ledger journal with debits and credits.</p>
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">{{ 'Correct Journal Entry' if editing else 'New Journal Entry' }}</h1>
+    <p class="lp-page-subtitle">
+      {% if editing %}
+        Entry #{{ draft.id }} is a draft - change what is wrong and save it. Its number and its place in
+        the books stay the same.
+      {% else %}
+        Record a double-entry general ledger journal with debits and credits.
+      {% endif %}
+    </p>
   </div>
-  <a href="{{ url_for('accounting.journal_entries_list') }}" class="lp-btn secondary sm">Back to Journals</a>
+  <div class="lp-page-actions">
+    {% if editing %}
+      <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=draft.id) }}"
+         class="lp-btn secondary sm">Back to the entry</a>
+    {% else %}
+      <a href="{{ url_for('accounting.journal_entries_list') }}" class="lp-btn secondary sm">Back to Journals</a>
+    {% endif %}
+  </div>
 </div>
 
 {% if error %}
   <div class="alert alert-danger">{{ error }}</div>
 {% endif %}
 
-<form method="POST" id="je-form">
+<form method="POST" id="je-form"
+      {% if editing %}action="{{ url_for('accounting.edit_journal_entry', journal_header_id=draft.id) }}"{% endif %}>
   {{ csrf_field() }}
   <div class="lp-form-section">
     <div class="lp-form-grid">
       <div class="lp-form-group">
         <label class="form-label">Reference</label>
-        <input type="text" name="reference" value="{{ form.reference if form else '' }}" class="form-control" placeholder="e.g. JE/2026/001">
+        <input type="text" name="reference" value="{{ draft.reference if editing else (form.reference if form else '') }}" class="form-control" placeholder="e.g. JE/2026/001">
       </div>
       <div class="lp-form-group">
         <label class="form-label">Accounting Date</label>
-        <input type="date" name="accounting_date" value="{{ form.accounting_date if form else today }}" class="form-control" required>
+        <input type="date" name="accounting_date" value="{{ draft.accounting_date if editing else (form.accounting_date if form else today) }}" class="form-control" required>
       </div>
       <div class="lp-form-group">
         <label class="form-label">Journal</label>
-        <input type="text" name="journal_name" value="{{ form.journal_name if form else 'Miscellaneous Operations' }}" class="form-control">
+        <input type="text" name="journal_name" value="{{ (draft.journal_name if editing else (form.journal_name if form else 'Miscellaneous Operations')) or 'Miscellaneous Operations' }}" class="form-control">
       </div>
     </div>
   </div>
@@ -61,7 +79,9 @@
   </div>
 
   <div>
-    <button type="submit" class="lp-btn primary">Save Draft Journal Entry</button>
+    <button type="submit" class="lp-btn primary">
+      {{ 'Save the correction' if editing else 'Save Draft Journal Entry' }}
+    </button>
   </div>
 </form>
 
@@ -105,8 +125,24 @@ function recalculate() {
   }
 }
 
-// Start with two blank lines
-addLine();
-addLine();
+// The lines of the entry being corrected, if this form was opened for one.
+const DRAFT_LINES = {{ (draft_lines or [])|tojson }};
+
+function fillRow(row, line) {
+  row.querySelector('[name="account_id[]"]').value = line.account_id || '';
+  row.querySelector('[name="partner_name[]"]').value = line.partner_name || '';
+  row.querySelector('[name="label[]"]').value = line.label || '';
+  row.querySelector('[name="debit[]"]').value = line.debit || 0;
+  row.querySelector('[name="credit[]"]').value = line.credit || 0;
+}
+
+if (DRAFT_LINES.length) {
+  DRAFT_LINES.forEach(line => { addLine(); fillRow(document.querySelector('#lines-body tr:last-child'), line); });
+} else {
+  // a new entry starts with two blank lines
+  addLine();
+  addLine();
+}
+recalculate();
 </script>
 {% endblock %}

@@ -8,7 +8,8 @@ from core.searchbar import read_search, search_filters, and_clauses, describe, s
 from auth.services import require_permission, current_user_id
 from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
 from sales.schema import UOM_CHOICES
-from sales.services import clean_date, delete_draft_invoice, duplicate_invoice, give_invoice_a_number
+from sales.services import (clean_date, delete_draft_invoice, duplicate_invoice,
+                            give_invoice_a_number, replace_invoice, reset_invoice_to_draft)
 from core.money import to_decimal, money_round
 from customers.services import credit_status, format_amount
 
@@ -831,6 +832,164 @@ def apply_receipt_to_invoice(sales_invoice_id):
             return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
         conn.commit()
         flash(f"{format_amount(amount)} of {(receipt[2] or 'the receipt')} is now matched to this invoice.", "success")
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+
+
+@bp.route("/invoices/<int:sales_invoice_id>/edit", methods=["GET", "POST"])
+@require_organization
+@require_permission("sales.create")
+def edit_sales_invoice(sales_invoice_id):
+    """Correct a draft invoice, in the same form that writes a new one.
+
+    The invoice keeps its number; its lines, its wording and its draft journal
+    entry are written again from what is on the form.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT invoice_no, status FROM sales_invoices "
+                       "WHERE sales_invoice_id = %s AND organization_id = %s", (sales_invoice_id, org_id))
+        found = cursor.fetchone()
+        if not found:
+            abort(404)
+        invoice_no, status = found
+
+        def page(**kwargs):
+            return render_template(
+                "sales/new_sales_invoice.html",
+                customers=_get_active_customers(org_id),
+                products=_get_active_products(org_id),
+                accounts=_get_revenue_accounts(org_id),
+                tax_rates=_get_active_sales_tax_rates(org_id),
+                uom_choices=UOM_CHOICES, today=date.today().isoformat(),
+                draft={"id": sales_invoice_id, "invoice_no": invoice_no}, **kwargs)
+
+        # Only a draft is corrected here; a posted invoice is reset to a draft
+        # first, on purpose, from its own page.
+        if (status or "").lower() != "draft":
+            flash(f"{invoice_no or 'That invoice'} is posted. Reset it to a draft before changing it.", "error")
+            return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+        cursor.execute("SELECT COUNT(*) FROM customer_receipt_allocations WHERE sales_invoice_id = %s",
+                       (sales_invoice_id,))
+        if cursor.fetchone()[0]:
+            flash("A receipt is matched to this invoice, so it cannot be changed. Unmatch it first.", "error")
+            return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+
+        if request.method == "POST":
+            product_ids = request.form.getlist("product_id[]")
+            labels = request.form.getlist("label[]")
+            account_ids = request.form.getlist("account_id[]")
+            units = request.form.getlist("unit[]")
+            quantities = request.form.getlist("quantity[]")
+            rates = request.form.getlist("rate[]")
+            discounts = request.form.getlist("discount_percent[]")
+            tax_ids = request.form.getlist("sales_tax_rate_id[]")
+
+            lines = []
+            for index, product_id in enumerate(product_ids):
+                if not product_id:
+                    continue
+                lines.append({
+                    "product_id": int(product_id),
+                    "label": (labels[index] or "").strip() or None if index < len(labels) else None,
+                    "account_id": int(account_ids[index]),
+                    "unit": units[index] if index < len(units) else None,
+                    "quantity": quantities[index] if index < len(quantities) else 1,
+                    "rate": rates[index] if index < len(rates) else 0,
+                    "discount_percent": discounts[index] if index < len(discounts) else 0,
+                    "sales_tax_rate_id": int(tax_ids[index]) if index < len(tax_ids) and tax_ids[index] else None,
+                })
+            if not lines:
+                return page(error="An invoice needs at least one line.")
+
+            try:
+                delivery_date = clean_date(request.form.get("delivery_date"))
+            except ValueError as error:
+                return page(error=str(error))
+
+            due_date = request.form.get("due_date") or None
+            payment_terms = request.form.get("payment_terms", "").strip() or None
+            if due_date is None:
+                cursor.execute("SELECT payment_terms_days FROM customers "
+                               "WHERE customer_id = %s AND organization_id = %s",
+                               (int(request.form["customer_id"]), org_id))
+                terms_row = cursor.fetchone()
+                days = terms_row[0] if terms_row else None
+                if days:
+                    due_date = (date.fromisoformat(request.form["invoice_date"])
+                                + timedelta(days=int(days))).isoformat()
+                    payment_terms = payment_terms or f"{int(days)} days"
+
+            try:
+                replace_invoice(cursor, org_id, sales_invoice_id, header={
+                    "customer_id": int(request.form["customer_id"]),
+                    "invoice_date": request.form["invoice_date"],
+                    "due_date": due_date,
+                    "payment_terms": payment_terms,
+                    "journal_name": request.form.get("journal_name", "Customer Invoices").strip(),
+                    "delivery_date": delivery_date,
+                }, raw_lines=lines)
+                conn.commit()
+            except (UnbalancedEntryError, ValueError) as error:
+                conn.rollback()
+                return page(error=str(error))
+            flash(f"{invoice_no} is corrected. Post it when you are ready.", "success")
+            return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+
+        # ---- the form, filled with what the invoice says today --------------
+        cursor.execute("""
+            SELECT customer_id, invoice_date, due_date, payment_terms, journal_name, delivery_date
+            FROM sales_invoices WHERE sales_invoice_id = %s
+        """, (sales_invoice_id,))
+        customer_id, invoice_date, due_date, payment_terms, journal_name, delivery_date = cursor.fetchone()
+        cursor.execute("""
+            SELECT product_id, label, account_id, unit, quantity, rate, discount_percent,
+                   sales_tax_rate_id
+            FROM sales_invoice_lines WHERE sales_invoice_id = %s ORDER BY line_order
+        """, (sales_invoice_id,))
+        draft_lines = [{
+            "product_id": row[0], "label": row[1] or "", "account_id": row[2], "unit": row[3],
+            "quantity": str(row[4]), "rate": str(row[5]), "discount_percent": str(row[6] or 0),
+            "sales_tax_rate_id": row[7],
+        } for row in cursor.fetchall()]
+        header = {
+            "customer_id": customer_id,
+            "invoice_date": invoice_date.isoformat() if invoice_date else "",
+            "due_date": due_date.isoformat() if due_date else "",
+            "payment_terms": payment_terms or "",
+            "journal_name": journal_name or "Customer Invoices",
+            "delivery_date": delivery_date.isoformat() if delivery_date else "",
+        }
+        return page(draft_header=header, draft_lines=draft_lines)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@bp.route("/invoices/<int:sales_invoice_id>/reset-to-draft", methods=["POST"])
+@require_organization
+@require_permission("sales.post")
+def reset_invoice_to_draft_route(sales_invoice_id):
+    """Take a posted invoice back to a draft so it can be corrected.
+
+    Its journal entry goes back to Draft with it, so the books stop carrying an
+    invoice that is about to change. Refused while a receipt is matched to it.
+    """
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        invoice_no = reset_invoice_to_draft(cursor, org_id, sales_invoice_id)
+        conn.commit()
+    except ValueError as error:
+        conn.rollback()
+        flash(str(error), "error")
+    else:
+        flash(f"{invoice_no or 'The invoice'} is a draft again. Correct it, then post it.", "success")
     finally:
         cursor.close()
         conn.close()

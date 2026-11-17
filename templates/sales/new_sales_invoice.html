@@ -2,19 +2,37 @@
 {% block title %}New Sales Invoice{% endblock %}
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
+{# The same form writes a new invoice and corrects a draft one: `draft` is empty
+   for a new invoice, and names the invoice being corrected when there is one. #}
+{% set editing = draft and draft.id %}
 <div class="lp-page-header">
-  <div>
-    <h1 class="lp-page-title">New Sales Invoice</h1>
-    <p class="lp-page-subtitle">Create a customer billing invoice with line items, tax, and discount rules.</p>
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">{{ ('Correct ' ~ draft.invoice_no) if editing else 'New Sales Invoice' }}</h1>
+    <p class="lp-page-subtitle">
+      {% if editing %}
+        This invoice is a draft. Change what is wrong and save it - the number, the customer's history and the
+        receipts matched to it all stay as they are.
+      {% else %}
+        Create a customer billing invoice with line items, tax, and discount rules.
+      {% endif %}
+    </p>
   </div>
-  <a href="{{ url_for('sales.sales_invoices_list') }}" class="lp-btn secondary sm">Back to Invoices</a>
+  <div class="lp-page-actions">
+    {% if editing %}
+      <a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=draft.id) }}"
+         class="lp-btn secondary sm">Back to the invoice</a>
+    {% else %}
+      <a href="{{ url_for('sales.sales_invoices_list') }}" class="lp-btn secondary sm">Back to Invoices</a>
+    {% endif %}
+  </div>
 </div>
 
 {% if error %}
   <div class="alert alert-danger">{{ error }}</div>
 {% endif %}
 
-<form method="POST" id="invoice-form">
+<form method="POST" id="invoice-form"
+      {% if editing %}action="{{ url_for('sales.edit_sales_invoice', sales_invoice_id=draft.id) }}"{% endif %}>
   {{ csrf_field() }}
   <div class="lp-form-section">
     <div class="lp-form-grid">
@@ -23,25 +41,29 @@
         <select name="customer_id" id="customer_id" class="form-select" required onchange="onCustomerChange()">
           <option value="">Select customer…</option>
           {% for c in customers %}
-            <option value="{{ c[0] }}">{{ c[1] }} ({{ c[2] }})</option>
+            <option value="{{ c[0] }}"{% if draft_header and draft_header.customer_id|string == c[0]|string %} selected{% endif %}>{{ c[1] }} ({{ c[2] }})</option>
           {% endfor %}
         </select>
       </div>
       <div class="lp-form-group">
         <label class="form-label">Invoice Date</label>
-        <input type="date" name="invoice_date" value="{{ today }}" class="form-control" required>
+        <input type="date" name="invoice_date" value="{{ draft_header.invoice_date if draft_header else today }}"
+               class="form-control" required>
       </div>
       <div class="lp-form-group">
         <label class="form-label">Due Date</label>
-        <input type="date" name="due_date" id="due_date" class="form-control">
+        <input type="date" name="due_date" id="due_date" class="form-control"
+               value="{{ draft_header.due_date if draft_header else '' }}">
       </div>
       <div class="lp-form-group">
         <label class="form-label">Payment Terms</label>
-        <input type="text" name="payment_terms" placeholder="e.g. 30 days" class="form-control">
+        <input type="text" name="payment_terms" placeholder="e.g. 30 days" class="form-control"
+               value="{{ draft_header.payment_terms if draft_header else '' }}">
       </div>
       <div class="lp-form-group">
         <label class="form-label">Delivery Date</label>
-        <input type="date" name="delivery_date" class="form-control">
+        <input type="date" name="delivery_date" class="form-control"
+               value="{{ draft_header.delivery_date if draft_header else '' }}">
       </div>
     </div>
     <p style="margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--lp-text-muted);">
@@ -161,7 +183,8 @@
 
   <div style="display:flex; gap:10px; align-items:center; margin-top: 6px;">
     <button type="submit" class="lp-btn primary">
-      <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Save draft invoice
+      <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg>
+      {{ 'Save the correction' if editing else 'Save draft invoice' }}
     </button>
     <a href="{{ url_for('sales.sales_invoices_list') }}" class="lp-btn ghost">Cancel</a>
   </div>
@@ -391,7 +414,39 @@ document.querySelectorAll('#column-picker input[data-col]').forEach(function (bo
 
 readColumnChoice();
 
-// Start with one empty line, and the columns this user last chose.
-addLine();
+// The lines of the invoice being corrected, if this form was opened for one.
+const DRAFT_LINES = {{ (draft_lines or [])|tojson }};
+
+function fillDraftRow(row, line) {
+  const product = row.querySelector('[name="product_id[]"]');
+  if (product) { product.value = line.product_id || ''; }
+  const label = row.querySelector('[name="label[]"]');
+  if (label) { label.value = line.label || ''; }
+  const account = row.querySelector('[name="account_id[]"]');
+  if (account) { account.value = line.account_id || ''; }
+  const unit = row.querySelector('[name="unit[]"]');
+  if (unit) { unit.value = line.unit || ''; }
+  const quantity = row.querySelector('[name="quantity[]"]');
+  if (quantity) { quantity.value = line.quantity; }
+  const rate = row.querySelector('[name="rate[]"]');
+  if (rate) { rate.value = line.rate; }
+  const discount = row.querySelector('[name="discount_percent[]"]');
+  if (discount) { discount.value = line.discount_percent; }
+  const tax = row.querySelector('[name="sales_tax_rate_id[]"]');
+  if (tax) { tax.value = line.sales_tax_rate_id || ''; }
+  recalcRow(row);
+}
+
+if (DRAFT_LINES.length) {
+  DRAFT_LINES.forEach(function (line) {
+    addLine();
+    fillDraftRow(document.querySelector('#lines-body tr:last-child'), line);
+  });
+  recalcGrandTotals();
+  if (typeof onCustomerChange === 'function') { /* the invoice already has its customer */ }
+} else {
+  // Start with one empty line, and the columns this user last chose.
+  addLine();
+}
 </script>
 {% endblock %}

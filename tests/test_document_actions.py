@@ -40,10 +40,16 @@ class DocumentMenuRulesTests(unittest.TestCase):
         finally:
             menu_module._may = original
         labels = [item["label"] for item in items]
-        # printing comes first, then the two that change the document
-        self.assertEqual(labels, ["Print / PDF invoice", "Duplicate as a new draft", "Delete this draft"])
-        self.assertTrue(all(item["allowed"] for item in items))
+        # printing comes first, then correcting, then the two that change the document
+        self.assertEqual(labels, ["Print / PDF invoice", "Edit this draft",
+                                  "Reset to draft (to correct it)",
+                                  "Duplicate as a new draft", "Delete this draft"])
         by_key = dict((item["key"], item) for item in items)
+        # a draft is edited, not reset - and the menu says so instead of hiding it
+        self.assertTrue(by_key["edit"]["allowed"])
+        self.assertFalse(by_key["reset"]["allowed"])
+        self.assertEqual(by_key["reset"]["note"], "Only a posted invoice can be reset.")
+        self.assertTrue(all(item["allowed"] for key, item in by_key.items() if key != "reset"))
         self.assertEqual(by_key["duplicate"]["url"], "/sales/invoices/7/duplicate")
         self.assertTrue(by_key["duplicate"]["post"])            # a form button, not a link
         self.assertEqual(by_key["delete"]["tone"], "danger")

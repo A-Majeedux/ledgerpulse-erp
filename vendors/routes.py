@@ -24,7 +24,8 @@ from wht.routes import get_active_tax_rates
 from core.money import to_decimal, money_round
 from vendors.landed_cost import (BASIS_LABELS, landed_unit_cost_by_product, normalise_basis,
                                  split_landed_cost)
-from vendors.services import duplicate_vendor_bill
+from vendors.services import (duplicate_vendor_bill, replace_vendor_bill,
+                             reset_vendor_bill_to_draft)
 from core.docmenu import build_menu
 from core.searchbar import read_search, search_filters, and_clauses, describe, suggest
 from auth.services import require_permission, current_user_id
@@ -898,6 +899,142 @@ def _remember_landed_cost(cursor, org_id, vendor_bill_id):
         cursor.execute("UPDATE products SET last_landed_cost = %s "
                        "WHERE product_id = %s AND organization_id = %s",
                        (unit_cost, product_id, org_id))
+
+
+@bp.route("/bills/<int:vendor_bill_id>/edit", methods=["GET", "POST"])
+@require_organization
+@require_permission("vendors.create")
+def edit_vendor_bill(vendor_bill_id):
+    """Correct a draft bill, in the same form that writes a new one."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT bill_number, status FROM vendor_bills "
+                       "WHERE vendor_bill_id = %s AND organization_id = %s", (vendor_bill_id, org_id))
+        found = cursor.fetchone()
+        if not found:
+            abort(404)
+        bill_number, status = found
+
+        def page(**kwargs):
+            return render_template(
+                "vendors/new_vendor_bill.html",
+                vendors=_get_vendors(org_id), accounts=_get_accounts(org_id),
+                products=_get_products_for_bill(org_id), basis_options=BASIS_LABELS,
+                today=date.today().isoformat(),
+                draft={"id": vendor_bill_id, "bill_number": bill_number}, **kwargs)
+
+        if (status or "").lower() != "draft":
+            flash(f"Bill {bill_number or ''} is posted. Reset it to a draft before changing it.", "error")
+            return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
+        cursor.execute("SELECT COUNT(*) FROM vendor_payment_allocations WHERE vendor_bill_id = %s",
+                       (vendor_bill_id,))
+        if cursor.fetchone()[0]:
+            flash("A payment is matched to this bill, so it cannot be changed. Remove the match first.", "error")
+            return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
+
+        if request.method == "POST":
+            account_ids = request.form.getlist("account_id[]")
+            labels = request.form.getlist("label[]")
+            quantities = request.form.getlist("quantity[]")
+            rates = request.form.getlist("rate[]")
+            totals = request.form.getlist("total[]")
+            products = request.form.getlist("product_id[]")
+            kinds = request.form.getlist("line_kind[]")
+
+            lines = []
+            for index, account_id in enumerate(account_ids):
+                if not account_id:
+                    continue
+                lines.append({
+                    "account_id": int(account_id),
+                    "label": (labels[index] or "").strip() or None if index < len(labels) else None,
+                    "quantity": quantities[index] if index < len(quantities) else 1,
+                    "rate": rates[index] if index < len(rates) else 0,
+                    "total": totals[index] if index < len(totals) else None,
+                    "product_id": int(products[index]) if index < len(products) and products[index] else None,
+                    "line_kind": "Landed Cost" if (index < len(kinds) and kinds[index] == "Landed Cost") else "Goods",
+                })
+            if not lines:
+                return page(error="A bill needs at least one line.")
+
+            try:
+                trade_payables_id = _trade_payables_account_id(cursor, org_id)
+            except ValueError as error:
+                return page(error=str(error))
+
+            try:
+                replace_vendor_bill(cursor, org_id, vendor_bill_id, header={
+                    "vendor_id": int(request.form["vendor_id"]),
+                    "bill_date": request.form["bill_date"],
+                    "due_date": request.form.get("due_date") or None,
+                    "payment_terms": request.form.get("payment_terms", "").strip() or None,
+                    "lc_reference": request.form.get("lc_reference", "").strip() or None,
+                    "journal_name": request.form.get("journal_name", "Expenses").strip(),
+                    "landed_cost_basis": normalise_basis(request.form.get("landed_cost_basis", "value")),
+                    "accounting_date": request.form.get("accounting_date") or request.form["bill_date"],
+                }, raw_lines=lines, trade_payables_id=trade_payables_id)
+                conn.commit()
+            except (UnbalancedEntryError, ValueError) as error:
+                conn.rollback()
+                return page(error=str(error))
+            flash(f"Bill {bill_number or ''} is corrected. Post it when you are ready.", "success")
+            return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
+
+        # ---- the form, filled with what the bill says today ------------------
+        cursor.execute("""
+            SELECT vendor_id, bill_date, due_date, payment_terms, lc_reference, journal_name,
+                   landed_cost_basis, accounting_date
+            FROM vendor_bills WHERE vendor_bill_id = %s
+        """, (vendor_bill_id,))
+        (vendor_id, bill_date, due_date, payment_terms, lc_reference, journal_name,
+         landed_basis, accounting_date) = cursor.fetchone()
+        cursor.execute("""
+            SELECT label, product_id, account_id, quantity, rate, total, line_kind
+            FROM vendor_bill_lines WHERE vendor_bill_id = %s ORDER BY line_order
+        """, (vendor_bill_id,))
+        draft_lines = [{
+            "label": row[0] or "", "product_id": row[1], "account_id": row[2],
+            "quantity": str(row[3]), "rate": str(row[4]), "total": str(row[5]),
+            "line_kind": row[6] or "Goods",
+        } for row in cursor.fetchall()]
+        header = {
+            "vendor_id": vendor_id,
+            "bill_date": bill_date.isoformat() if bill_date else "",
+            "due_date": due_date.isoformat() if due_date else "",
+            "payment_terms": payment_terms or "",
+            "lc_reference": lc_reference or "",
+            "journal_name": journal_name or "Expenses",
+            "landed_cost_basis": landed_basis or "value",
+            "accounting_date": accounting_date.isoformat() if accounting_date else "",
+        }
+        return page(draft_header=header, draft_lines=draft_lines)
+    finally:
+        cursor.close()
+        conn.close()
+
+
+@bp.route("/bills/<int:vendor_bill_id>/reset-to-draft", methods=["POST"])
+@require_organization
+@require_permission("vendors.post")
+def reset_vendor_bill_to_draft_route(vendor_bill_id):
+    """Take a posted bill back to a draft so it can be corrected."""
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        bill_number = reset_vendor_bill_to_draft(cursor, org_id, vendor_bill_id)
+        conn.commit()
+    except ValueError as error:
+        conn.rollback()
+        flash(str(error), "error")
+    else:
+        flash(f"Bill {bill_number or ''} is a draft again. Correct it, then post it.", "success")
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
 
 
 @bp.route("/bills/<int:vendor_bill_id>/duplicate", methods=["POST"])
