@@ -2,112 +2,268 @@
 {% block title %}{{ note[1] or 'Credit Note' }}{% endblock %}
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
+
+{# A credit note wears the same clothes as the invoice and the bill (Rounds
+   22-23): the customer's card, the note's own card, its lines with the totals
+   under them - and a rail carrying what it credits and what you can do. #}
 <div class="lp-page-header">
-  <div>
-    <h1 class="lp-page-title">{{ note[1] or 'Credit note (unnumbered)' }}</h1>
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">
+      Credit Note{% if note[1] %} <span style="color:var(--lp-text-muted); font-weight:600;">{{ note[1] }}</span>{% endif %}
+    </h1>
     <p class="lp-page-subtitle">
-      {{ note[2] }} · {{ note[8] }} ·
-      {% if note[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
-      {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
+      {{ note[2] }} · {{ note[3].strftime('%d %b %Y') if note[3] else '—' }} · {{ note[8] }}
     </p>
   </div>
-  <div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <a href="{{ url_for('sales.print_credit_note', credit_note_id=note[0]) }}" class="lp-btn sm" target="_blank">Print</a>
-    {% if note[4] == 'Draft' %}
-      {% if may('sales.post') %}
-      <form method="POST" action="{{ url_for('sales.post_credit_note', credit_note_id=note[0]) }}" style="display:inline;">
-        {{ csrf_field() }}
-        <button type="submit" class="lp-btn primary sm"
-                onclick="return confirm('Post this credit note? The revenue, the sales tax and the stock all move, and the customer owes this much less.');">
-          Post
-        </button>
-      </form>
-      {% endif %}
-      {% if may('sales.create') %}
-      <form method="POST" action="{{ url_for('sales.delete_credit_note', credit_note_id=note[0]) }}" style="display:inline;">
-        {{ csrf_field() }}
-        <button type="submit" class="lp-btn sm"
-                onclick="return confirm('Delete this draft credit note? Its lines go with it.');">Delete</button>
-      </form>
-      {% endif %}
+  <div class="lp-page-actions">
+    {% if note[4] == 'Posted' %}
+      <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
     {% else %}
-      {% if may('sales.post') %}
-      <form method="POST" action="{{ url_for('sales.reset_credit_note', credit_note_id=note[0]) }}" style="display:inline;">
-        {{ csrf_field() }}
-        <button type="submit" class="lp-btn sm"
-                onclick="return confirm('Reset this credit note to a draft? Its entry, its stock movements and what it took off the invoice are undone.');">
-          Reset to draft
-        </button>
-      </form>
-      {% endif %}
+      <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
     {% endif %}
+    <a href="{{ url_for('sales.print_credit_note', credit_note_id=note[0]) }}" class="lp-btn sm" target="_blank" rel="noopener">Print</a>
     <a href="{{ url_for('sales.credit_notes_list') }}" class="lp-btn sm">All credit notes</a>
   </div>
 </div>
 
-<div class="lp-card">
-  <table class="lp-table" style="max-width:640px;">
-    <tr><td style="color:var(--lp-text-muted); width:180px;">Customer</td><td><strong>{{ note[2] }}</strong></td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Date</td><td>{{ note[3].strftime('%d %b %Y') if note[3] else '—' }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Reason</td><td>{{ note[8] }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Against invoice</td>
-        <td>{% if note[11] %}<a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=note[12]) }}">{{ note[11] }}</a>{% else %}—{% endif %}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Goods back into stock</td><td>{{ 'Yes' if note[9] else 'No (allowance only)' }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Journal entry</td>
-        <td>{% if note[10] %}<a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=note[10]) }}">#{{ note[10] }}</a>{% else %}Not posted yet{% endif %}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Untaxed</td><td class="amount">Rs. {{ "%.2f"|format(note[5] or 0) }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Sales tax reversed</td><td class="amount">Rs. {{ "%.2f"|format(note[6] or 0) }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Total credit</td><td class="amount"><strong>Rs. {{ "%.2f"|format(note[7] or 0) }}</strong></td></tr>
-    {% if note[13] %}<tr><td style="color:var(--lp-text-muted);">Note</td><td>{{ note[13] }}</td></tr>{% endif %}
-  </table>
-</div>
+<div class="lp-doc-grid">
+  <div class="lp-doc-main">
 
-<div class="lp-card" style="margin-top:16px;">
-  <h3 style="margin-top:0; font-size:16px;">Lines</h3>
-  <table class="lp-table">
-    <thead>
-      <tr><th>What</th><th>Account</th><th class="amount">Qty</th><th>Unit</th>
-          <th class="amount">Rate</th><th>Tax</th><th class="amount">Total</th>
-          <th class="amount">Cost it went out at</th></tr>
-    </thead>
-    <tbody>
-      {% for line in lines %}
-      <tr>
-        <td>{{ line[6] or line[2] or '—' }}</td>
-        <td style="color:var(--lp-text-muted);">{{ line[4] }} · {{ line[5] }}</td>
-        <td class="amount">{{ "%.2f"|format(line[8] or 0) }}</td>
-        <td>{{ line[7] or 'Units' }}</td>
-        <td class="amount">{{ "%.2f"|format(line[9] or 0) }}</td>
-        <td>{{ line[11] or '—' }}{% if line[12] %} ({{ "%.0f"|format(line[12]) }}%){% endif %}</td>
-        <td class="amount">{{ "%.2f"|format(line[14] or 0) }}</td>
-        <td class="amount">{{ "%.2f"|format(line[15] or 0) }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="8"><div class="lp-empty-state">This credit note has no lines on it.</div></td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+    {# ---- whose invoice it credits ------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Customer</h2>
+        <span class="lp-doc-card-note">{{ note[11] or 'No invoice behind it' }}</span>
+      </header>
+      <div class="body">
+        <div class="lp-party">
+          <div>
+            <div class="lp-party-label">Credited to</div>
+            <a class="lp-party-name" href="{{ url_for('customers.customer_view', customer_id=customer_id) }}">{{ note[2] }}</a>
+            {% set address_parts = [note[20], note[21], note[22]]|select|list %}
+            <div class="lp-party-sub">{{ address_parts|join(', ') if address_parts else 'No address on his card yet' }}</div>
+          </div>
+          <div class="lp-party-badges">
+            {% if note[9] %}<span class="lp-pill">Goods back into stock</span>{% endif %}
+            <span class="lp-pill">{{ (note[7] or 0)|money }} credited</span>
+          </div>
+        </div>
 
-{% if journal_lines %}
-<div class="lp-card" style="margin-top:16px;">
-  <h3 style="margin-top:0; font-size:16px;">The entry it wrote</h3>
-  <table class="lp-table">
-    <thead><tr><th>Account</th><th>Partner</th><th>Label</th><th class="amount">Debit</th><th class="amount">Credit</th></tr></thead>
-    <tbody>
-      {% for line in journal_lines %}
-      <tr>
-        <td>{{ line[0] }} · {{ line[1] }}</td>
-        <td>{{ line[2] or '—' }}</td>
-        <td>{{ line[3] or '—' }}</td>
-        <td class="amount">{{ "%.2f"|format(line[4] or 0) }}</td>
-        <td class="amount">{{ "%.2f"|format(line[5] or 0) }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
+        <table class="lp-kv">
+          <tr>
+            <th>NTN</th><td>{{ note[16] or '—' }}</td>
+            <th>STRN</th><td>{{ note[17] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Phone</th><td>{{ note[18] or '—' }}</td>
+            <th>Email</th><td>{{ note[19] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Address</th>
+            <td colspan="3">{{ address_parts|join(', ') if address_parts else '—' }}</td>
+          </tr>
+        </table>
+      </div>
+    </section>
 
-{% include '_history.html' %}
+    {# ---- the note's own details --------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Credit note details</h2>
+        <span class="lp-doc-card-note">{{ note[4] }}</span>
+      </header>
+      <div class="body">
+        <table class="lp-kv">
+          <tr>
+            <th>Note number</th><td>{{ note[1] or 'Draft (no number yet)' }}</td>
+            <th>Status</th>
+            <td>{% if note[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
+                {% else %}<span class="lp-pill draft">Draft</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <th>Date</th><td>{{ note[3].strftime('%d %b %Y') if note[3] else '—' }}</td>
+            <th>Accounting date</th><td>{{ note[14].strftime('%d %b %Y') if note[14] else '—' }}</td>
+          </tr>
+          <tr>
+            <th>Reason</th><td colspan="3">{{ note[8] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Against invoice</th>
+            <td>
+              {% if note[11] %}<a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=note[12]) }}">{{ note[11] }}</a>
+              {% else %}—{% endif %}
+            </td>
+            <th>Goods back into stock</th><td>{{ 'Yes' if note[9] else 'No (allowance only)' }}</td>
+          </tr>
+          <tr>
+            <th>Entry</th>
+            <td colspan="3">
+              {% if note[10] %}<a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=note[10]) }}">Journal entry #{{ note[10] }}</a>
+              {% else %}Not posted yet{% endif %}
+            </td>
+          </tr>
+          {% if note[13] %}
+          <tr><th>Note</th><td colspan="3">{{ note[13] }}</td></tr>
+          {% endif %}
+        </table>
+      </div>
+    </section>
+
+    {# ---- what comes back ---------------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Credit note lines</h2>
+        <span class="lp-doc-card-note">{{ lines|length }} line{{ '' if lines|length == 1 else 's' }}</span>
+      </header>
+      <div class="body tight">
+        <table class="lp-table">
+          <thead>
+            <tr><th>Description</th><th class="amount">Qty</th><th>Unit</th>
+                <th class="amount">Rate</th><th>Tax</th><th class="amount">Total</th>
+                <th class="amount">Cost it went out at</th></tr>
+          </thead>
+          <tbody>
+            {% for line in lines %}
+            <tr>
+              <td>
+                <div style="font-weight:600;">{{ line[6] or line[2] or '—' }}</div>
+                <div style="font-size:11.5px; color:var(--lp-text-muted);">{{ line[4] }} · {{ line[5] }}</div>
+              </td>
+              <td class="amount">{{ (line[8] or 0)|money }}</td>
+              <td>{{ line[7] or 'Units' }}</td>
+              <td class="amount">{{ (line[9] or 0)|money }}</td>
+              <td>{{ line[11] or '—' }}{% if line[12] %} ({{ "%.0f"|format(line[12]) }}%){% endif %}</td>
+              <td class="amount">{{ (line[14] or 0)|money }}</td>
+              <td class="amount">{{ (line[15] or 0)|money }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7"><div class="lp-empty-state">This credit note has no lines on it.</div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div style="display:flex; justify-content:flex-end; padding:14px 16px;">
+          <div class="lp-doc-totals">
+            <table>
+              <tr><th>Untaxed</th><td>{{ active_currency|default('PKR') }} {{ (note[5] or 0)|money }}</td></tr>
+              <tr><th>Sales tax reversed</th><td>{{ active_currency|default('PKR') }} {{ (note[6] or 0)|money }}</td></tr>
+              <tr class="grand"><th>Total credit</th><td>{{ active_currency|default('PKR') }} {{ (note[7] or 0)|money }}</td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {% if journal_lines %}
+    <section class="lp-doc-card">
+      <header><h2>The entry it wrote</h2></header>
+      <div class="body tight">
+        <table class="lp-table">
+          <thead><tr><th>Account</th><th>Partner</th><th>Label</th><th class="amount">Debit</th><th class="amount">Credit</th></tr></thead>
+          <tbody>
+            {% for line in journal_lines %}
+            <tr>
+              <td>{{ line[0] }} · {{ line[1] }}</td>
+              <td>{{ line[2] or '—' }}</td>
+              <td>{{ line[3] or '—' }}</td>
+              <td class="amount">{{ (line[4] or 0)|money }}</td>
+              <td class="amount">{{ (line[5] or 0)|money }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+
+    {% include '_history.html' %}
+  </div>
+
+  {# ---- the rail ------------------------------------------------------- #}
+  <aside class="lp-doc-rail">
+    <section class="lp-doc-card">
+      <header><h2>Amount</h2></header>
+      <div class="body">
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Total credited</span>
+          <span class="lp-amount-figure big">{{ active_currency|default('PKR') }} {{ (note[7] or 0)|money }}</span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Untaxed</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ (note[5] or 0)|money }}</span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Tax reversed</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ (note[6] or 0)|money }}</span>
+        </div>
+        {% if note[9] %}
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Goods</span>
+          <span style="font-size:13px; font-weight:600; color:var(--lp-teal);">Back into stock</span>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="lp-doc-card">
+      <header><h2>Actions</h2></header>
+      <div class="body" style="padding:8px;">
+        <div class="lp-doc-actions">
+          {% if note[4] == 'Draft' %}
+            {% if may('sales.post') %}
+            <form method="POST" action="{{ url_for('sales.post_credit_note', credit_note_id=note[0]) }}">
+              {{ csrf_field() }}
+              <button type="submit" class="primary"
+                      onclick="return confirm('Post this credit note? The revenue, the sales tax and the stock all move, and the customer owes this much less.');">
+                <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Post credit note
+              </button>
+            </form>
+            {% endif %}
+            {% if may('sales.create') %}
+            <form method="POST" action="{{ url_for('sales.delete_credit_note', credit_note_id=note[0]) }}">
+              {{ csrf_field() }}
+              <button type="submit" class="danger"
+                      onclick="return confirm('Delete this draft credit note? Its lines go with it.');">
+                <svg class="ico sm" aria-hidden="true"><use href="#i-trash"/></svg> Delete draft
+              </button>
+            </form>
+            {% endif %}
+          {% else %}
+            {% if may('sales.post') %}
+            <form method="POST" action="{{ url_for('sales.reset_credit_note', credit_note_id=note[0]) }}">
+              {{ csrf_field() }}
+              <button type="submit"
+                      onclick="return confirm('Reset this credit note to a draft? Its entry, its stock movements and what it took off the invoice are undone.');">
+                <svg class="ico sm" aria-hidden="true"><use href="#i-refresh"/></svg> Reset to draft
+              </button>
+            </form>
+            {% endif %}
+          {% endif %}
+          <a href="{{ url_for('sales.print_credit_note', credit_note_id=note[0]) }}" target="_blank" rel="noopener">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Print / PDF credit note
+          </a>
+          {% if note[10] %}
+          <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=note[10]) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-journal"/></svg> Journal entry
+          </a>
+          {% endif %}
+          {% if note[12] %}
+          <a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=note[12]) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-invoice"/></svg> The invoice it credits
+          </a>
+          {% endif %}
+          <a href="{{ url_for('customers.customer_view', customer_id=customer_id) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-customers"/></svg> Customer card
+          </a>
+          <a href="{{ url_for('customers.customer_statement', customer_id=customer_id) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-ledger"/></svg> Statement
+          </a>
+          <a href="{{ url_for('sales.credit_notes_list') }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-arrow-left"/></svg> All credit notes
+          </a>
+        </div>
+      </div>
+    </section>
+  </aside>
+</div>
 {% endblock %}

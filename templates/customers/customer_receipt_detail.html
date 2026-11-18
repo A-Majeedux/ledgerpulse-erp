@@ -10,184 +10,257 @@
 {% set withheld = receipt[8] or 0 if receipt[6] else 0 %}
 {% set net = amount - withheld %}
 
-<nav class="lp-crumbs" aria-label="Breadcrumb">
-  <a href="{{ url_for('dashboard.home') }}">Dashboard</a>
-  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
-  <a href="{{ url_for('customers.customer_receipts_list') }}">Customer receipts</a>
-  <svg class="ico" aria-hidden="true"><use href="#i-chevron-right"/></svg>
-  <span>{{ receipt[10] or 'Receipt' }}</span>
-</nav>
-
+{# The shape every document in the system now wears (Rounds 22-23): the
+   document down the left - who it is from, its own details, what it settles -
+   and a rail on the right carrying the money and the things you can do. The
+   customer's card and the receipt's card are separate tables, as on the
+   invoice and the bill. #}
 <div class="lp-page-header">
   <div class="lp-page-heading">
-    <h1 class="lp-page-title">Receipt from {{ receipt[1] }}</h1>
+    <h1 class="lp-page-title">
+      Receipt{% if receipt[10] %} <span style="color:var(--lp-text-muted); font-weight:600;">{{ receipt[10] }}</span>{% endif %}
+    </h1>
     <p class="lp-page-subtitle">
-      Voucher <strong style="white-space:nowrap;">{{ receipt[10] or '—' }}</strong>
-      · {{ receipt[3].strftime('%d %b %Y') }} · paid by {{ method }}
+      {{ receipt[1] }} · {{ receipt[3].strftime('%d %b %Y') }} · paid by {{ method }}
+      {% if unapplied and unapplied > 0 %}
+        · <span class="lp-pill">{{ (unapplied)|money }} unapplied</span>
+      {% endif %}
     </p>
   </div>
-  {# The voucher is printed from the gear menu ("Print / PDF voucher") - one
-     place for everything this page can do, and no button sitting on top of the
-     voucher number when the header is narrow. #}
   <div class="lp-page-actions">
-    <a href="{{ url_for('customers.customer_receipts_list') }}" class="lp-btn secondary">
-      <svg class="ico sm" aria-hidden="true"><use href="#i-arrow-left"/></svg> All receipts
-    </a>
+    <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Received</span>
+    <a href="{{ url_for('customers.customer_receipt_print', customer_receipt_id=receipt[0]) }}"
+       class="lp-btn sm" target="_blank" rel="noopener">Print</a>
     {{ doc_actions(menu) }}
   </div>
 </div>
 
 {{ doc_trail(trail) }}
 
-<div class="lp-tabs" role="tablist">
-  <button type="button" role="tab" id="tab-receipt" class="lp-tab on" onclick="showTab('receipt')" aria-selected="true">
-    <svg class="ico sm" aria-hidden="true"><use href="#i-receipt"/></svg> Receipt
-  </button>
-  <button type="button" role="tab" id="tab-cheques" class="lp-tab" onclick="showTab('cheques')" aria-selected="false">
-    <svg class="ico sm" aria-hidden="true"><use href="#i-cheque"/></svg> Cheques
-  </button>
-</div>
+<div class="lp-doc-grid">
+  <div class="lp-doc-main">
 
-<div id="panel-receipt">
-  <div style="display:grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap:16px; align-items:start;">
+    {# ---- who paid ----------------------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Customer</h2>
+        <span class="lp-doc-card-note">{{ receipt[17] or 'Customer' }}</span>
+      </header>
+      <div class="body">
+        <div class="lp-party">
+          <div>
+            <div class="lp-party-label">Received from</div>
+            <a class="lp-party-name" href="{{ url_for('customers.customer_view', customer_id=customer_id) }}">{{ receipt[1] }}</a>
+            {% set address_parts = [receipt[22], receipt[23], receipt[24]]|select|list %}
+            <div class="lp-party-sub">{{ address_parts|join(', ') if address_parts else 'No address on his card yet' }}</div>
+          </div>
+          <div class="lp-party-badges">
+            {% if unapplied and unapplied > 0 %}
+              <span class="lp-pill">{{ (unapplied)|money }} not applied</span>
+            {% else %}
+              <span class="lp-pill posted">Fully applied</span>
+            {% endif %}
+          </div>
+        </div>
 
-    <section class="lp-card">
-      <h2 style="margin:0 0 10px; font-size:15px;">Receipt details</h2>
-      <div class="lp-rows">
-        <div class="lp-row"><span>Payment Type</span><span>{{ receipt[11] or 'Customer Payment' }}</span></div>
-        <div class="lp-row"><span>Payment Method</span><span>{{ method }}</span></div>
-        <div class="lp-row"><span>Voucher Number</span><span style="font-family:ui-monospace,Menlo,monospace;">{{ receipt[10] or '—' }}</span></div>
-        <div class="lp-row"><span>Journal</span><span>{{ receipt[12] or 'Customer Receipts' }}</span></div>
-        <div class="lp-row"><span>Deposited to</span><span>{{ receipt[5] }}</span></div>
-        <div class="lp-row"><span>Date</span><span>{{ receipt[3].strftime('%d %b %Y') }}</span></div>
-        <div class="lp-row"><span>Memo</span><span>{{ receipt[4] or '—' }}</span></div>
+        <table class="lp-kv">
+          <tr>
+            <th>Customer no.</th><td>{{ receipt[17] or '—' }}</td>
+            <th>NTN</th><td>{{ receipt[18] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>STRN</th><td>{{ receipt[19] or '—' }}</td>
+            <th>Phone</th><td>{{ receipt[20] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Email</th><td>{{ receipt[21] or '—' }}</td>
+            <th>City</th><td>{{ receipt[23] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Address</th>
+            <td colspan="3">{{ address_parts|join(', ') if address_parts else '—' }}</td>
+          </tr>
+        </table>
       </div>
-      {% if receipt[9] %}
-        <p style="margin:12px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
-          Posted to the books as
-          <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=receipt[9]) }}">journal entry #{{ receipt[9] }}</a>.
+    </section>
+
+    {# ---- the receipt's own details ------------------------------------ #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Receipt details</h2>
+        <span class="lp-doc-card-note">{{ receipt[12] or 'Customer Receipts' }}</span>
+      </header>
+      <div class="body">
+        <table class="lp-kv">
+          <tr>
+            <th>Voucher number</th><td>{{ receipt[10] or '—' }}</td>
+            <th>Date</th><td>{{ receipt[3].strftime('%d %b %Y') }}</td>
+          </tr>
+          <tr>
+            <th>Payment type</th><td>{{ receipt[11] or 'Customer Payment' }}</td>
+            <th>Payment method</th><td>{{ method }}</td>
+          </tr>
+          <tr>
+            <th>Journal</th><td>{{ receipt[12] or 'Customer Receipts' }}</td>
+            <th>Deposited to</th><td>{{ receipt[5] }}</td>
+          </tr>
+          <tr>
+            <th>Memo</th><td colspan="3">{{ receipt[4] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Entry</th>
+            <td colspan="3">
+              {% if receipt[9] %}
+                <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=receipt[9]) }}">Journal entry #{{ receipt[9] }}</a>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+        </table>
+      </div>
+    </section>
+
+    {# ---- what it settles ---------------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Invoices this receipt settles</h2>
+        <span class="lp-doc-card-note">{{ allocations|length }} invoice{{ '' if allocations|length == 1 else 's' }}</span>
+      </header>
+      <div class="body{% if allocations %} tight{% endif %}">
+        {% if allocations %}
+        <table class="lp-table">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Invoice date</th>
+              <th class="amount">Applied</th>
+              <th style="width:110px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in allocations %}
+            <tr>
+              <td style="font-weight:600;">
+                <a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=row.invoice_id) }}">{{ row.invoice_no or ('#' ~ row.invoice_id) }}</a>
+              </td>
+              <td>{{ row.date_text }}</td>
+              <td class="amount">{{ (row.amount)|money }}</td>
+              <td>
+                <form method="POST"
+                      action="{{ url_for('customers.unmatch_receipt_from_invoice_route', customer_receipt_id=receipt[0], sales_invoice_id=row.invoice_id) }}"
+                      onsubmit="return confirm('Take {{ row.invoice_no or ('#' ~ row.invoice_id) }} off this receipt? The money goes back to unapplied.');"
+                      style="margin:0;">
+                  {{ csrf_field() }}
+                  <button type="submit" class="lp-btn secondary sm">Unmatch</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div style="display:flex; justify-content:flex-end; padding:14px 16px;">
+          <div class="lp-doc-totals">
+            <table>
+              <tr><th>Receipt total</th><td>{{ active_currency|default('PKR') }} {{ (amount)|money }}</td></tr>
+              <tr><th>Applied to invoices</th><td>{{ active_currency|default('PKR') }} {{ (amount - unapplied)|money }}</td></tr>
+              <tr class="grand"><th>Still unapplied</th><td>{{ active_currency|default('PKR') }} {{ (unapplied)|money }}</td></tr>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <p style="margin:0; font-size:13px; color:var(--lp-text-muted);">
+          This receipt was not matched to any invoice, so the whole amount sits as a credit on
+          {{ receipt[1] }}'s account.
         </p>
-      {% endif %}
-    </section>
-
-    <section class="lp-card">
-      <h2 style="margin:0 0 10px; font-size:15px;">Amount</h2>
-      <div class="lp-big-amount"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(amount) }}</div>
-      <p style="margin:6px 0 0; font-size:12.5px; color:var(--lp-text-muted);">Amount received (gross)</p>
-
-      {% if receipt[6] %}
-      <div class="lp-rows" style="margin-top:14px;">
-        <div class="lp-row"><span>WHT rate</span><span>{{ receipt[7] }}%</span></div>
-        <div class="lp-row"><span>WHT withheld (recoverable)</span><span>{{ "{:,.2f}".format(withheld) }}</span></div>
-        <div class="lp-row"><span>Net received</span><span style="color:var(--lp-accent-600);">{{ "{:,.2f}".format(net) }}</span></div>
-      </div>
-      {% else %}
-      <p style="margin:12px 0 0; font-size:12.5px; color:var(--lp-text-muted);">No withholding tax on this receipt.</p>
-      {% endif %}
-
-      <a href="{{ url_for('customers.customer_receipt_print', customer_receipt_id=receipt[0]) }}"
-         class="lp-btn secondary sm" style="margin-top:14px;" target="_blank" rel="noopener">
-        <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Open the printable voucher
-      </a>
-    </section>
-  </div>
-
-  <section class="lp-card" style="margin-top:16px;">
-    <h2 style="margin:0 0 10px; font-size:15px;">Invoices this receipt settles</h2>
-    {% if allocations %}
-    <table class="lp-table">
-      <thead>
-        <tr>
-          <th>Invoice</th>
-          <th>Invoice date</th>
-          <th class="amount">Applied</th>
-          <th style="width:110px;"></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for row in allocations %}
-        <tr>
-          <td style="font-weight:600;">
-            <a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=row.invoice_id) }}">{{ row.invoice_no or ('#' ~ row.invoice_id) }}</a>
-          </td>
-          <td>{{ row.date_text }}</td>
-          <td class="amount">{{ "{:,.2f}".format(row.amount) }}</td>
-          <td>
-            <form method="POST"
-                  action="{{ url_for('customers.unmatch_receipt_from_invoice_route', customer_receipt_id=receipt[0], sales_invoice_id=row.invoice_id) }}"
-                  onsubmit="return confirm('Take {{ row.invoice_no or ("#" ~ row.invoice_id) }} off this receipt? The money goes back to unapplied.');"
-                  style="margin:0;">
-              {{ csrf_field() }}
-              <button type="submit" class="lp-btn secondary sm">Unmatch</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-        <tr style="font-weight:700;">
-          <td colspan="3">Applied{% if unapplied and unapplied > 0 %} · still unapplied{% endif %}</td>
-          <td class="amount">{{ "{:,.2f}".format(amount - unapplied) }}</td>
-        </tr>
-        {% if unapplied and unapplied > 0 %}
-        <tr>
-          <td colspan="3" style="color:var(--lp-text-muted);">Not applied to an invoice — sits as a credit</td>
-          <td class="amount" style="color:var(--lp-text-muted);">{{ "{:,.2f}".format(unapplied) }}</td>
-        </tr>
         {% endif %}
-      </tbody>
-    </table>
-    {% else %}
-    <p style="margin:0; font-size:13px; color:var(--lp-text-muted);">
-      This receipt was not matched to any invoice, so the whole amount sits as a credit on
-      {{ receipt[1] }}'s account.
-    </p>
-    {% endif %}
-  </section>
-</div>
-
-<div id="panel-cheques" style="display:none;">
-  {% if method == 'Cheque' %}
-  <div style="display:grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap:16px; align-items:start;">
-    <section class="lp-card">
-      <h2 style="margin:0 0 10px; font-size:15px;">Cheque details</h2>
-      <div class="lp-rows">
-        <div class="lp-row"><span>Cheque Number</span><span>{{ receipt[14] or '—' }}</span></div>
-        <div class="lp-row"><span>Bank</span><span>{{ receipt[15] or '—' }}</span></div>
-        <div class="lp-row"><span>Cheque Date</span><span>{{ receipt[16].strftime('%d %b %Y') if receipt[16] else '—' }}</span></div>
-        <div class="lp-row"><span>Customer</span><span>{{ receipt[1] }}</span></div>
       </div>
     </section>
-    <section class="lp-card">
-      <h2 style="margin:0 0 10px; font-size:15px;">Cheque amount</h2>
-      <div class="lp-big-amount"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(amount) }}</div>
-      <p style="margin:6px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
-        The cheque is subject to realisation. The receipt is already in the books.
-      </p>
-    </section>
-  </div>
-  {% else %}
-  <div class="lp-card" style="display:flex; gap:14px; align-items:center;">
-    <span style="width:38px; height:38px; border-radius:11px; background:var(--lp-accent-soft); color:var(--lp-accent-600); display:grid; place-items:center;">
-      <svg class="ico" aria-hidden="true"><use href="#i-info"/></svg>
-    </span>
-    <p style="margin:0; font-size:13.5px;">
-      This receipt was paid by {{ method }}, not by cheque, so there are no cheque details to show.
-    </p>
-  </div>
-  {% endif %}
-</div>
 
-<script>
-  function showTab(which) {
-    const isReceipt = which === 'receipt';
-    document.getElementById('panel-receipt').style.display = isReceipt ? 'block' : 'none';
-    document.getElementById('panel-cheques').style.display = isReceipt ? 'none' : 'block';
-    const receiptTab = document.getElementById('tab-receipt');
-    const chequeTab = document.getElementById('tab-cheques');
-    receiptTab.classList.toggle('on', isReceipt);
-    chequeTab.classList.toggle('on', !isReceipt);
-    receiptTab.setAttribute('aria-selected', isReceipt ? 'true' : 'false');
-    chequeTab.setAttribute('aria-selected', isReceipt ? 'false' : 'true');
-  }
-</script>
-{% include '_history.html' %}
+    {% if method == 'Cheque' %}
+    <section class="lp-doc-card">
+      <header><h2>Cheque</h2></header>
+      <div class="body">
+        <table class="lp-kv">
+          <tr>
+            <th>Cheque number</th><td>{{ receipt[14] or '—' }}</td>
+            <th>Bank</th><td>{{ receipt[15] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Cheque date</th><td>{{ receipt[16].strftime('%d %b %Y') if receipt[16] else '—' }}</td>
+            <th>Amount</th><td class="amount">{{ active_currency|default('PKR') }} {{ (amount)|money }}</td>
+          </tr>
+        </table>
+        <p style="margin:10px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
+          The cheque is subject to realisation. The receipt is already in the books.
+        </p>
+      </div>
+    </section>
+    {% endif %}
+
+    {% include '_history.html' %}
+  </div>
+
+  {# ---- the rail: the money on top, then what you can do ---------------- #}
+  <aside class="lp-doc-rail">
+    <section class="lp-doc-card">
+      <header><h2>Amount</h2></header>
+      <div class="body">
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Amount received</span>
+          <span class="lp-amount-figure big">{{ active_currency|default('PKR') }} {{ (amount)|money }}</span>
+        </div>
+        {% if receipt[6] %}
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">WHT withheld ({{ receipt[7] }}%)</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ (withheld)|money }}</span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Net received</span>
+          <span class="lp-amount-figure clear">{{ active_currency|default('PKR') }} {{ (net)|money }}</span>
+        </div>
+        {% endif %}
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Unapplied</span>
+          <span class="lp-amount-figure {% if unapplied and unapplied > 0 %}due{% else %}clear{% endif %}">
+            {{ active_currency|default('PKR') }} {{ (unapplied)|money }}
+          </span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Received on</span>
+          <span style="font-size:13px; font-weight:600;">{{ receipt[3].strftime('%d %b %Y') }}</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="lp-doc-card">
+      <header><h2>Actions</h2></header>
+      <div class="body" style="padding:8px;">
+        <div class="lp-doc-actions">
+          <a href="{{ url_for('customers.customer_receipt_print', customer_receipt_id=receipt[0]) }}" target="_blank" rel="noopener">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Print / PDF voucher
+          </a>
+          {% if receipt[9] %}
+          <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=receipt[9]) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-journal"/></svg> Journal entry
+          </a>
+          {% endif %}
+          <a href="{{ url_for('customers.customer_view', customer_id=customer_id) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-customers"/></svg> Customer card
+          </a>
+          <a href="{{ url_for('customers.customer_statement', customer_id=customer_id) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-ledger"/></svg> Statement
+          </a>
+          {% if may('customers.create') %}
+          <a href="{{ url_for('customers.new_customer_receipt') }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-receipt"/></svg> Add another receipt
+          </a>
+          {% endif %}
+          <a href="{{ url_for('customers.customer_receipts_list') }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-arrow-left"/></svg> All receipts
+          </a>
+        </div>
+      </div>
+    </section>
+  </aside>
+</div>
 {% endblock %}

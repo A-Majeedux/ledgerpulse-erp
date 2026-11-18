@@ -1431,7 +1431,8 @@ def credit_note_detail(credit_note_id):
         SELECT ccn.customer_credit_note_id, ccn.credit_note_no, c.name, ccn.note_date,
                ccn.status, ccn.subtotal, ccn.tax_total, ccn.total, ccn.reason, ccn.restock,
                ccn.journal_header_id, si.invoice_no, ccn.sales_invoice_id, ccn.notes,
-               ccn.accounting_date
+               ccn.accounting_date, ccn.customer_id,
+               c.ntn, c.strn, c.phone, c.email, c.address, c.city, c.province
         FROM customer_credit_notes ccn
         JOIN customers c ON c.customer_id = ccn.customer_id
         LEFT JOIN sales_invoices si ON si.sales_invoice_id = ccn.sales_invoice_id
@@ -1456,6 +1457,7 @@ def credit_note_detail(credit_note_id):
     from core import audit as _audit
     return render_template(
         "sales/credit_note_detail.html", note=note, lines=lines, journal_lines=journal_lines,
+        customer_id=note[15],
         history=_audit.history(org_id, "CustomerCreditNote", credit_note_id))
 
 

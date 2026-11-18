@@ -1,109 +1,244 @@
 {% extends "base.html" %}
 {% from "_doc_actions.html" import doc_actions with context %}
 {% from "_trail.html" import trail as doc_trail with context %}
-{% block title %}Vendor Payment{% endblock %}
+{% block title %}Payment Voucher {{ payment[1] }}{% endblock %}
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
+
+{% set gross = payment[3] or 0 %}
+{% set withheld = payment[12] or 0 if payment[10] else 0 %}
+{% set net = gross - withheld %}
+{% set method = payment[7] or 'Cash' %}
+
+{# The same shape as the invoice, the bill and the receipt (Rounds 22-23): the
+   vendor's own card, the payment's own card, what it settles - and a rail
+   carrying the money and the work. #}
 <div class="lp-page-header">
   <div class="lp-page-heading">
-    <h2 style="margin:0;">Payment Voucher {{ payment[1] }}</h2>
+    <h1 class="lp-page-title">
+      Payment Voucher{% if payment[1] %} <span style="color:var(--lp-text-muted); font-weight:600;">{{ payment[1] }}</span>{% endif %}
+    </h1>
+    <p class="lp-page-subtitle">
+      {{ payment[2] }} · {{ payment[4]|fmt_date }} · paid by {{ method }}
+    </p>
   </div>
   <div class="lp-page-actions">
-    {# Both prints live in the gear menu, as in the reference: the voucher and the
-       entry it wrote are two documents but one place to find them. #}
+    {% if payment[14] == 'Posted' %}
+      <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
+    {% else %}
+      <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">{{ payment[14] }}</span>
+    {% endif %}
+    <a href="{{ url_for('vendors.vendor_payment_print', vendor_payment_id=payment[0]) }}"
+       class="lp-btn sm" target="_blank" rel="noopener">Print</a>
     {{ doc_actions(menu) }}
   </div>
 </div>
 
 {{ doc_trail(trail) }}
 
-{# The voucher in the two parts a payment is read in - the paper that left the
-   bank, and the tax taken out of it before it did. #}
-<div class="lp-card" style="max-width: 760px;">
-  <table class="lp-table">
-    <tr><td style="width:220px; color:var(--lp-text-muted);">Vendor</td><td><strong>{{ payment[2] }}</strong></td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Amount (gross)</td><td class="amount">Rs. {{ "%.2f"|format(payment[3]) }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Date</td><td>{{ payment[4]|fmt_date }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Memo</td><td>{{ payment[5] or '—' }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Paid from</td><td>{{ payment[6] }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Method</td><td>{{ payment[7] }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Status</td><td><span class="lp-pill posted">{{ payment[14] }}</span></td></tr>
-  </table>
-</div>
+<div class="lp-doc-grid">
+  <div class="lp-doc-main">
 
-<div class="lp-tabs" data-lp-tabs style="max-width: 760px;">
-  <div class="lp-tab-strip">
-    <button type="button" class="lp-tab on">Cheques</button>
-    <button type="button" class="lp-tab">Withholding</button>
-  </div>
+    {# ---- who was paid ------------------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Vendor</h2>
+        <span class="lp-doc-card-note">{{ payment[17] and ('Vendor #' ~ payment[17]) or 'Vendor' }}</span>
+      </header>
+      <div class="body">
+        <div class="lp-party">
+          <div>
+            <div class="lp-party-label">Paid to</div>
+            <a class="lp-party-name" href="{{ url_for('vendors.vendor_detail', vendor_id=payment[17]) }}">{{ payment[2] }}</a>
+            {% set address_parts = [payment[22], payment[23]]|select|list %}
+            <div class="lp-party-sub">{{ address_parts|join(', ') if address_parts else 'No address on the vendor card yet' }}</div>
+          </div>
+          <div class="lp-party-badges">
+            {% if payment[15] %}<span class="lp-pill">{{ payment[15] }}</span>{% endif %}
+            <span class="lp-pill">{{ method }}</span>
+          </div>
+        </div>
 
-  <div class="lp-tab-panel">
-    <div class="lp-card">
-      <table class="lp-table">
-        <thead><tr><th>Number</th><th>Label</th><th>Bank</th><th>Date</th><th class="amount">Amount</th></tr></thead>
-        <tbody>
+        <table class="lp-kv">
           <tr>
-            <td>{{ payment[8] or '—' }}</td>
-            <td>{{ payment[5] or ('Bank payment to ' ~ payment[2]) }}</td>
-            <td>{{ payment[6] }}</td>
-            <td>{{ payment[9]|fmt_date if payment[9] else payment[4]|fmt_date }}</td>
-            <td class="amount">Rs. {{ "%.2f"|format(payment[3]) }}</td>
+            <th>NTN</th><td>{{ payment[18] or '—' }}</td>
+            <th>STRN</th><td>{{ payment[19] or '—' }}</td>
           </tr>
-        </tbody>
-      </table>
-      {% if payment[7] != 'Cheque' %}
-        <p style="margin:10px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
-          This payment was made by <strong>{{ payment[7] }}</strong>, so it carries no cheque number — it is recorded
-          against the account it left, above.
-        </p>
-      {% endif %}
-    </div>
-  </div>
+          <tr>
+            <th>Phone</th><td>{{ payment[20] or '—' }}</td>
+            <th>Email</th><td>{{ payment[21] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Address</th>
+            <td colspan="3">{{ [payment[22], payment[23]]|select|join(', ') or '—' }}</td>
+          </tr>
+        </table>
+      </div>
+    </section>
 
-  <div class="lp-tab-panel">
-    <div class="lp-card">
-      {% if payment[10] %}
+    {# ---- the payment's own details ------------------------------------ #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Payment details</h2>
+        <span class="lp-doc-card-note">{{ payment[14] }}</span>
+      </header>
+      <div class="body">
+        <table class="lp-kv">
+          <tr>
+            <th>Voucher number</th><td>{{ payment[1] or '—' }}</td>
+            <th>Date</th><td>{{ payment[4]|fmt_date }}</td>
+          </tr>
+          <tr>
+            <th>Method</th><td>{{ method }}</td>
+            <th>Paid from</th><td>{{ payment[6] }}</td>
+          </tr>
+          <tr>
+            <th>Cheque number</th><td>{{ payment[8] or '—' }}</td>
+            <th>Cheque date</th><td>{{ payment[9]|fmt_date if payment[9] else '—' }}</td>
+          </tr>
+          {% if payment[15] %}
+          <tr>
+            <th>LC / reference</th><td colspan="3">{{ payment[15] }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <th>Memo</th><td colspan="3">{{ payment[5] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Entry</th>
+            <td colspan="3">
+              {% if payment[13] %}
+                <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=payment[13]) }}">Journal entry #{{ payment[13] }}</a>
+              {% else %}Not posted yet{% endif %}
+            </td>
+          </tr>
+        </table>
+      </div>
+    </section>
+
+    {# ---- what it settles ---------------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Bills this payment settles</h2>
+        <span class="lp-doc-card-note">{{ allocations|length }} bill{{ '' if allocations|length == 1 else 's' }}</span>
+      </header>
+      <div class="body{% if allocations %} tight{% endif %}">
+        {% if allocations %}
+        <table class="lp-table">
+          <thead><tr><th>Bill number</th><th>Bill date</th><th class="amount">Allocated</th></tr></thead>
+          <tbody>
+            {% for alloc in allocations %}
+            <tr>
+              <td><a href="{{ url_for('vendors.vendor_bill_detail', vendor_bill_id=alloc[0]) }}">{{ alloc[1] }}</a></td>
+              <td>{{ alloc[2]|fmt_date }}</td>
+              <td class="amount">{{ active_currency|default('PKR') }} {{ (alloc[3])|money }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+        <div style="display:flex; justify-content:flex-end; padding:14px 16px;">
+          <div class="lp-doc-totals">
+            <table>
+              <tr><th>Payment total</th><td>{{ active_currency|default('PKR') }} {{ (gross)|money }}</td></tr>
+              <tr><th>Matched to bills</th><td>{{ active_currency|default('PKR') }} {{ (applied_total)|money }}</td></tr>
+              <tr class="grand"><th>Still unapplied</th><td>{{ active_currency|default('PKR') }} {{ (gross - applied_total)|money }}</td></tr>
+            </table>
+          </div>
+        </div>
+        {% else %}
+        <p style="margin:0; font-size:13px; color:var(--lp-text-muted);">
+          This payment was not matched to any bill, so the whole amount sits unapplied on the vendor's account.
+        </p>
+        {% endif %}
+      </div>
+    </section>
+
+    {# ---- the tax taken out of it --------------------------------------- #}
+    <section class="lp-doc-card">
+      <header><h2>Withholding</h2></header>
+      <div class="body{% if payment[10] %} tight{% endif %}">
+        {% if payment[10] %}
         <table class="lp-table">
           <thead><tr><th>Tax</th><th class="amount">Rate</th><th class="amount">Withheld</th><th class="amount">Net paid</th></tr></thead>
           <tbody>
             <tr>
               <td>Withholding tax on this payment</td>
               <td class="amount">{{ payment[11] }}%</td>
-              <td class="amount">Rs. {{ "%.2f"|format(payment[12] or 0) }}</td>
-              <td class="amount"><strong>Rs. {{ "%.2f"|format(payment[3] - (payment[12] or 0)) }}</strong></td>
+              <td class="amount">{{ active_currency|default('PKR') }} {{ (withheld)|money }}</td>
+              <td class="amount"><strong>{{ active_currency|default('PKR') }} {{ (net)|money }}</strong></td>
             </tr>
           </tbody>
         </table>
-        <p style="margin:10px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
+        <p style="margin:10px 16px 14px; font-size:12.5px; color:var(--lp-text-muted);">
           The vendor is paid the net; the withheld amount sits in the WHT payable account until it is deposited.
         </p>
-      {% else %}
-        <p style="margin:0; color:var(--lp-text-muted);">No withholding tax was taken out of this payment.</p>
-      {% endif %}
-    </div>
+        {% else %}
+        <p style="margin:0; font-size:13px; color:var(--lp-text-muted);">No withholding tax was taken out of this payment.</p>
+        {% endif %}
+      </div>
+    </section>
+
+    {% include '_history.html' %}
   </div>
-</div>
 
-{% if allocations %}
-<div class="lp-card" style="margin-top:20px; max-width:600px;">
-  <h3 style="margin-top:0; font-size:15px;">Allocated Bills</h3>
-  <table class="lp-table">
-    <thead><tr><th>Bill Number</th><th>Bill Date</th><th class="amount">Allocated Amount</th></tr></thead>
-    <tbody>
-      {% for alloc in allocations %}
-      <tr>
-        <td><a href="{{ url_for('vendors.vendor_bill_detail', vendor_bill_id=alloc[0]) }}">{{ alloc[1] }}</a></td>
-        <td>{{ alloc[2]|fmt_date }}</td>
-        <td class="amount">Rs. {{ "%.2f"|format(alloc[3]) }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
+  {# ---- the rail ------------------------------------------------------- #}
+  <aside class="lp-doc-rail">
+    <section class="lp-doc-card">
+      <header><h2>Amount</h2></header>
+      <div class="body">
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Paid (gross)</span>
+          <span class="lp-amount-figure big">{{ active_currency|default('PKR') }} {{ (gross)|money }}</span>
+        </div>
+        {% if payment[10] %}
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">WHT withheld</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ (withheld)|money }}</span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Net to the vendor</span>
+          <span class="lp-amount-figure clear">{{ active_currency|default('PKR') }} {{ (net)|money }}</span>
+        </div>
+        {% endif %}
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Paid on</span>
+          <span style="font-size:13px; font-weight:600;">{{ payment[4]|fmt_date }}</span>
+        </div>
+      </div>
+    </section>
 
-{% if payment[13] %}
-<p style="margin-top:16px;"><a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=payment[13]) }}" class="lp-btn">View Journal Entry</a></p>
-{% endif %}
-{% include '_history.html' %}
+    <section class="lp-doc-card">
+      <header><h2>Actions</h2></header>
+      <div class="body" style="padding:8px;">
+        <div class="lp-doc-actions">
+          <a href="{{ url_for('vendors.vendor_payment_print', vendor_payment_id=payment[0]) }}" target="_blank" rel="noopener">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Print / PDF voucher
+          </a>
+          {% if payment[13] %}
+          <a href="{{ url_for('vendors.vendor_payment_journal_print', vendor_payment_id=payment[0]) }}" target="_blank" rel="noopener">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Print the journal entry
+          </a>
+          <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=payment[13]) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-journal"/></svg> Journal entry
+          </a>
+          {% endif %}
+          <a href="{{ url_for('vendors.vendor_detail', vendor_id=payment[17]) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-vendor"/></svg> Vendor card
+          </a>
+          <a href="{{ url_for('vendors.vendor_ledger') }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-ledger"/></svg> Vendor ledger
+          </a>
+          {% if may('vendors.create') %}
+          <a href="{{ url_for('vendors.new_vendor_payment') }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-payment"/></svg> Add another payment
+          </a>
+          {% endif %}
+          <a href="{{ url_for('vendors.vendor_payments_list') }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-arrow-left"/></svg> All payments
+          </a>
+        </div>
+      </div>
+    </section>
+  </aside>
+</div>
 {% endblock %}

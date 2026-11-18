@@ -28,7 +28,7 @@
         <td>{{ cn[2] }}</td>
         <td>{{ cn[3] }}</td>
         <td><span class="lp-badge {{ 'success' if cn[4] == 'Posted' else 'warning' }}">{{ cn[4] }}</span></td>
-        <td class="amount">Rs. {{ "%.2f"|format(cn[5]) }}</td>
+        <td class="amount">Rs. {{ (cn[5])|money }}</td>
       </tr>
       {% else %}
       <tr>

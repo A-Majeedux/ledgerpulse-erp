@@ -341,7 +341,7 @@ class LandedCostOnABillTests(_OneCompanyPerTest):
         bill_id = self.the_bill_id()
         page = self.client.get(f"/vendors/bills/{bill_id}").get_data(as_text=True)
         self.assertNotIn("What these goods really cost", page)   # no charges, no panel
-        self.assertIn("40000.00", page)
+        self.assertIn("40,000.00", page)
         self.client.post(f"/vendors/bills/{bill_id}/post", data={"csrf_token": "test-csrf"})
         conn, cursor = self.raw()
         cursor.execute("SELECT COUNT(*) FROM products WHERE organization_id = %s AND last_landed_cost IS NOT NULL",

@@ -46,7 +46,7 @@
   {% endif %}
   His limit is {{ active_currency|default('PKR') }} {{ credit.limit_text }};
   {{ active_currency|default('PKR') }} {{ credit.used_text }} is already held against it (every invoice, less every
-  receipt), and this one adds {{ active_currency|default('PKR') }} {{ "{:,.2f}".format(grand_total) }} &mdash;
+  receipt), and this one adds {{ active_currency|default('PKR') }} {{ (grand_total)|money }} &mdash;
   over by {{ active_currency|default('PKR') }} {{ credit.over_by_text }}.
   Raise the limit on his card, or tick <em>Save anyway</em> beside Post and post it again.
 </div>
@@ -73,7 +73,7 @@
             {% if invoice[23] %}<span class="lp-pill">{{ invoice[23] }}</span>{% endif %}
             {% if invoice[6] %}<span class="lp-pill">{{ invoice[6] }}</span>{% endif %}
             {% if still_due and still_due > 0 and invoice[4] == 'Posted' %}
-              <span class="lp-pill overdue">Owes {{ active_currency|default('PKR') }} {{ "{:,.2f}".format(still_due) }}</span>
+              <span class="lp-pill overdue">Owes {{ active_currency|default('PKR') }} {{ (still_due)|money }}</span>
             {% elif invoice[4] == 'Posted' %}
               <span class="lp-pill posted">Settled</span>
             {% endif %}
@@ -169,13 +169,13 @@
                 <div style="font-weight:600;">{{ line[1] or line[0] }}</div>
                 <div style="font-size:11.5px; color:var(--lp-text-muted);">{{ line[2] }} · {{ line[3] }}</div>
               </td>
-              <td class="amount">{{ "%.2f"|format(line[5]) }}</td>
+              <td class="amount">{{ (line[5])|money }}</td>
               <td>{{ line[4] }}</td>
-              <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(line[6]) }}</td>
-              <td class="amount">{{ "%.2f"|format(line[7]) }}%</td>
-              <td class="amount">{{ "%.2f"|format(line[8]) }}</td>
+              <td class="amount">{{ active_currency|default('PKR') }} {{ (line[6])|money }}</td>
+              <td class="amount">{{ (line[7])|money }}%</td>
+              <td class="amount">{{ (line[8])|money }}</td>
               <td>{{ line[9] or '—' }}</td>
-              <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(line[11]) }}</td>
+              <td class="amount">{{ active_currency|default('PKR') }} {{ (line[11])|money }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -184,15 +184,15 @@
         <div style="display:flex; justify-content:flex-end; padding:14px 16px;">
           <div class="lp-doc-totals">
             <table>
-              <tr><th>Untaxed total</th><td>{{ active_currency|default('PKR') }} {{ "%.2f"|format(total_gross) }}</td></tr>
+              <tr><th>Untaxed total</th><td>{{ active_currency|default('PKR') }} {{ (total_gross)|money }}</td></tr>
               {% if total_discount %}
-              <tr><th>Discount</th><td style="color:var(--lp-coral-text);">-{{ active_currency|default('PKR') }} {{ "%.2f"|format(total_discount) }}</td></tr>
+              <tr><th>Discount</th><td style="color:var(--lp-coral-text);">-{{ active_currency|default('PKR') }} {{ (total_discount)|money }}</td></tr>
               {% endif %}
-              <tr><th>Sales tax</th><td>{{ active_currency|default('PKR') }} {{ "%.2f"|format(total_tax) }}</td></tr>
-              <tr class="grand"><th>Total</th><td>{{ active_currency|default('PKR') }} {{ "%.2f"|format(grand_total) }}</td></tr>
+              <tr><th>Sales tax</th><td>{{ active_currency|default('PKR') }} {{ (total_tax)|money }}</td></tr>
+              <tr class="grand"><th>Total</th><td>{{ active_currency|default('PKR') }} {{ (grand_total)|money }}</td></tr>
               {% if paid_amount %}
-              <tr><th>Receipts applied</th><td style="color:var(--lp-green-text);">-{{ active_currency|default('PKR') }} {{ "%.2f"|format(paid_amount) }}</td></tr>
-              <tr><th>Still due</th><td>{{ active_currency|default('PKR') }} {{ "%.2f"|format(still_due) }}</td></tr>
+              <tr><th>Receipts applied</th><td style="color:var(--lp-green-text);">-{{ active_currency|default('PKR') }} {{ (paid_amount)|money }}</td></tr>
+              <tr><th>Still due</th><td>{{ active_currency|default('PKR') }} {{ (still_due)|money }}</td></tr>
               {% endif %}
             </table>
 
@@ -201,8 +201,8 @@
             <table style="margin-top:4px;">
               {% for band in tax_breakdown %}
               <tr>
-                <th style="font-weight:500;">{{ band.label }} on {{ "%.2f"|format(band.taxed) }}</th>
-                <td>{{ "%.2f"|format(band.tax) }}</td>
+                <th style="font-weight:500;">{{ band.label }} on {{ (band.taxed)|money }}</th>
+                <td>{{ (band.tax)|money }}</td>
               </tr>
               {% endfor %}
             </table>
@@ -227,7 +227,7 @@
               <tr>
                 <td style="font-weight:600;">{{ receipt.voucher_no or ('#' ~ receipt.id) }}</td>
                 <td>{{ receipt.date.strftime('%d %b %Y') if receipt.date else '—' }}</td>
-                <td class="amount">{{ active_currency|default('PKR') }} {{ "{:,.2f}".format(receipt.amount) }}</td>
+                <td class="amount">{{ active_currency|default('PKR') }} {{ (receipt.amount)|money }}</td>
                 <td style="text-align:right;">
                   <a class="lp-btn ghost sm" href="{{ url_for('customers.customer_receipt_detail', customer_receipt_id=receipt.id) }}">Open</a>
                 </td>
@@ -259,7 +259,7 @@
                         data-voucher="{{ receipt.voucher_no or ('#' ~ receipt.id) }}"
                         data-left="{{ '{:.2f}'.format(receipt.left) }}">
                   {{ receipt.voucher_no or ('#' ~ receipt.id) }} · {{ receipt.date.strftime('%d %b %Y') if receipt.date else '' }}
-                  · unapplied {{ "{:,.2f}".format(receipt.left) }}
+                  · unapplied {{ (receipt.left)|money }}
                 </option>
               {% endfor %}
             </select>
@@ -267,7 +267,7 @@
           <div class="lp-form-group" style="margin:0; width:170px;">
             <label class="form-label">Amount</label>
             <input type="number" step="0.01" min="0.01" name="amount" id="match-receipt-amount"
-                   class="form-control" value="{{ '{:.2f}'.format(still_due) }}" required>
+                   class="form-control" value="{{ (still_due)|money }}" required>
           </div>
           <button type="submit" class="lp-btn primary sm">
             <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Match it
@@ -332,10 +332,10 @@
             {% for move in stock_moves %}
             <tr>
               <td>{{ move[0] }}</td>
-              <td class="amount">{{ "%.2f"|format(-move[2]) }} {{ move[1] }}</td>
-              <td class="amount">{{ "%.2f"|format(move[3]) }}</td>
-              <td class="amount">{{ "%.2f"|format(move[4]) }}</td>
-              <td class="amount">{{ "%.2f"|format(move[5]) }}</td>
+              <td class="amount">{{ (-move[2])|money }} {{ move[1] }}</td>
+              <td class="amount">{{ (move[3])|money }}</td>
+              <td class="amount">{{ (move[4])|money }}</td>
+              <td class="amount">{{ (move[5])|money }}</td>
             </tr>
             {% endfor %}
           </tbody>
@@ -354,17 +354,17 @@
       <div class="body">
         <div class="lp-amount-row">
           <span class="lp-amount-label">Amount paid</span>
-          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ "%.2f"|format(paid_amount) }}</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ (paid_amount)|money }}</span>
         </div>
         <div class="lp-amount-row">
           <span class="lp-amount-label">Amount outstanding</span>
           <span class="lp-amount-figure big {% if still_due > 0 %}due{% else %}clear{% endif %}">
-            {{ active_currency|default('PKR') }} {{ "%.2f"|format(still_due) }}
+            {{ active_currency|default('PKR') }} {{ (still_due)|money }}
           </span>
         </div>
         <div class="lp-amount-row">
           <span class="lp-amount-label">Invoice total</span>
-          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ "%.2f"|format(grand_total) }}</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ (grand_total)|money }}</span>
         </div>
         {% if invoice[3] and still_due > 0 and invoice[4] == 'Posted' %}
         <div class="lp-amount-row">
@@ -436,7 +436,7 @@
         </div>
         <div class="lp-amount-row">
           <span class="lp-amount-label">This invoice adds</span>
-          <span style="font-size:13px;">{{ active_currency|default('PKR') }} {{ "%.2f"|format(grand_total) }}</span>
+          <span style="font-size:13px;">{{ active_currency|default('PKR') }} {{ (grand_total)|money }}</span>
         </div>
         {% if credit.over %}
         <p style="margin:10px 0 0; font-size:12.5px; color:var(--lp-coral-text);">

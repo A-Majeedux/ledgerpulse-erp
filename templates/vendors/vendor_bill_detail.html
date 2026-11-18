@@ -145,29 +145,29 @@
           {% endif %}
         </td>
         <td>{{ line[1] }} — {{ line[2] }}</td>
-        <td class="amount">{{ "%.2f"|format(line[3]) }}</td>
+        <td class="amount">{{ (line[3])|money }}</td>
         <td>{{ line[9] }}</td>
-        <td class="amount">{{ "%.2f"|format(line[4]) }}</td>
-        <td class="amount">{{ ("%.2f"|format(line[10])) if line[10] and line[10] > 0 else '—' }}</td>
+        <td class="amount">{{ (line[4])|money }}</td>
+        <td class="amount">{{ (line[10])|money if line[10] and line[10] > 0 else '—' }}</td>
         <td>
           {% if line[14] and line[14] > 0 %}
-            {{ line[12] or 'Tax' }}<div style="font-size:11.5px; color:var(--lp-text-muted);">{{ "%.2f"|format(line[14]) }} at {{ line[13]|float|round(2) }}%</div>
+            {{ line[12] or 'Tax' }}<div style="font-size:11.5px; color:var(--lp-text-muted);">{{ (line[14])|money }} at {{ line[13]|float|round(2) }}%</div>
           {% else %}—{% endif %}
         </td>
-        <td class="amount">{{ "%.2f"|format(line[5]) }}</td>
+        <td class="amount">{{ (line[5])|money }}</td>
       </tr>
       {% endfor %}
       {% if bill[18] and bill[18] > 0 %}
       <tr style="color:var(--lp-text-muted);">
         <td colspan="9" style="text-align:right;">Untaxed</td>
-        <td class="amount">{{ "%.2f"|format(total - bill[18]) }}</td>
+        <td class="amount">{{ (total - bill[18])|money }}</td>
       </tr>
       <tr style="color:var(--lp-text-muted);">
         <td colspan="9" style="text-align:right;">Sales tax</td>
-        <td class="amount">{{ "%.2f"|format(bill[18]) }}</td>
+        <td class="amount">{{ (bill[18])|money }}</td>
       </tr>
       {% endif %}
-      <tr style="font-weight:700;"><td colspan="9">Total Amount Due</td><td class="amount">Rs. {{ "%.2f"|format(total) }}</td></tr>
+      <tr style="font-weight:700;"><td colspan="9">Total Amount Due</td><td class="amount">Rs. {{ (total)|money }}</td></tr>
     </tbody>
   </table>
 </div>
@@ -185,17 +185,17 @@
     <article class="kpi" style="--kpi-tint:#4B7CB8; --kpi-soft:#EAF1F9;">
       <div class="kpi-top"><span class="kpi-label">Goods</span>
         <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-vendor"/></svg></span></div>
-      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(landed_summary.goods_total) }}</div>
+      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ (landed_summary.goods_total)|money }}</div>
     </article>
     <article class="kpi" style="--kpi-tint:#E8833A; --kpi-soft:#FDF0E6;">
       <div class="kpi-top"><span class="kpi-label">LC charges</span>
         <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-coins"/></svg></span></div>
-      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(landed_summary.cost_total) }}</div>
+      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ (landed_summary.cost_total)|money }}</div>
     </article>
     <article class="kpi" style="--kpi-tint:#0EA5A0; --kpi-soft:#E6F7F5;">
       <div class="kpi-top"><span class="kpi-label">Landed value</span>
         <span class="kpi-icon"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg></span></div>
-      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "{:,.2f}".format(landed_summary.grand_total) }}</div>
+      <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ (landed_summary.grand_total)|money }}</div>
     </article>
   </div>
 
@@ -216,11 +216,11 @@
       <tr>
         <td>{{ row.label or '—' }}{% if row.account %}<div style="font-size:11.5px; color:var(--lp-text-muted);">{{ row.account }}</div>{% endif %}</td>
         <td>{{ row.product_name or '—' }}</td>
-        <td class="amount">{{ "{:,.2f}".format(row.quantity) }}</td>
-        <td class="amount">{{ "{:,.2f}".format(row.total) }}</td>
-        <td class="amount">{{ "{:,.2f}".format(row.allocated) }}</td>
-        <td class="amount">{{ "{:,.2f}".format(row.landed_total) }}</td>
-        <td class="amount" style="font-weight:700; color:var(--lp-accent-600);">{{ "{:,.2f}".format(row.unit_cost) }}</td>
+        <td class="amount">{{ (row.quantity)|money }}</td>
+        <td class="amount">{{ (row.total)|money }}</td>
+        <td class="amount">{{ (row.allocated)|money }}</td>
+        <td class="amount">{{ (row.landed_total)|money }}</td>
+        <td class="amount" style="font-weight:700; color:var(--lp-accent-600);">{{ (row.unit_cost)|money }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -249,9 +249,9 @@
       {% for move in stock_moves %}
       <tr>
         <td>{{ move[0] }}</td>
-        <td class="amount">+{{ "%.2f"|format(move[2]) }} {{ move[1] }}</td>
-        <td class="amount">{{ "%.2f"|format(move[3]) }}</td>
-        <td class="amount">{{ "%.2f"|format(move[4]) }}</td>
+        <td class="amount">+{{ (move[2])|money }} {{ move[1] }}</td>
+        <td class="amount">{{ (move[3])|money }}</td>
+        <td class="amount">{{ (move[4])|money }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -290,8 +290,8 @@
         <td>{{ jl[0] }} — {{ jl[1] }}</td>
         <td>{{ jl[2] or '—' }}</td>
         <td>{{ jl[3] or '—' }}</td>
-        <td class="amount">{{ "%.2f"|format(jl[4]) if jl[4] > 0 else '—' }}</td>
-        <td class="amount">{{ "%.2f"|format(jl[5]) if jl[5] > 0 else '—' }}</td>
+        <td class="amount">{{ (jl[4])|money if jl[4] > 0 else '—' }}</td>
+        <td class="amount">{{ (jl[5])|money if jl[5] > 0 else '—' }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -320,9 +320,9 @@
     <tr><td style="color:var(--lp-text-muted);">Journal</td><td>{{ bill[14] or '—' }}</td></tr>
     <tr><td style="color:var(--lp-text-muted);">Receipt date</td><td>{{ bill[5]|fmt_date if bill[5] else '—' }}</td></tr>
     <tr><td style="color:var(--lp-text-muted);">Accounting date</td><td>{{ bill[6]|fmt_date if bill[6] else '—' }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Bill total</td><td class="amount">Rs. {{ "%.2f"|format(total) }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Paid so far</td><td class="amount">Rs. {{ "%.2f"|format(bill[10] or 0) }}</td></tr>
-    <tr><td style="color:var(--lp-text-muted);">Amount due</td><td class="amount"><strong>Rs. {{ "%.2f"|format(bill[9] or 0) }}</strong></td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Bill total</td><td class="amount">Rs. {{ (total)|money }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Paid so far</td><td class="amount">Rs. {{ (bill[10] or 0)|money }}</td></tr>
+    <tr><td style="color:var(--lp-text-muted);">Amount due</td><td class="amount"><strong>Rs. {{ (bill[9] or 0)|money }}</strong></td></tr>
   </table>
 </div>
 
@@ -336,7 +336,7 @@
       <tr>
         <td><a href="{{ url_for('vendors.vendor_payment_detail', vendor_payment_id=alloc[0]) }}">{{ alloc[1] }}</a></td>
         <td>{{ alloc[2]|fmt_date }}</td>
-        <td class="amount">Rs. {{ "%.2f"|format(alloc[3]) }}</td>
+        <td class="amount">Rs. {{ (alloc[3])|money }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -356,22 +356,22 @@
       <div class="body">
         <div class="lp-amount-row">
           <span class="lp-amount-label">Paid so far</span>
-          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ "%.2f"|format(bill[10] or 0) }}</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ (bill[10] or 0)|money }}</span>
         </div>
         <div class="lp-amount-row">
           <span class="lp-amount-label">Amount due</span>
           <span class="lp-amount-figure big {% if (bill[9] or 0) > 0 %}due{% else %}clear{% endif %}">
-            {{ active_currency|default('PKR') }} {{ "%.2f"|format(bill[9] or 0) }}
+            {{ active_currency|default('PKR') }} {{ (bill[9] or 0)|money }}
           </span>
         </div>
         <div class="lp-amount-row">
           <span class="lp-amount-label">Bill total</span>
-          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ "%.2f"|format(total) }}</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ (total)|money }}</span>
         </div>
         {% if bill[18] and bill[18] > 0 %}
         <div class="lp-amount-row">
           <span class="lp-amount-label">Of which sales tax</span>
-          <span style="font-size:13px;">{{ active_currency|default('PKR') }} {{ "%.2f"|format(bill[18]) }}</span>
+          <span style="font-size:13px;">{{ active_currency|default('PKR') }} {{ (bill[18])|money }}</span>
         </div>
         {% endif %}
         {% if bill[4] and (bill[9] or 0) > 0 and bill[7] == 'Posted' %}

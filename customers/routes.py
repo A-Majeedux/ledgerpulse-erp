@@ -920,7 +920,8 @@ def customer_receipt_detail(customer_receipt_id):
         SELECT cr.customer_receipt_id, c.name, cr.amount, cr.receipt_date, cr.memo,
                coa.name, cr.has_wht, cr.wht_rate, cr.wht_amount, cr.journal_header_id,
                cr.voucher_no, cr.payment_type, cr.journal_name, cr.payment_method,
-               cr.cheque_no, cr.cheque_bank, cr.cheque_date
+               cr.cheque_no, cr.cheque_bank, cr.cheque_date,
+               c.customer_no, c.ntn, c.strn, c.phone, c.email, c.address, c.city, c.province
         FROM customer_receipts cr
         JOIN customers c ON c.customer_id = cr.customer_id
         JOIN chart_of_accounts coa ON coa.account_id = cr.deposit_to_account_id
@@ -958,6 +959,7 @@ def customer_receipt_detail(customer_receipt_id):
         "customers/customer_receipt_detail.html",
         history=audit_history(org_id, "CustomerReceipt", customer_receipt_id),
         receipt=receipt, allocations=allocations, unapplied=unapplied, trail=trail,
+        customer_id=customer_id,
         menu=build_menu("customer_receipt", customer_receipt_id, status="Posted",
                         user_id=current_user_id(), organization_id=org_id,
                         extra={"has_allocations": bool(allocations)}),

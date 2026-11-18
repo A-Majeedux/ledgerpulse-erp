@@ -2,9 +2,14 @@
 {% block title %}Batch Vendor Payments{% endblock %}
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Batch Vendor Payments</h2>
-  <a href="{{ url_for('vendors.new_batch_vendor_payment') }}" class="lp-btn primary">+ New Batch Payment</a>
+<div class="lp-page-header">
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">Batch Vendor Payments</h1>
+    <p class="lp-page-subtitle">One bank transaction paying several vendors at once</p>
+  </div>
+  <div class="lp-page-actions">
+    <a href="{{ url_for('vendors.new_batch_vendor_payment') }}" class="lp-btn primary">+ New Batch Payment</a>
+  </div>
 </div>
 <div class="lp-card">
   <table class="lp-table">
@@ -23,7 +28,7 @@
         <td>{{ batch[1] }}</td>
         <td>{{ batch[2]|fmt_date }}</td>
         <td>{{ batch[3] }}</td>
-        <td class="amount">{{ "%.2f"|format(batch[4]) }}</td>
+        <td class="amount">{{ (batch[4])|money }}</td>
         <td><span class="lp-pill posted">{{ batch[5] }}</span></td>
       </tr>
       {% else %}

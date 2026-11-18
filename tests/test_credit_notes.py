@@ -423,7 +423,7 @@ class _OneReturn(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertIn("Credit Note", body)
         self.assertIn("Returning Customer", body)
-        self.assertIn("7080.00", body)
+        self.assertIn("7,080.00", body)
 
     def test_the_note_keeps_its_own_history(self):
         note_id = self.raise_return()

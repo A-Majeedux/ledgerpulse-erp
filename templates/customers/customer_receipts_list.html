@@ -3,11 +3,16 @@
 {% block active_nav %}customers{% endblock %}
 {% block content %}
 {% from "_search.html" import search_bar with context %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Customer Receipts</h2>
-  {% if may('sales.post') %}
-    <a href="{{ url_for('customers.new_customer_receipt') }}" class="lp-btn primary"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Receipt</a>
-  {% endif %}
+<div class="lp-page-header">
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">Customer Receipts</h1>
+    <p class="lp-page-subtitle">Money received from customers, and what each receipt settled</p>
+  </div>
+  <div class="lp-page-actions">
+    {% if may('sales.post') %}
+      <a href="{{ url_for('customers.new_customer_receipt') }}" class="lp-btn primary"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Receipt</a>
+    {% endif %}
+  </div>
 </div>
 
 <div class="lp-tabs" role="tablist">
@@ -52,7 +57,7 @@
             {{ r[8] or '—' }}{% if r[9] %} <span style="color: var(--lp-text-muted);">({{ r[9].strftime('%d %b %Y') }})</span>{% endif %}
           {% else %}—{% endif %}
         </td>
-        <td class="amount">{{ "%.2f"|format(r[2]) }}</td>
+        <td class="amount">{{ (r[2])|money }}</td>
         <td>{% if r[4] %}<span class="lp-pill posted">Yes</span>{% else %}—{% endif %}</td>
         <td>
           <a href="{{ url_for('customers.customer_receipt_print', customer_receipt_id=r[0]) }}"

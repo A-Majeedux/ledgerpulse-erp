@@ -14,6 +14,7 @@ This file holds that shape in place: two key-value cards, a tax breakdown by
 rate, a rail that carries the money, and a register that says who posted each
 invoice and whether it is overdue.
 """
+import pathlib
 import unittest
 import uuid
 from decimal import Decimal as D
@@ -189,7 +190,7 @@ class _OneInvoice(unittest.TestCase):
         self.assertIn("Amount paid", rail)
         self.assertIn("Amount outstanding", rail)
         # 2 x 3,000 + 18% = 7,080.00, nothing paid yet
-        self.assertIn("7080.00", rail)
+        self.assertIn("7,080.00", rail)
 
     def test_the_rail_offers_the_work_in_one_place(self):
         # a fresh draft, so the rail is also offering the thing a draft needs
@@ -212,8 +213,8 @@ class _OneInvoice(unittest.TestCase):
     def test_the_tax_is_broken_down_by_rate(self):
         body = self.page()
         self.assertIn("Tax breakdown", body)
-        self.assertIn("Sales Tax 18% on 6000.00", body)
-        self.assertIn("1080.00", body)          # the tax itself
+        self.assertIn("Sales Tax 18% on 6,000.00", body)
+        self.assertIn("1,080.00", body)          # the tax itself
 
     def test_the_lines_carry_the_columns_the_paper_carries(self):
         body = self.page()
@@ -403,8 +404,117 @@ class _OneBill(unittest.TestCase):
         body = self.page()
         rail = body.split('class="lp-doc-rail"', 1)[1]
         self.assertIn("Amount due", rail)
-        self.assertIn("45000.00", rail)
+        self.assertIn("45,000.00", rail)
         self.assertIn("Post this bill", rail)
+
+
+class _EveryDocument(unittest.TestCase):
+    """One shape for the whole system.
+
+    Every transaction screen - invoice, bill, receipt, payment, batch payment,
+    both credit notes, the journal entry - is the same document with different
+    facts in it, so every one of them is built from the same parts. This walks
+    the templates and fails by name if a screen drifts: a screen that quietly
+    becomes the old one-table page again is caught here rather than by whoever
+    opens it next.
+    """
+
+    TEMPLATES = [
+        "templates/sales/sales_invoice_detail.html",
+        "templates/vendors/vendor_bill_detail.html",
+        "templates/customers/customer_receipt_detail.html",
+        "templates/vendors/vendor_payment_detail.html",
+        "templates/vendors/batch_vendor_payment_detail.html",
+        "templates/sales/credit_note_detail.html",
+        "templates/vendors/vendor_credit_note_detail.html",
+        "templates/accounting/journal_entry_detail.html",
+    ]
+
+    #: the parts every document screen is made of, and what each one is for
+    PARTS = {
+        'lp-page-header': "the title, the status pill and the print/gear menu",
+        'class="lp-doc-grid"': "the two columns",
+        'class="lp-doc-main"': "the document down the left",
+        'class="lp-doc-rail"': "the money and the actions on the right",
+        'class="lp-doc-card"': "the cards",
+        'class="lp-kv"': "the small key-value tables",
+        'class="lp-amount-row"': "the figures in the rail",
+        'class="lp-doc-actions"': "the list of things you can do",
+        "{% include '_history.html' %}": "who did what, and when",
+    }
+
+    def read(self, path):
+        return pathlib.Path(path).read_text()
+
+    def test_every_document_is_built_from_the_same_parts(self):
+        for path in self.TEMPLATES:
+            body = self.read(path)
+            for part, meaning in self.PARTS.items():
+                with self.subTest(template=path, part=meaning):
+                    self.assertIn(part, body,
+                                  "%s is missing %s (%s)" % (path, part, meaning))
+
+    def test_every_document_shows_money_the_same_way(self):
+        """One filter, so 1,234.56 reads the same on every screen."""
+        for path in self.TEMPLATES:
+            body = self.read(path)
+            with self.subTest(template=path):
+                self.assertIn("|money", body,
+                              "%s does not render its money through the money filter" % path)
+                # Data attributes and input values stay bare: the page's own
+                # JavaScript has to be able to read them as numbers.
+                for line in body.splitlines():
+                    if "data-" in line or "value=" in line:
+                        continue
+                    for legacy in ('"%.2f"|format', "'{:.2f}'", "'{:,.2f}'"):
+                        self.assertNotIn(legacy, line,
+                                         "%s still formats money by hand: %s" % (path, line.strip()))
+
+    def test_the_rail_is_on_the_right_and_the_document_on_the_left(self):
+        for path in self.TEMPLATES:
+            body = self.read(path)
+            with self.subTest(template=path):
+                self.assertLess(body.index('class="lp-doc-main"'),
+                                body.index('class="lp-doc-rail"'),
+                                "%s puts the rail before the document" % path)
+
+
+class _EveryRegister(unittest.TestCase):
+    """The registers wear the same header and show money the same way.
+
+    A register is the list of one kind of document. They were written at
+    different times, so three of them still opened with a bare <h2>; they all
+    open with the same page header now, and none of them formats money by hand.
+    """
+
+    REGISTERS = [
+        "templates/sales/sales_invoices_list.html",
+        "templates/sales/credit_notes_list.html",
+        "templates/customers/customer_receipts_list.html",
+        "templates/vendors/vendor_bills_list.html",
+        "templates/vendors/vendor_credit_notes_list.html",
+        "templates/vendors/vendor_payments_list.html",
+        "templates/vendors/batch_vendor_payments_list.html",
+        "templates/accounting/journal_entries_list.html",
+    ]
+
+    def test_every_register_opens_with_the_same_header(self):
+        for path in self.REGISTERS:
+            body = pathlib.Path(path).read_text()
+            with self.subTest(template=path):
+                self.assertIn('class="lp-page-header"', body,
+                              "%s has no page header" % path)
+                self.assertIn('class="lp-page-title"', body,
+                              "%s has no page title" % path)
+                self.assertIn('class="lp-table"', body,
+                              "%s does not draw a table" % path)
+
+    def test_every_register_shows_money_the_same_way(self):
+        for path in self.REGISTERS:
+            body = pathlib.Path(path).read_text()
+            with self.subTest(template=path):
+                self.assertIn("|money", body,
+                              "%s does not render its money through the money filter" % path)
 
 
 if __name__ == "__main__":

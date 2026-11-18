@@ -1536,3 +1536,43 @@ it is new; nothing that existed was redefined, so no other screen changed.
 
 Suite: **387 passed**. Live: `/sales/invoices`, `/sales/invoices/32`, `/vendors/bills/28` all answer 200 with
 two key-value cards each and the rail in place.
+
+## 39. One shape, every document (Round 23)
+
+Round 22 built the invoice as a document: the customer in one card, the invoice in another, the money and the
+work in a rail. The bill followed. Everything else - the receipt, the payment, the batch payment, both credit
+notes, the journal entry - was still the older page: one table of facts, a stray button in the corner, and no
+statement of what the thing was worth.
+
+They are all the same document now, and there is a test that keeps them that way:
+
+* **The same parts, by name.** `lp-page-header` (title, status pill, print), `lp-doc-grid` with `lp-doc-main`
+  down the left and `aside.lp-doc-rail` on the right, `lp-doc-card` for each block, `lp-kv` for the small
+  fact-tables, `lp-amount-row` for the figures, `lp-doc-actions` for the work, and the Activity card at the
+  foot. `tests/test_document_layout.py::_EveryDocument` walks all eight templates and fails by name if one of
+  them drifts back.
+* **Who it is with, then what it is.** The receipt shows the customer's card (number, NTN, STRN, phone, email,
+  address) beside the receipt's own card (voucher, method, journal, deposited-to, entry). The payment shows the
+  vendor's card beside the payment's own. Each credit note shows the party it credits and its own dates,
+  reason, invoice/bill and entry. A batch payment has no single party, so it shows its own facts and the vendors
+  inside it.
+* **What it settles, under the document.** The receipt lists the invoices it settles and whether anything is
+  left unapplied; the payment lists the bills; a credit note lists its lines with the totals under them.
+* **The rail carries the money the document is about** - received and unapplied, paid and withheld, credited,
+  or the two sides of a journal entry - and then the work: print, its entry, the party's card, the statement or
+  ledger, add another, all of them `may(...)`-gated.
+* **A journal entry knows what wrote it.** "Written by" names the document in words (Sales invoice, Customer
+  receipt, Vendor credit note…) and links to it, so the entry leads back to the paper.
+* **One way to write money.** A `money` filter (`core/template_context.py`) renders `1,234.56` - the same on
+  every card, every rail, every register. The detail screens used to print `16000.00` while the lists printed
+  `16,000.00`. Data attributes and input values stay bare, because the page's own JavaScript has to read them
+  as numbers, and a test says so.
+* **The registers open the same way too.** Customer receipts, vendor bills and batch payments had a bare `<h2>`
+  where every other register had a page header; they have the header now. `_EveryRegister` holds the eight
+  registers to the same rule, including the money filter.
+
+The demo company gained a vendor payment (matched to a posted bill), a batch payment over two vendors and a
+vendor credit note against a draft bill, so every document screen has something real to show.
+
+Suite: **392 passed** (104 subtests). Live, all 200 with the grid and the rail: invoice 32, bill 28, receipt 5,
+payment 2, batch 1, credit note CN/2026/00001, vendor credit note 1, journal entries 25 (posted) and 7 (draft).

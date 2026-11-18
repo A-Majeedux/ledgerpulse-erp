@@ -310,7 +310,7 @@ class _Stocked(unittest.TestCase):
         self.assertEqual(self.on_hand(), 6)
         page = self.client.get(f"/sales/invoices/{invoice_id}").get_data(as_text=True)
         self.assertIn("What this invoice took out of stock", page)
-        self.assertIn("-18000.00", page)               # 4 x 4,500, written as it went out
+        self.assertIn("-18,000.00", page)               # 4 x 4,500, written as it went out
 
     def test_resetting_the_invoice_puts_the_goods_back(self):
         self.post_bill([(self.product_id, 10, 2500, "Goods", "5000")])

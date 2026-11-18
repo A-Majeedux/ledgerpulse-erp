@@ -3,9 +3,14 @@
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
 {% from "_search.html" import search_bar with context %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Vendor Payments</h2>
-  <a href="{{ url_for('vendors.new_vendor_payment') }}" class="lp-btn primary">+ New Payment</a>
+<div class="lp-page-header">
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">Vendor Payments</h1>
+    <p class="lp-page-subtitle">Money paid to vendors, and the bills each payment settled</p>
+  </div>
+  <div class="lp-page-actions">
+    <a href="{{ url_for('vendors.new_vendor_payment') }}" class="lp-btn primary">+ New Payment</a>
+  </div>
 </div>
 {{ search_bar(url_for('vendors.vendor_payments_list'), search, statuses=['Draft', 'Posted'], note='Voucher number, vendor, memo or cheque…', suggestions=suggestions) }}
 
@@ -28,7 +33,7 @@
         <td style="font-weight:600;">{{ p[7] or '—' }}</td>
         <td>{{ p[1] }}</td>
         <td>{{ p[3]|fmt_date }}</td>
-        <td class="amount">{{ "%.2f"|format(p[2]) }}</td>
+        <td class="amount">{{ (p[2])|money }}</td>
         <td>{{ p[4] }}</td>
         <td>{% if p[5] %}<span class="lp-pill posted">Yes</span>{% else %}—{% endif %}</td>
         <td><span class="lp-pill {{ 'posted' if p[6] == 'Paid' else 'draft' }}">{{ p[6] }}</span></td>

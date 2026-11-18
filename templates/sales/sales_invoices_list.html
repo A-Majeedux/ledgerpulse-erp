@@ -49,9 +49,9 @@
         <td style="font-weight:600;">{{ inv[1] }}</td>
         <td style="color:var(--lp-text-muted);">{{ inv[9] or '—' }}</td>
         <td style="color:var(--lp-text-muted);">{{ inv[10] or '—' }}</td>
-        <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(inv[5]) }}</td>
+        <td class="amount">{{ active_currency|default('PKR') }} {{ (inv[5])|money }}</td>
         <td class="amount" style="{% if outstanding <= 0 %}color: var(--lp-text-muted);{% endif %}">
-          {{ active_currency|default('PKR') }} {{ "%.2f"|format(outstanding) }}
+          {{ active_currency|default('PKR') }} {{ (outstanding)|money }}
         </td>
         <td>{% if inv[4] == 'Posted' %}Yes{% else %}No{% endif %}</td>
         <td>

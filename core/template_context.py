@@ -41,6 +41,22 @@ def fmt_money_print(value):
         return f"{value} Rs"
 
 
+def lp_money(value):
+    """Money the way the screens read it: 1,234.56 - thousands separated.
+
+    One filter for every document, so the invoice, the bill, the receipt, the
+    payment and the credit notes all show a figure the same way the list
+    screens and the print pages already do.
+    """
+    if value is None or value == "":
+        return "0.00"
+    try:
+        from decimal import Decimal
+        return f"{Decimal(str(value)):,.2f}"
+    except Exception:
+        return str(value)
+
+
 def fmt_qty_print(value):
     if value is None:
         return ""
@@ -67,6 +83,7 @@ def register_context_processors(app):
     app.template_filter('fmt_date_print')(fmt_date_print)
     app.template_filter('fmt_money_print')(fmt_money_print)
     app.template_filter('fmt_qty_print')(fmt_qty_print)
+    app.template_filter('money')(lp_money)
     app.template_filter('safe_str')(safe_str)
 
     @app.context_processor

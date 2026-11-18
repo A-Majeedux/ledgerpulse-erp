@@ -3,9 +3,12 @@
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
 {% from "_search.html" import search_bar with context %}
-<div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 16px;">
-  <h2 style="margin:0;">Vendor Bills</h2>
-  <div style="display:flex; gap:8px;">
+<div class="lp-page-header">
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">Vendor Bills</h1>
+    <p class="lp-page-subtitle">What the company owes its vendors, standard bills and imports alike</p>
+  </div>
+  <div class="lp-page-actions">
     <a href="{{ url_for('vendors.new_import_bill') }}" class="lp-btn secondary"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Import Bill (LC)</a>
     <a href="{{ url_for('vendors.new_vendor_bill') }}" class="lp-btn primary"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Vendor Bill</a>
   </div>
@@ -48,7 +51,7 @@
         </td>
         <td>{{ bill[2]|fmt_date }}</td>
         <td>{{ bill[3]|fmt_date }}</td>
-        <td class="amount">{{ "%.2f"|format(bill[5]) }}</td>
+        <td class="amount">{{ (bill[5])|money }}</td>
         <td>
           {% if bill[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
           {% else %}<span class="lp-pill draft">Draft</span>{% endif %}

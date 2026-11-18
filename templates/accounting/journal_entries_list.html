@@ -34,7 +34,7 @@
         <td style="font-weight: 500;">{{ entry[2].strftime('%d %b %Y') if entry[2] else '—' }}</td>
         <td style="font-family: monospace; font-weight: 600;">{{ entry[1] or '(no reference)' }}</td>
         <td>{{ entry[3] }}</td>
-        <td class="amount">${{ "%.2f"|format(entry[5]) }}</td>
+        <td class="amount">${{ (entry[5])|money }}</td>
         <td>
           {% if entry[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
           {% else %}<span class="lp-pill draft">Draft</span>{% endif %}

@@ -1449,8 +1449,11 @@ def vendor_credit_note_detail(vendor_credit_note_id):
     cursor = conn.cursor()
     cursor.execute("""
         SELECT cn.vendor_credit_note_id, cn.credit_note_number, v.name, cn.credit_date, cn.status,
-               cn.journal_header_id, cn.original_bill_id
-        FROM vendor_credit_notes cn JOIN vendors v ON v.vendor_id = cn.vendor_id
+               cn.journal_header_id, cn.original_bill_id,
+               cn.vendor_id, v.ntn, v.strn, v.phone, v.email, v.address, v.city, vb.bill_number
+        FROM vendor_credit_notes cn
+        JOIN vendors v ON v.vendor_id = cn.vendor_id
+        LEFT JOIN vendor_bills vb ON vb.vendor_bill_id = cn.original_bill_id
         WHERE cn.vendor_credit_note_id = %s AND cn.organization_id = %s
     """, (vendor_credit_note_id, org_id))
     cn = cursor.fetchone()
@@ -1469,7 +1472,8 @@ def vendor_credit_note_detail(vendor_credit_note_id):
     conn.close()
 
     total = sum((to_decimal(l[5]) for l in lines), to_decimal(0))
-    return render_template("vendors/vendor_credit_note_detail.html", cn=cn, lines=lines, total=total)
+    return render_template("vendors/vendor_credit_note_detail.html", cn=cn, lines=lines, total=total,
+                           history=audit.history(org_id, "VendorCreditNote", vendor_credit_note_id))
 
 
 @bp.route("/credit-notes/<int:vendor_credit_note_id>/post", methods=["POST"])
@@ -1489,6 +1493,8 @@ def post_vendor_credit_note(vendor_credit_note_id):
     try:
         post_journal_entry(cursor, jh_id)
         cursor.execute("UPDATE vendor_credit_notes SET status = 'Posted' WHERE vendor_credit_note_id = %s", (vendor_credit_note_id,))
+        audit.note(cursor, org_id, "VendorCreditNote", vendor_credit_note_id, "Posted",
+                   "Posted to the books")
         conn.commit()
     except UnbalancedEntryError:
         conn.rollback()
@@ -1755,7 +1761,8 @@ def vendor_payment_detail(vendor_payment_id):
         SELECT vp.vendor_payment_id, vp.voucher_number, v.name, vp.amount, vp.payment_date, vp.memo,
                coa.name, vp.payment_method, vp.cheque_number, vp.cheque_date,
                vp.has_wht, vp.wht_rate, vp.wht_amount, vp.journal_header_id, vp.status,
-               vp.lc_reference, vp.vendor_bank_account, vp.vendor_id
+               vp.lc_reference, vp.vendor_bank_account, vp.vendor_id,
+               v.ntn, v.strn, v.phone, v.email, v.address, v.city
         FROM vendor_payments vp
         JOIN vendors v ON v.vendor_id = vp.vendor_id
         JOIN chart_of_accounts coa ON coa.account_id = vp.paid_from_account_id
@@ -1787,7 +1794,9 @@ def vendor_payment_detail(vendor_payment_id):
     conn.close()
     if not payment:
         abort(404)
+    applied_total = sum((to_decimal(row[3] or 0) for row in allocations), to_decimal(0))
     return render_template("vendors/vendor_payment_detail.html", payment=payment, allocations=allocations,
+                           applied_total=applied_total,
                            history=audit.history(org_id, "VendorPayment", vendor_payment_id),
                            trail=trail,
                            menu=build_menu("vendor_payment", vendor_payment_id, status=payment[14],

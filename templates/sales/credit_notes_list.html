@@ -35,7 +35,7 @@
         <td>{{ note[3].strftime('%d %b %Y') if note[3] else '—' }}</td>
         <td>{{ note[6] }}</td>
         <td>{{ note[7] or '—' }}</td>
-        <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(note[5] or 0) }}</td>
+        <td class="amount">{{ active_currency|default('PKR') }} {{ (note[5] or 0)|money }}</td>
         <td>{% if note[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
             {% else %}<span class="lp-pill draft">Draft</span>{% endif %}</td>
       </tr>
