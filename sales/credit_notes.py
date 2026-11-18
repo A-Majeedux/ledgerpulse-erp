@@ -18,12 +18,9 @@ nobody could print for the customer. This is the document itself:
 Posting twice is impossible and resetting is allowed - the same rules as every
 other transaction in the app.
 """
-from decimal import Decimal
-
 from core.money import money_round, to_decimal
-from core.db import get_conn
 from core import stock, audit
-from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
+from accounting.services import create_journal_entry, post_journal_entry
 
 REASONS = ["Return", "Allowance", "Correction", "Discount"]
 TRADE_RECEIVABLES = "1100"
@@ -182,8 +179,20 @@ def save_lines(cursor, organization_id, credit_note_id, form):
 
 
 def journal_lines_for(cursor, organization_id, credit_note_id, customer_name, number):
-    """The contra entry: revenue down, tax down, the customer owes less."""
+    """The contra entry: revenue down, tax down, the customer owes less.
+
+    And, because the goods are back on the shelf, the cost comes back out of the
+    expense with them: Stock on Hand is debited and Cost of Goods Sold credited
+    with what those goods cost when they left. Without that pair the return would
+    look profitable - the sale's cost would stay in the expense while its revenue
+    came back out of it.
+    """
     lines = read_lines(cursor, organization_id, credit_note_id)
+    cursor.execute("SELECT restock FROM customer_credit_notes "
+                   "WHERE customer_credit_note_id = %s AND organization_id = %s",
+                   (credit_note_id, organization_id))
+    row = cursor.fetchone()
+    restock = bool(row and row[0])
     receivable = _account_id_by_code(cursor, organization_id, TRADE_RECEIVABLES)
     output_tax = _account_id_by_code(cursor, organization_id, OUTPUT_TAX)
     if not receivable:
@@ -225,6 +234,31 @@ def journal_lines_for(cursor, organization_id, credit_note_id, customer_name, nu
             "label": f"Output sales tax reversed - {number}",
             "debit": money_round(tax_total), "credit": 0,
         })
+
+    # the cost of the goods that came back, out of the expense and into stock
+    if restock:
+        cost_back = to_decimal(0)
+        for line in lines:
+            if line[1] and to_decimal(line[8]) > 0:
+                cost_back += money_round(to_decimal(line[8]) * to_decimal(line[15]))
+        cost_back = money_round(cost_back)
+        if cost_back > 0:
+            stock_account = stock.stock_account_id(cursor, organization_id)
+            cogs_account = stock.cogs_account_id(cursor, organization_id)
+            if not stock_account or not cogs_account:
+                raise CreditNoteError(
+                    "This company has no 1200 Stock on Hand or 5000 Cost of Goods Sold account, "
+                    "so the cost of the returned goods cannot be put back.")
+            entry.append({
+                "account_id": stock_account, "partner_name": None,
+                "label": f"{stock.COGS_LABEL} returned - {number}",
+                "debit": cost_back, "credit": 0,
+            })
+            entry.append({
+                "account_id": cogs_account, "partner_name": None,
+                "label": f"{stock.COGS_LABEL} returned - {number}",
+                "debit": 0, "credit": cost_back,
+            })
     return entry
 
 

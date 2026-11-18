@@ -332,6 +332,25 @@ class _OneReturn(unittest.TestCase):
         self.assertEqual(unit_cost, D("2000.0000"),
                          "goods must come back at what they cost, not at today's average")
 
+    def test_the_cost_comes_out_of_the_expense_with_the_goods(self):
+        before = (self.balance_of("1200"), self.balance_of("5000"))
+        note_id = self.raise_return()
+        self.client.post(f"/sales/credit-notes/{note_id}/post", data={"csrf_token": "test-csrf"})
+        after = (self.balance_of("1200"), self.balance_of("5000"))
+        self.assertEqual(after[0] - before[0], D("4000.00"), "the goods are stock again")
+        self.assertEqual(after[1] - before[1], D("-4000.00"), "and no longer an expense")
+
+    def test_the_stock_account_agrees_with_the_shelf_after_a_return(self):
+        note_id = self.raise_return()
+        self.client.post(f"/sales/credit-notes/{note_id}/post", data={"csrf_token": "test-csrf"})
+        conn, cursor = self.db()
+        cursor.execute("SELECT COALESCE(SUM(value), 0) FROM stock_movements WHERE organization_id = %s",
+                       (self.org_id,))
+        shelf = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        self.assertEqual(self.balance_of("1200"), shelf)
+
     def test_an_allowance_puts_no_goods_back(self):
         note_id = self.raise_return(quantity=1, restock=None)
         self.client.post(f"/sales/credit-notes/{note_id}/post", data={"csrf_token": "test-csrf"})
@@ -357,7 +376,9 @@ class _OneReturn(unittest.TestCase):
         cursor.close()
         conn.close()
         self.assertEqual(debit, credit)
-        self.assertEqual(debit, D("7080.00"))
+        # the entry carries what the customer owes (7,080) and, because the goods
+        # came back, the 4,000 they cost when they left
+        self.assertEqual(debit, D("11080.00"))
 
     # ---- taking it back ------------------------------------------------
 
