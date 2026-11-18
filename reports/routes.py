@@ -4,6 +4,7 @@ from flask import Blueprint, abort, render_template, request
 
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
+from auth.services import require_permission
 from reports.services import (
     fetch_trial_balance_rows,
     fetch_unbalanced_entries,
@@ -32,6 +33,7 @@ def _parse_date(value, fallback):
 
 @bp.route("/trial-balance")
 @require_organization
+@require_permission("reports.view")
 def trial_balance():
     org_id = current_organization_id()
     as_at = _parse_date(request.args.get("as_at"), date.today())
@@ -81,6 +83,7 @@ def trial_balance():
 
 @bp.route("/general-ledger")
 @require_organization
+@require_permission("reports.view")
 def general_ledger():
     org_id = current_organization_id()
     from_date = _parse_date(request.args.get("from"), None)

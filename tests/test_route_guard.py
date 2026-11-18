@@ -22,7 +22,20 @@ from decimal import Decimal as D
 from _people import member, viewer
 
 # The modules whose every route is behind a permission. Grows a module per round.
-GUARDED_MODULES = {"sales", "accounting", "vendors", "customers"}
+GUARDED_MODULES = {"sales", "accounting", "vendors", "customers", "reports", "wht", "organizations"}
+
+# Routes in a finished module that are open on purpose, and why. Every one of
+# them has to be listed here by name: a new ungated route fails the test rather
+# than quietly joining the list.
+OPEN_BY_DESIGN = {
+    # Choosing which company to work in happens *before* a company is chosen, so
+    # there is no company to ask about yet. The picker shows only the companies
+    # the person belongs to, and the switch checks membership itself.
+    "organizations.pick_organization": "no company chosen yet; lists only the person's own companies",
+    "organizations.switch_organization": "checks membership of the target company itself",
+    # Creating a company is the platform's own move, not a customer's.
+    "organizations.new_organization": "requires the platform administrator",
+}
 
 # Routes that are not a company's business: signing in, setting up the very first
 # account, and the platform's own administration.
@@ -49,7 +62,7 @@ class TheRouteTableTests(unittest.TestCase):
             for rule in self.routes_of(module):
                 checked += 1
                 view = self.app.view_functions[rule.endpoint]
-                if not getattr(view, "required_permission", None):
+                if not getattr(view, "required_permission", None) and rule.endpoint not in OPEN_BY_DESIGN:
                     unguarded.append(f"{sorted(rule.methods - {'HEAD', 'OPTIONS'})} {rule} "
                                      f"({rule.endpoint})")
         self.assertEqual(unguarded, [],

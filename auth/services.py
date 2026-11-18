@@ -467,6 +467,58 @@ def get_organization_roles(organization_id):
     return roles
 
 
+def permission_codes_of(user_id, organization_id):
+    """The rights a person actually holds in a company, as permission codes."""
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT DISTINCT p.code
+        FROM organization_memberships om
+        JOIN role_permissions rp ON rp.role_id = om.role_id
+        JOIN permissions p ON p.permission_id = rp.permission_id
+        WHERE om.user_id = %s AND om.organization_id = %s
+    """, (user_id, organization_id))
+    codes = {row[0] for row in cursor.fetchall()}
+    cursor.close()
+    conn.close()
+    return codes
+
+
+def codes_of_permission_ids(permission_ids):
+    """Turn a list of permission ids into their codes (ignores junk)."""
+    wanted = [int(pid) for pid in permission_ids if str(pid).strip().isdigit()]
+    if not wanted:
+        return set()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("SELECT code FROM permissions WHERE permission_id = ANY(%s)", (wanted,))
+    codes = {row[0] for row in cursor.fetchall()}
+    cursor.close()
+    conn.close()
+    return codes
+
+
+def ensure_can_grant(organization_id, actor_user_id, permission_ids):
+    """A person cannot hand out a right he does not hold himself.
+
+    Without this, `users.manage` quietly becomes every permission in the system:
+    whoever may add a user could give that user - or his own role - the right to
+    post journals, delete invoices and change the company's books. The platform
+    administrator is the one exception, because the whole installation is his.
+    Raises ValueError naming the rights that were refused.
+    """
+    if is_platform_admin():
+        return
+    mine = permission_codes_of(actor_user_id, organization_id)
+    wanted = codes_of_permission_ids(permission_ids)
+    refused = sorted(wanted - mine)
+    if refused:
+        raise ValueError(
+            "You cannot grant a right you do not hold yourself: "
+            + ", ".join(refused)
+        )
+
+
 def save_organization_role(organization_id, role_id, name, description, permission_ids, actor_user_id, ip_address=None):
     conn = get_conn()
     cursor = conn.cursor()
@@ -486,6 +538,9 @@ def save_organization_role(organization_id, role_id, name, description, permissi
                 RETURNING role_id
             """, (organization_id, name.strip(), description))
             role_id = cursor.fetchone()[0]
+
+        # Nobody can build a role bigger than himself (see ensure_can_grant).
+        ensure_can_grant(organization_id, actor_user_id, permission_ids)
 
         cursor.execute("DELETE FROM role_permissions WHERE role_id = %s", (role_id,))
         for pid in permission_ids:
@@ -510,18 +565,55 @@ def save_organization_role(organization_id, role_id, name, description, permissi
         conn.close()
 
 
-def has_feature(organization_id, module_code):
+def clone_organization_role(organization_id, source_role_id, actor_user_id, ip_address=None):
+    """Copy a role into an editable role of the company's own.
+
+    The built-in roles are not editable - they are the floor the system stands on
+    - so the way to start from one is to copy it. A copy never holds more than
+    the person making it holds: the rest is reported back, so he knows exactly
+    what he did not get rather than finding out by being refused later.
+    """
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT 1 FROM organization_subscriptions os
-        JOIN plan_features pf ON pf.plan_id = os.plan_id
-        WHERE os.organization_id = %s AND pf.module_code = %s AND os.status IN ('TRIAL', 'ACTIVE', 'GRACE_PERIOD')
-    """, (organization_id, module_code))
-    row = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return bool(row)
+    try:
+        cursor.execute("SELECT role_id, name, description FROM roles "
+                       "WHERE role_id = %s AND (organization_id IS NULL OR organization_id = %s)",
+                       (source_role_id, organization_id))
+        row = cursor.fetchone()
+        if not row:
+            raise ValueError("That role is not one of this company's.")
+        source_name, source_description = row[1], row[2]
+
+        cursor.execute("""SELECT p.permission_id, p.code FROM role_permissions rp
+                          JOIN permissions p ON p.permission_id = rp.permission_id
+                          WHERE rp.role_id = %s""", (source_role_id,))
+        source_rights = cursor.fetchall()
+    finally:
+        cursor.close()
+        conn.close()
+
+    mine = None if is_platform_admin() else permission_codes_of(actor_user_id, organization_id)
+    granted, refused = [], []
+    for permission_id, code in source_rights:
+        if mine is None or code in mine:
+            granted.append(permission_id)
+        else:
+            refused.append(code)
+
+    name = f"{source_name} (copy)"
+    suffix = 2
+    existing = {role[1] for role in get_organization_roles(organization_id)}
+    while name in existing:
+        name = f"{source_name} (copy {suffix})"
+        suffix += 1
+
+    role_id = save_organization_role(
+        organization_id=organization_id, role_id=None, name=name,
+        description=f"Copied from the built-in {source_name} role. {source_description or ''}".strip(),
+        permission_ids=[str(pid) for pid in granted], actor_user_id=actor_user_id,
+        ip_address=ip_address,
+    )
+    return role_id, name, sorted(refused)
 
 
 def generate_csrf_token():

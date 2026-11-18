@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, abort
 from core.db import get_conn
 from core.context import current_organization_id, require_organization
+from auth.services import require_permission
 from core.money import to_decimal
 
 bp = Blueprint("wht", __name__, url_prefix="/tax-rates")
@@ -27,6 +28,7 @@ def get_active_tax_rates(org_id):
 
 @bp.route("/")
 @require_organization
+@require_permission("accounting.view")
 def tax_rates_list():
     org_id = current_organization_id()
     conn = get_conn()
@@ -43,6 +45,7 @@ def tax_rates_list():
 
 @bp.route("/new", methods=["GET", "POST"])
 @require_organization
+@require_permission("accounting.create")
 def new_tax_rate():
     org_id = current_organization_id()
     if request.method == "POST":
@@ -61,6 +64,7 @@ def new_tax_rate():
 
 @bp.route("/<int:tax_rate_id>/toggle", methods=["POST"])
 @require_organization
+@require_permission("accounting.create")
 def toggle_tax_rate(tax_rate_id):
     org_id = current_organization_id()
     conn = get_conn()

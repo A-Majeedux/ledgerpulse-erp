@@ -45,12 +45,14 @@
                 </td>
                 <td style="color: var(--lp-text-muted);">{{ r[2] or '—' }}</td>
                 <td class="amount">{{ r[4] }} user(s)</td>
-                <td>
+                <td style="white-space: nowrap;">
                     {% if r[3] is not none %}
                         <a href="{{ url_for('organizations.edit_role', organization_id=organization_id, role_id=r[0]) }}" class="lp-btn sm">Edit Role</a>
-                    {% else %}
-                        <span style="color: var(--lp-text-muted); font-size: 12px;">Read-Only</span>
                     {% endif %}
+                    <form method="POST" action="{{ url_for('organizations.copy_role', organization_id=organization_id, role_id=r[0]) }}" style="display: inline-block;">
+                        {{ csrf_field() }}
+                        <button type="submit" class="lp-btn sm" title="Start from this role and make it the company's own">Copy</button>
+                    </form>
                 </td>
             </tr>
             {% else %}

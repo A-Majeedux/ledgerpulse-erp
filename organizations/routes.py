@@ -56,10 +56,22 @@ def pick_organization():
     """
     Shown whenever nobody has an active organization selected yet - e.g.
     right after logging in, or the very first time the app is opened.
+
+    Only the companies this person belongs to. The platform's administrator sees
+    them all; everybody else sees their own, because a list of every company on
+    the system is not something a customer's accountant should be able to read.
     """
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute(f"SELECT {ORG_COLUMNS} FROM organizations ORDER BY name")
+    if is_platform_admin():
+        cursor.execute(f"SELECT {ORG_COLUMNS} FROM organizations ORDER BY name")
+    else:
+        cursor.execute(f"""
+            SELECT {', '.join('org.' + column for column in ORG_COLUMNS.split(', '))}
+            FROM organizations org
+            JOIN organization_memberships membership ON membership.organization_id = org.organization_id
+            WHERE membership.user_id = %s ORDER BY org.name
+        """, (current_user_id(),))
     organizations = cursor.fetchall()
     cursor.close()
     conn.close()
@@ -137,6 +149,8 @@ def new_organization():
 
 
 @bp.route("/<int:organization_id>/edit", methods=["GET", "POST"])
+@require_organization
+@require_permission("users.manage")
 def edit_organization(organization_id):
     if organization_id != current_organization_id():
         abort(404)
@@ -193,6 +207,8 @@ def edit_organization(organization_id):
 
 
 @bp.route("/manage")
+@require_organization
+@require_permission("users.manage")
 def manage_organizations():
     conn = get_conn()
     cursor = conn.cursor()
@@ -210,6 +226,7 @@ def manage_organizations():
 
 @bp.route("/subscription/renew", methods=["GET", "POST"])
 @require_organization
+@require_permission("subscription.manage")
 def renew_subscription():
     from decimal import Decimal
     from auth.services import submit_organization_payment, check_subscription, current_user_id
@@ -321,6 +338,16 @@ def change_user_role(organization_id, user_id):
         abort(403)
     new_role_id = int(request.form.get("role_id", 0))
     try:
+        # Handing over a role hands over everything it holds, so the same rule as
+        # building one applies: never more than the person doing the handing.
+        from auth.services import ensure_can_grant
+        conn = get_conn()
+        cursor = conn.cursor()
+        cursor.execute("SELECT permission_id FROM role_permissions WHERE role_id = %s", (new_role_id,))
+        ensure_can_grant(organization_id, current_user_id(), [row[0] for row in cursor.fetchall()])
+        cursor.close()
+        conn.close()
+
         update_user_role(
             organization_id=organization_id,
             target_user_id=user_id,
@@ -398,6 +425,28 @@ def new_role(organization_id):
             flash(f"Error creating role: {e}", "error")
 
     return render_template("organizations/new_role.html", all_permissions=all_permissions, organization_id=organization_id, role=None, assigned_perm_ids=[])
+
+
+@bp.route("/<int:organization_id>/roles/<int:role_id>/copy", methods=["POST"])
+@require_organization
+@require_permission("users.manage")
+def copy_role(organization_id, role_id):
+    """Start from any role - the built-in ones included - and make it your own."""
+    if organization_id != current_organization_id():
+        abort(403)
+    from auth.services import clone_organization_role
+    try:
+        new_id, name, refused = clone_organization_role(
+            organization_id, role_id, current_user_id(), ip_address=request.remote_addr)
+        flash(f"\"{name}\" created. Edit it as you like.", "success")
+        if refused:
+            flash("Not granted, because you do not hold these rights yourself: "
+                  + ", ".join(refused), "error")
+        return redirect(url_for("organizations.edit_role", organization_id=organization_id,
+                                role_id=new_id))
+    except Exception as e:
+        flash(f"Could not copy that role: {e}", "error")
+    return redirect(url_for("organizations.roles_list", organization_id=organization_id))
 
 
 @bp.route("/<int:organization_id>/roles/<int:role_id>/edit", methods=["GET", "POST"])
