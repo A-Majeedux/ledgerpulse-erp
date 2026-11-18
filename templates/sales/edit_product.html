@@ -35,6 +35,8 @@
     </div>
     <p style="font-size: 12px; color: var(--lp-text-muted); margin-top: -10px; margin-bottom: 16px;">
       The price this product sells at, and how much of it you have. Invoices you have already saved keep their own rates.
+      On hand is kept by the <a href="{{ url_for('sales.product_stock', product_id=product[0]) }}">stock movements</a>:
+      a figure typed here becomes the opening stock the first time a bill or an invoice touches the product.
     </p>
 
     <label style="font-size: 13px; font-weight: 600;">Default Revenue Account</label>

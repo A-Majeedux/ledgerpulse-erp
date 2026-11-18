@@ -1374,3 +1374,42 @@ The printed bill carries the unit, the discount, the rate's name and the tax, an
 letter of credit" when it is one. Suite: **309 passed**, and for the first time nothing is failing: the
 stale `'INVOICE LINES'` / `'JOURNAL ENTRY'` assertions in `test_vendors.py` were about headings that the
 Round 17 prints renamed, and they were corrected rather than left to rot.
+
+## 36. Stock that moves (Round 20)
+
+**On hand was a number nobody moved.** It was typed on the product form and no purchase ever raised it
+and no sale ever lowered it - so the bundle of landed-cost work from Round 17 was, in the end, a figure on a
+card rather than a stock position.
+
+There is now a ledger behind it: **`stock_movements`**. Every row names the document that caused it, the
+date, the quantity in or out, the cost of a unit at the time, and the value. `products.on_hand` is the **sum
+of those rows** - never a figure typed in - and a product's stock page (`/sales/products/<id>/stock`, reached
+by clicking its On hand) prints them with a running balance, a link back to each bill or invoice, stock
+value and average cost.
+
+The rules, each tried by a test:
+
+* **A draft moves nothing.** Movements are written when a document is posted and removed when it is reset to
+  a draft, so what the books carry and what the shelves carry cannot drift apart by a draft.
+* **Goods come in at their landed cost.** A bill with LC charges brings its product in at the goods' price
+  plus their share of freight, duty and clearing - and **net of recoverable sales tax**, because the 18% sits
+  in 1250 and comes back. It is not part of what the goods cost, and counting it made a 4,500 bag cost 4,860.
+* **Goods go out at the average cost** of everything bought so far (weighted, not last-in-first-out), and a
+  product sold out of typed opening stock is priced at its last landed cost - not at zero, which is what the
+  first attempt did.
+* **Opening stock is a movement too.** A product whose On hand was typed gets one `Opening` row the first
+  time anything else moves, so the history adds up from the beginning instead of pretending it started at zero.
+* **Selling what we do not have is allowed** - a shop sells before the bill arrives - but the person posting
+  is told which product went short and by how much.
+* **An asset line, an LC charge, and a line with no product move no stock.** Only goods with a product on them
+  are stock of that product.
+
+The ledger itself still books a purchase where the bill's line says - the expense or the asset account that
+was picked - so this round tracks **quantity and its cost**, not a second set of postings. Whether the books
+should also carry stock as an asset (perpetual inventory: a purchase of goods debiting 1200 instead of the
+expense) is the owner's decision, because it changes when profit is recognised.
+
+Live, on the demo: Urea's 1,200 bags (typed as opening stock at 2,817.62) plus an import bill of 10 bags with
+20,000 of freight land at **4,500 a bag**; selling 5 takes them out at the **2,831.52** weighted average,
+leaving 1,205 bags; the bill grew the stock by exactly what the invoice took away, and resetting either one
+reverses its own movement and nothing else. Suite: **324 passed**.

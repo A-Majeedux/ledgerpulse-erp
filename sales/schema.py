@@ -98,6 +98,39 @@ def ensure_schema(cursor):
     # its share of the LC charges). A figure kept for reference - it does not
     # change On hand or any posting.
     cursor.execute("ALTER TABLE products ADD COLUMN IF NOT EXISTS last_landed_cost NUMERIC(15, 2)")
+
+    # What moved, and why. `products.on_hand` is the sum of these rows - it is
+    # never a figure typed in - and every row names the document that caused it,
+    # so a stock page can say where the number came from (core/stock.py).
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS stock_movements (
+            stock_movement_id SERIAL PRIMARY KEY,
+            organization_id INTEGER NOT NULL REFERENCES organizations(organization_id),
+            product_id INTEGER NOT NULL REFERENCES products(product_id),
+            movement_date DATE NOT NULL,
+            quantity NUMERIC(15, 3) NOT NULL,
+            unit_cost NUMERIC(15, 4) DEFAULT 0,
+            value NUMERIC(15, 2) DEFAULT 0,
+            source_type VARCHAR(20) NOT NULL,
+            source_id INTEGER,
+            reference VARCHAR(120),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    # A company that goes, and a product that goes, take their stock history with
+    # them: it is their own paper and nothing else refers to it.
+    for constraint, target in (
+        ("stock_movements_product_id_fkey",
+         "FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE"),
+        ("stock_movements_organization_id_fkey",
+         "FOREIGN KEY (organization_id) REFERENCES organizations(organization_id) ON DELETE CASCADE"),
+    ):
+        cursor.execute("ALTER TABLE stock_movements DROP CONSTRAINT IF EXISTS " + constraint)
+        cursor.execute("ALTER TABLE stock_movements ADD CONSTRAINT " + constraint + " " + target)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_movements_product "
+                   "ON stock_movements (organization_id, product_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_movements_source "
+                   "ON stock_movements (organization_id, source_type, source_id)")
     # A products table left over from an earlier version may be missing even
     # the columns written above - CREATE TABLE IF NOT EXISTS never touches a
     # table that already exists, which is how his own products table ended up

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Stock of {{ product[1] }}{% endblock %}
+{% block active_nav %}products{% endblock %}
+{% block content %}
+<div class="lp-page-header">
+  <div class="lp-page-heading">
+    <h1 class="lp-page-title">{{ product[1] }}</h1>
+    <p class="lp-page-subtitle">
+      Measured in <strong>{{ product[2] }}</strong> &middot; what came in, what went out, and what is left.
+      {% if not product[6] %}<span class="lp-pill draft" style="margin-left:6px;">Inactive</span>{% endif %}
+    </p>
+  </div>
+  <div class="lp-page-actions">
+    <a href="{{ url_for('sales.edit_product', product_id=product[0]) }}" class="lp-btn secondary sm">Edit the product</a>
+    <a href="{{ url_for('sales.products_list') }}" class="lp-btn secondary sm">Back to Products</a>
+  </div>
+</div>
+
+{% if no_movements and typed_on_hand %}
+  <div class="alert alert-info" style="margin-bottom: 16px;">
+    This product's stock was typed on its own form (<strong>{{ typed_on_hand | fmt_qty_print }} {{ product[2] }}</strong>)
+    and nothing has moved it yet. It becomes the <strong>Opening</strong> movement the first time a purchase bill
+    or a sales invoice touches this product, and from then on On hand is the sum of the movements below.
+  </div>
+{% endif %}
+
+<div class="kpi-grid" style="margin-bottom: 20px;">
+  <article class="kpi" style="--kpi-tint:#0EA5A0; --kpi-soft:#E6F7F5;">
+    <div class="kpi-top"><span class="kpi-label">On hand</span></div>
+    <div class="kpi-value">{{ quantity | fmt_qty_print }} <span style="font-size:13px;">{{ product[2] }}</span></div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#4B7CB8; --kpi-soft:#EAF1F9;">
+    <div class="kpi-top"><span class="kpi-label">Stock value</span></div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "%.2f"|format(value) }}</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#E8833A; --kpi-soft:#FDF0E6;">
+    <div class="kpi-top"><span class="kpi-label">Average cost a unit</span></div>
+    <div class="kpi-value"><span class="cur">{{ active_currency }}</span>{{ "%.2f"|format(average) }}</div>
+  </article>
+  <article class="kpi" style="--kpi-tint:#6B4FA3; --kpi-soft:#F1EDF9;">
+    <div class="kpi-top"><span class="kpi-label">Last landed cost</span></div>
+    <div class="kpi-value">
+      {% if product[4] %}<span class="cur">{{ active_currency }}</span>{{ "%.2f"|format(product[4]) }}{% else %}&mdash;{% endif %}
+    </div>
+  </article>
+</div>
+
+<div class="lp-card">
+  <h3 style="margin-top:0; font-size:16px;">Movements</h3>
+  {% if rows %}
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Document</th>
+        <th>Reference</th>
+        <th class="amount">In</th>
+        <th class="amount">Out</th>
+        <th class="amount">Balance</th>
+        <th class="amount">Cost a unit</th>
+        <th class="amount">Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.date | fmt_date }}</td>
+        <td>
+          {% if row.source_type == 'Opening' %}
+            <span class="lp-pill draft">Opening stock</span>
+          {% elif row.source_type == 'VendorBill' %}
+            <a href="{{ url_for('vendors.vendor_bill_detail', vendor_bill_id=row.source_id) }}">Purchase bill</a>
+          {% elif row.source_type == 'SalesInvoice' %}
+            <a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=row.source_id) }}">Sales invoice</a>
+          {% else %}
+            {{ row.source_type }}
+          {% endif %}
+        </td>
+        <td>{{ row.reference or '—' }}</td>
+        <td class="amount">{{ ("%.2f"|format(row.quantity)) if row.quantity > 0 else '—' }}</td>
+        <td class="amount">{{ ("%.2f"|format(-row.quantity)) if row.quantity < 0 else '—' }}</td>
+        <td class="amount" style="font-weight:700;">{{ "%.2f"|format(row.balance) }}</td>
+        <td class="amount">{{ "%.2f"|format(row.unit_cost) }}</td>
+        <td class="amount">{{ "%.2f"|format(row.value) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr style="font-weight:700;">
+        <td colspan="5">On hand</td>
+        <td class="amount">{{ "%.2f"|format(quantity) }}</td>
+        <td></td>
+        <td class="amount">{{ "%.2f"|format(value) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+  {% else %}
+  <p style="margin:0; color: var(--lp-text-muted);">
+    Nothing has moved this product yet. A posted purchase bill brings it in; a posted invoice takes it out.
+  </p>
+  {% endif %}
+</div>
+
+<p style="margin: 12px 0 0; font-size: 12.5px; color: var(--lp-text-muted); line-height: 1.6;">
+  Goods come in at their <strong>landed cost</strong> - the supplier's price plus their share of freight, duty and
+  clearing when the bill carried an LC - and go out at the <strong>average cost</strong> of everything bought so far.
+  A draft bill or invoice moves nothing; resetting one to a draft takes its movement away again. The ledger itself
+  still books a purchase where the bill's line says (the expense or asset account you picked), so this page tracks
+  the <em>quantity</em> and its cost, not a second set of postings.
+</p>
+{% endblock %}

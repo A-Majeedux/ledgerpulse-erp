@@ -253,4 +253,32 @@
   <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=invoice[5]) }}" class="lp-btn secondary sm">View Journal Entry</a>
 </p>
 {% endif %}
+
+{% if stock_moves %}
+<div class="lp-card" style="margin-top: 20px;">
+  <h3 style="margin-top:0; font-size:16px;">What this invoice took out of stock</h3>
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th class="amount">Out</th>
+        <th class="amount">Cost a unit</th>
+        <th class="amount">Value</th>
+        <th class="amount">Left on hand</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for move in stock_moves %}
+      <tr>
+        <td>{{ move[0] }}</td>
+        <td class="amount">{{ "%.2f"|format(-move[2]) }} {{ move[1] }}</td>
+        <td class="amount">{{ "%.2f"|format(move[3]) }}</td>
+        <td class="amount">{{ "%.2f"|format(move[4]) }}</td>
+        <td class="amount">{{ "%.2f"|format(move[5]) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
 {% endblock %}

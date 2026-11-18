@@ -893,13 +893,27 @@ def vendor_bill_detail(vendor_bill_id):
                 "product_name": product_name or "",
                 "product_id": product_id,
                 "quantity": quantity,
-                "total": line_total,
+                # landed cost is about what the goods cost, not the tax on them
+                "total": to_decimal(line_total) - to_decimal(tax_amount),
             })
     basis = normalise_basis(bill[16]) if len(bill) > 16 else "value"
     landed_rows, landed_summary = split_landed_cost(goods_lines, landed_total, basis)
 
     # The bill's own journal items - the "Journal Items" tab, and the proof that
     # this bill and the ledger say the same thing.
+    # What this bill put into stock, in the products' own units.
+    conn3 = get_conn()
+    cursor3 = conn3.cursor()
+    cursor3.execute("""
+        SELECT p.name, p.unit, sm.quantity, COALESCE(sm.unit_cost, 0), COALESCE(sm.value, 0)
+        FROM stock_movements sm JOIN products p ON p.product_id = sm.product_id
+        WHERE sm.organization_id = %s AND sm.source_type = 'VendorBill' AND sm.source_id = %s
+        ORDER BY sm.stock_movement_id
+    """, (org_id, vendor_bill_id))
+    stock_moves = cursor3.fetchall()
+    cursor3.close()
+    conn3.close()
+
     journal_lines = []
     if bill[8]:
         conn2 = get_conn()
@@ -919,7 +933,7 @@ def vendor_bill_detail(vendor_bill_id):
         "vendors/vendor_bill_detail.html",
         bill=bill, lines=lines, total=total, allocations=allocations,
         journal_lines=journal_lines,
-        landed_rows=landed_rows, landed_summary=landed_summary,
+        landed_rows=landed_rows, landed_summary=landed_summary, stock_moves=stock_moves,
         landed_basis_options=BASIS_LABELS,
         menu=build_menu("vendor_bill", vendor_bill_id, status=bill[7],
                         user_id=current_user_id(), organization_id=org_id),
@@ -1000,13 +1014,32 @@ def post_vendor_bill(vendor_bill_id):
     try:
         post_journal_entry(cursor, journal_header_id)
         cursor.execute("UPDATE vendor_bills SET status = 'Posted' WHERE vendor_bill_id = %s", (vendor_bill_id,))
-        _remember_landed_cost(cursor, org_id, vendor_bill_id)
+        unit_costs = _remember_landed_cost(cursor, org_id, vendor_bill_id)
+        # The goods are ours now: they go into stock at what they finally cost,
+        # not at what the supplier's line said.
+        from core import stock
+        stock.goods_in_from_bill(cursor, org_id, vendor_bill_id,
+                                 reference=f"Bill {_bill_label(cursor, vendor_bill_id)}",
+                                 movement_date=_bill_date(cursor, vendor_bill_id),
+                                 landed_unit_costs=unit_costs or {})
         conn.commit()
     except UnbalancedEntryError:
         conn.rollback()
     cursor.close()
     conn.close()
     return redirect(url_for("vendors.vendor_bill_detail", vendor_bill_id=vendor_bill_id))
+
+
+def _bill_label(cursor, vendor_bill_id):
+    cursor.execute("SELECT bill_number FROM vendor_bills WHERE vendor_bill_id = %s", (vendor_bill_id,))
+    row = cursor.fetchone()
+    return (row[0] if row and row[0] else "")
+
+
+def _bill_date(cursor, vendor_bill_id):
+    cursor.execute("SELECT COALESCE(accounting_date, bill_date) FROM vendor_bills "
+                   "WHERE vendor_bill_id = %s", (vendor_bill_id,))
+    return cursor.fetchone()[0]
 
 
 def _remember_landed_cost(cursor, org_id, vendor_bill_id):
@@ -1023,8 +1056,11 @@ def _remember_landed_cost(cursor, org_id, vendor_bill_id):
         return
     basis = normalise_basis(row[0])
 
+    # The sales tax paid on a purchase is recoverable - it sits in 1250 and comes
+    # back - so it is not part of what the goods cost us.
     cursor.execute("""
-        SELECT COALESCE(line_kind, 'Goods'), product_id, quantity, total
+        SELECT COALESCE(line_kind, 'Goods'), product_id, quantity,
+               total - COALESCE(tax_amount, 0)
         FROM vendor_bill_lines WHERE vendor_bill_id = %s ORDER BY line_order
     """, (vendor_bill_id,))
     goods, charges = [], to_decimal(0)
@@ -1034,10 +1070,12 @@ def _remember_landed_cost(cursor, org_id, vendor_bill_id):
         else:
             goods.append({"product_id": product_id, "quantity": quantity, "total": line_total})
 
-    for product_id, unit_cost in landed_unit_cost_by_product(goods, charges, basis).items():
+    unit_costs = landed_unit_cost_by_product(goods, charges, basis)
+    for product_id, unit_cost in unit_costs.items():
         cursor.execute("UPDATE products SET last_landed_cost = %s "
                        "WHERE product_id = %s AND organization_id = %s",
                        (unit_cost, product_id, org_id))
+    return unit_costs
 
 
 @bp.route("/bills/<int:vendor_bill_id>/edit", methods=["GET", "POST"])
@@ -1155,6 +1193,10 @@ def reset_vendor_bill_to_draft_route(vendor_bill_id):
     cursor = conn.cursor()
     try:
         bill_number = reset_vendor_bill_to_draft(cursor, org_id, vendor_bill_id)
+        # The goods go back out of stock: the bill is a draft again and the
+        # books no longer carry it either.
+        from core import stock
+        stock.undo_document(cursor, org_id, "VendorBill", vendor_bill_id)
         conn.commit()
     except ValueError as error:
         conn.rollback()

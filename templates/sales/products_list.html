@@ -51,7 +51,10 @@
       <div>
         <div style="font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--lp-text-muted);">On hand</div>
         <div style="font-size: 16px; font-weight: 700;">
-          {{ (p[7] or 0) | fmt_qty_print }}
+          <a href="{{ url_for('sales.product_stock', product_id=p[0]) }}" title="What came in and what went out"
+             style="color: inherit; text-decoration: none; border-bottom: 1px dashed var(--lp-border);">
+            {{ (p[7] or 0) | fmt_qty_print }}
+          </a>
           <span style="font-size: 12px; font-weight: 600; color: var(--lp-text-muted);">{{ p[2] }}</span>
         </div>
       </div>

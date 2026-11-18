@@ -124,6 +124,44 @@ def products_list():
     )
 
 
+@bp.route("/products/<int:product_id>/stock")
+@require_organization
+@require_permission("sales.view")
+def product_stock(product_id):
+    """One product's stock: what came in, what went out, and what is left.
+
+    On hand used to be a figure typed on the product form that nothing moved.
+    It is now the sum of the movements below - a purchase bill brings goods in
+    at their landed cost, a posted invoice takes them out at the average cost -
+    so this page is where the number can be argued with.
+    """
+    from core import stock
+
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT product_id, name, unit, COALESCE(on_hand, 0), COALESCE(last_landed_cost, 0),
+               COALESCE(sales_price, 0), COALESCE(is_active, TRUE)
+        FROM products WHERE product_id = %s AND organization_id = %s
+    """, (product_id, org_id))
+    product = cursor.fetchone()
+    if not product:
+        cursor.close()
+        conn.close()
+        abort(404)
+
+    rows = stock.history(cursor, org_id, product_id)
+    quantity, value = stock.balance(cursor, org_id, product_id)
+    average = stock.average_cost(cursor, org_id, product_id)
+    cursor.close()
+    conn.close()
+
+    return render_template("sales/product_stock.html", product=product, rows=rows,
+                           quantity=quantity, value=value, average=average,
+                           typed_on_hand=to_decimal(product[3]), no_movements=not rows)
+
+
 def _product_price_and_stock(form):
     """Read the Price and On hand boxes. A figure that is not a number is
     refused before anything is written, with a message saying which one."""
@@ -709,6 +747,16 @@ def sales_invoice_detail(sales_invoice_id):
         ORDER BY sil.line_order
     """, (sales_invoice_id,))
     lines = cursor.fetchall()
+
+    # What this invoice did to stock, once it was posted.
+    cursor.execute("""
+        SELECT p.name, p.unit, sm.quantity, COALESCE(sm.unit_cost, 0), COALESCE(sm.value, 0),
+               COALESCE(p.on_hand, 0)
+        FROM stock_movements sm JOIN products p ON p.product_id = sm.product_id
+        WHERE sm.organization_id = %s AND sm.source_type = 'SalesInvoice' AND sm.source_id = %s
+        ORDER BY sm.stock_movement_id
+    """, (org_id, sales_invoice_id))
+    stock_moves = cursor.fetchall()
     cursor.close()
     conn.close()
 
@@ -782,6 +830,7 @@ def sales_invoice_detail(sales_invoice_id):
         over_limit=(credit["over"] if credit else False),
         refused_over_limit=bool(request.args.get("over_limit")),
         receipts_applied=receipts_applied,
+        stock_moves=stock_moves,
         unapplied_receipts=unapplied_receipts,
         menu=build_menu("sales_invoice", sales_invoice_id, status=invoice[4],
                         user_id=current_user_id(), organization_id=org_id),
@@ -993,6 +1042,8 @@ def reset_invoice_to_draft_route(sales_invoice_id):
     cursor = conn.cursor()
     try:
         invoice_no = reset_invoice_to_draft(cursor, org_id, sales_invoice_id)
+        from core import stock
+        stock.undo_document(cursor, org_id, "SalesInvoice", sales_invoice_id)
         conn.commit()
     except ValueError as error:
         conn.rollback()
@@ -1081,15 +1132,54 @@ def post_sales_invoice(sales_invoice_id):
         return redirect(url_for("sales.sales_invoice_detail",
                                 sales_invoice_id=sales_invoice_id, over_limit=1))
 
+    short = []
     try:
         post_journal_entry(cursor, journal_header_id)
         cursor.execute("UPDATE sales_invoices SET status = 'Posted' WHERE sales_invoice_id = %s", (sales_invoice_id,))
+        # The goods leave stock at what they have cost us on average.
+        from core import stock
+        touched = stock.goods_out_from_invoice(cursor, org_id, sales_invoice_id,
+                                               reference=f"Invoice {_invoice_label(cursor, sales_invoice_id)}",
+                                               movement_date=_invoice_date(cursor, sales_invoice_id))
         conn.commit()
+        short = _short_stock(cursor, org_id, touched)
     except UnbalancedEntryError:
         conn.rollback()
+    if short:
+        flash("Posted, but the stock is now short: " + ", ".join(short)
+              + ". Buy the goods in, or correct the invoice.", "warning")
     cursor.close()
     conn.close()
     return redirect(url_for("sales.sales_invoice_detail", sales_invoice_id=sales_invoice_id))
+
+
+def _invoice_label(cursor, sales_invoice_id):
+    cursor.execute("SELECT invoice_no FROM sales_invoices WHERE sales_invoice_id = %s", (sales_invoice_id,))
+    row = cursor.fetchone()
+    return row[0] if row and row[0] else ""
+
+
+def _invoice_date(cursor, sales_invoice_id):
+    cursor.execute("SELECT invoice_date FROM sales_invoices WHERE sales_invoice_id = %s",
+                   (sales_invoice_id,))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def _short_stock(cursor, org_id, product_ids):
+    """The products an invoice took below zero, named for the person posting it.
+
+    Stock is allowed to go negative - a shop sells before the bill arrives -
+    but not silently: the person posting is told which lines went short.
+    """
+    names = []
+    for product_id in dict.fromkeys(product_ids or []):
+        cursor.execute("SELECT name, COALESCE(on_hand, 0) FROM products WHERE product_id = %s "
+                       "AND organization_id = %s", (product_id, org_id))
+        row = cursor.fetchone()
+        if row and to_decimal(row[1]) < 0:
+            names.append(f"{row[0]} ({'{:,.2f}'.format(to_decimal(row[1]))})")
+    return names
 
 # ---------------------------------------------------------------------
 # The print page of one sales invoice
