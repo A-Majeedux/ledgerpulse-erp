@@ -19,6 +19,7 @@ from vendors.schema import ensure_schema as vendors_schema
 from vendors.routes import bp as vendors_bp
 
 from wht.schema import ensure_schema as wht_schema
+from core.audit import ensure_schema as audit_schema
 from wht.routes import bp as wht_bp
 
 from customers.schema import ensure_schema as customers_schema
@@ -119,6 +120,7 @@ ensure_all_schemas([
     vendors_schema,
     customers_schema,
     sales_schema,
+    audit_schema,
 ])
 
 # --- 2. Register blueprints ---

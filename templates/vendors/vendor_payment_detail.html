@@ -105,4 +105,5 @@
 {% if payment[13] %}
 <p style="margin-top:16px;"><a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=payment[13]) }}" class="lp-btn">View Journal Entry</a></p>
 {% endif %}
+{% include '_history.html' %}
 {% endblock %}

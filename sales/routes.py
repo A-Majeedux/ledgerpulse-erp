@@ -2,6 +2,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from flask import Blueprint, render_template, request, redirect, url_for, abort, flash
 from core.db import get_conn
+from core import audit
 from core.context import current_organization_id, require_organization
 from core.docmenu import build_menu
 from core.searchbar import read_search, search_filters, and_clauses, describe, suggest
@@ -818,6 +819,7 @@ def sales_invoice_detail(sales_invoice_id):
 
     return render_template(
         "sales/sales_invoice_detail.html",
+        history=audit.history(org_id, "SalesInvoice", sales_invoice_id),
         invoice=invoice,
         lines=lines,
         total_gross=total_gross,
@@ -1050,6 +1052,9 @@ def reset_invoice_to_draft_route(sales_invoice_id):
         row = cursor.fetchone()
         if row:
             stock.remove_cogs_entry(cursor, row[0])
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "SalesInvoice", sales_invoice_id, "Reset",
+                   f"{invoice_no or 'The invoice'} went back to a draft: its entry, its cost and its stock movements were undone")
         conn.commit()
     except ValueError as error:
         conn.rollback()
@@ -1093,6 +1098,9 @@ def delete_sales_invoice(sales_invoice_id):
     cursor = conn.cursor()
     try:
         number = delete_draft_invoice(cursor, org_id, sales_invoice_id)
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "SalesInvoice", sales_invoice_id, "Deleted",
+                   f"Draft invoice {number or ''} was deleted")
     except ValueError as error:
         conn.rollback()
         cursor.close()
@@ -1153,6 +1161,10 @@ def post_sales_invoice(sales_invoice_id):
         touched = stock.goods_out_from_invoice(cursor, org_id, sales_invoice_id,
                                                reference=f"Invoice {invoice_no}",
                                                movement_date=_invoice_date(cursor, sales_invoice_id))
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "SalesInvoice", sales_invoice_id, "Posted",
+                   f"Invoice {invoice_no} posted"
+                   + (" (the customer's credit limit was exceeded on purpose)" if override else ""))
         conn.commit()
         short = _short_stock(cursor, org_id, touched)
     except UnbalancedEntryError:

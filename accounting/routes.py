@@ -2,6 +2,7 @@ import secrets
 from datetime import date
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, jsonify
 from core.db import get_conn
+from core import audit
 from core.context import current_organization_id, require_organization
 from core.docmenu import build_menu
 from core.searchbar import read_search, search_filters, and_clauses, describe, suggest
@@ -251,6 +252,7 @@ def journal_entry_detail(journal_header_id):
 
     return render_template(
         "accounting/journal_entry_detail.html",
+        history=audit.history(org_id, "JournalEntry", journal_header_id),
         header=header,
         lines=lines,
         total_debit=total_debit,
@@ -419,6 +421,9 @@ def reset_journal_entry_route(journal_header_id):
     cursor = conn.cursor()
     try:
         reference = reset_journal_entry_to_draft(cursor, org_id, journal_header_id)
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "JournalEntry", journal_header_id, "Reset",
+                   f"{reference or 'The entry'} went back to a draft")
         conn.commit()
     except ValueError as error:
         conn.rollback()
@@ -440,6 +445,9 @@ def duplicate_journal_entry_route(journal_header_id):
     cursor = conn.cursor()
     try:
         new_id = duplicate_journal_entry(cursor, org_id, journal_header_id)
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "JournalEntry", new_id, "Created",
+                   "Copied from another entry")
         conn.commit()
     except ValueError as error:
         conn.rollback()
@@ -459,6 +467,9 @@ def delete_journal_entry_route(journal_header_id):
     conn = get_conn()
     cursor = conn.cursor()
     try:
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "JournalEntry", journal_header_id, "Deleted",
+                   "The draft entry was deleted")
         reference = delete_draft_journal_entry(cursor, org_id, journal_header_id)
         conn.commit()
     except ValueError as error:
@@ -490,6 +501,9 @@ def post_journal_entry_route(journal_header_id):
         abort(404)
     try:
         post_journal_entry(cursor, journal_header_id)
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "JournalEntry", journal_header_id, "Posted",
+                   "The entry was posted")
         conn.commit()
     except UnbalancedEntryError:
         conn.rollback()

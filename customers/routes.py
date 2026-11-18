@@ -2,6 +2,7 @@ from datetime import date
 from decimal import Decimal
 from flask import Blueprint, jsonify, render_template, request, redirect, url_for, abort, flash
 from core.db import get_conn
+from core.audit import history as audit_history
 from core.context import current_organization_id, require_organization
 from core.docmenu import build_menu
 from core.searchbar import read_search, search_filters, and_clauses, describe, suggest
@@ -771,6 +772,10 @@ def new_customer_receipt():
             apply_receipt_to_invoices(
                 cursor, org_id, customer_receipt_id, customer_id, gross_amount, wanted)
 
+            from core import audit
+            audit.ensure_schema(cursor)
+            audit.note(cursor, org_id, "CustomerReceipt", customer_receipt_id, "Created",
+                       f"{payment_method} receipt of {gross_amount} from {customer_name}")
             conn.commit()
         except (UnbalancedEntryError, ValueError) as error:
             conn.rollback()
@@ -951,6 +956,7 @@ def customer_receipt_detail(customer_receipt_id):
     conn.close()
     return render_template(
         "customers/customer_receipt_detail.html",
+        history=audit_history(org_id, "CustomerReceipt", customer_receipt_id),
         receipt=receipt, allocations=allocations, unapplied=unapplied, trail=trail,
         menu=build_menu("customer_receipt", customer_receipt_id, status="Posted",
                         user_id=current_user_id(), organization_id=org_id,

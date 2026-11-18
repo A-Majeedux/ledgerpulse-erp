@@ -1,0 +1,31 @@
+{# templates/_history.html — who did what to this document, and when.
+   Written by core/audit.py at the moment the change was made. #}
+<div class="lp-card" style="margin-top: 20px;">
+  <div style="display:flex; justify-content:space-between; align-items:baseline;">
+    <h3 style="margin:0; font-size:16px;">Activity</h3>
+    <span style="font-size:12px; color:var(--lp-text-muted);">Who changed this document, newest first</span>
+  </div>
+  {% if history %}
+  <table class="lp-table" style="margin-top:12px;">
+    <thead>
+      <tr><th style="width:150px;">When</th><th style="width:150px;">What</th><th style="width:170px;">Who</th><th>Note</th></tr>
+    </thead>
+    <tbody>
+      {% for entry in history %}
+      <tr>
+        <td>{{ entry.when }}</td>
+        <td>{% if entry.action == 'Posted' %}<span class="lp-pill posted">{{ entry.words }}</span>
+            {% elif entry.action == 'Reset' %}<span class="lp-pill pending">{{ entry.words }}</span>
+            {% else %}<span class="lp-pill">{{ entry.words }}</span>{% endif %}</td>
+        <td>{{ entry.who or '—' }}</td>
+        <td style="color:var(--lp-text-muted);">{{ entry.detail or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="margin:10px 0 0 0; font-size:13px; color:var(--lp-text-muted);">
+    Nothing has happened to this document yet.
+  </p>
+  {% endif %}
+</div>

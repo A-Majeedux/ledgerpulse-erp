@@ -18,6 +18,7 @@ import uuid
 from werkzeug.utils import secure_filename
 from flask import Blueprint, render_template, request, redirect, url_for, abort, flash, current_app
 from core.db import get_conn
+from core import audit
 from core.context import current_organization_id, require_organization
 from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
 from wht.routes import get_active_tax_rates
@@ -952,6 +953,7 @@ def vendor_bill_detail(vendor_bill_id):
 
     return render_template(
         "vendors/vendor_bill_detail.html",
+        history=audit.history(org_id, "VendorBill", vendor_bill_id),
         bill=bill, lines=lines, total=total, allocations=allocations,
         journal_lines=journal_lines,
         landed_rows=landed_rows, landed_summary=landed_summary, stock_moves=stock_moves,
@@ -1043,6 +1045,9 @@ def post_vendor_bill(vendor_bill_id):
                                  reference=f"Bill {_bill_label(cursor, vendor_bill_id)}",
                                  movement_date=_bill_date(cursor, vendor_bill_id),
                                  landed_unit_costs=unit_costs or {})
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "VendorBill", vendor_bill_id, "Posted",
+                   f"Bill {_bill_label(cursor, vendor_bill_id)} posted: the goods went into stock at their landed cost")
         conn.commit()
     except UnbalancedEntryError:
         conn.rollback()
@@ -1218,6 +1223,9 @@ def reset_vendor_bill_to_draft_route(vendor_bill_id):
         # books no longer carry it either.
         from core import stock
         stock.undo_document(cursor, org_id, "VendorBill", vendor_bill_id)
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "VendorBill", vendor_bill_id, "Reset",
+                   f"{bill_number or 'The bill'} went back to a draft: its entry and its stock movements were undone")
         conn.commit()
     except ValueError as error:
         conn.rollback()
@@ -1239,6 +1247,9 @@ def duplicate_vendor_bill_route(vendor_bill_id):
     cursor = conn.cursor()
     try:
         new_id = duplicate_vendor_bill(cursor, org_id, vendor_bill_id)
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "VendorBill", new_id, "Created",
+                   f"Copied from bill {_bill_label(cursor, vendor_bill_id)}")
         conn.commit()
     except ValueError as error:
         conn.rollback()
@@ -1269,6 +1280,9 @@ def delete_vendor_bill(vendor_bill_id):
         conn.close()
         abort(400, description="Only Draft vendor bills can be deleted.")
 
+    audit.ensure_schema(cursor)
+    audit.note(cursor, org_id, "VendorBill", vendor_bill_id, "Deleted",
+               "The draft bill was deleted")
     cursor.execute("DELETE FROM vendor_bill_lines WHERE vendor_bill_id = %s", (vendor_bill_id,))
     cursor.execute("DELETE FROM vendor_bills WHERE vendor_bill_id = %s", (vendor_bill_id,))
     if jh_id:
@@ -1673,6 +1687,9 @@ def new_vendor_payment():
                             WHERE vendor_bill_id = %s
                         """, (a_amt, a_amt, b_id))
 
+            audit.ensure_schema(cursor)
+            audit.note(cursor, org_id, "VendorPayment", payment_id, "Paid",
+                       f"{payment_method} payment {voucher_number} of {base_amount} to {vendor_name}")
             conn.commit()
         except (UnbalancedEntryError, ValueError) as err:
             conn.rollback()
@@ -1770,6 +1787,7 @@ def vendor_payment_detail(vendor_payment_id):
     if not payment:
         abort(404)
     return render_template("vendors/vendor_payment_detail.html", payment=payment, allocations=allocations,
+                           history=audit.history(org_id, "VendorPayment", vendor_payment_id),
                            trail=trail,
                            menu=build_menu("vendor_payment", vendor_payment_id, status=payment[14],
                                            user_id=current_user_id(), organization_id=org_id,
@@ -1802,6 +1820,9 @@ def delete_vendor_payment(vendor_payment_id):
                            (vendor_payment_id,))
             cursor.execute("DELETE FROM journal_lines WHERE journal_header_id = %s", (journal_header_id,))
             cursor.execute("DELETE FROM journal_headers WHERE journal_header_id = %s", (journal_header_id,))
+        audit.ensure_schema(cursor)
+        audit.note(cursor, org_id, "VendorPayment", vendor_payment_id, "Deleted",
+                   f"Payment {voucher_number or ''} was deleted, and its journal entry with it")
         cursor.execute("DELETE FROM vendor_payments WHERE vendor_payment_id = %s", (vendor_payment_id,))
         conn.commit()
     finally:
