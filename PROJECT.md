@@ -1413,3 +1413,89 @@ Live, on the demo: Urea's 1,200 bags (typed as opening stock at 2,817.62) plus a
 20,000 of freight land at **4,500 a bag**; selling 5 takes them out at the **2,831.52** weighted average,
 leaving 1,205 bags; the bill grew the stock by exactly what the invoice took away, and resetting either one
 reverses its own movement and nothing else. Suite: **324 passed**.
+
+## 37. Where the stock sits, who did it, and the customer's side of a return (Round 21)
+
+Round 20 tracked **quantity and cost** and left the money where the bill's line put it, which meant a company
+could buy a bag of urea, sell it at a profit on paper, and never show the bag as an asset. The owner was asked
+whether to change that. The answer was *"do all the needful, u have my word"*, so this round is the four things
+that were queued, in the order they were queued.
+
+### (a) Perpetual inventory - the profit now appears when the goods are sold
+
+* A **Goods line that names a product** on a vendor bill goes to **1200 Stock on Hand** whatever account the
+  form sent, and the LC's freight, duty and clearing capitalise with it - the shelf and 1200 must say the same
+  thing, so a liquidated-cost line on a bill that brings goods in is stock too. A bill with no goods on it has
+  nothing to spread the charges over, and the charge stays an expense as before.
+* **Selling** writes the cost into the invoice's own entry: **Dr 5000 Cost of Goods Sold / Cr 1200**, for what
+  those goods cost on average, labelled `Cost of goods sold - INV/…`. It is written **before** the entry is
+  posted, so an unbalanced entry is still refused rather than half-saved.
+* **Resetting** the invoice deletes those lines and the stock movement together, and **posting again cannot
+  double the cost** - the lines are removed first, every time.
+* The rule the tests hold: **1200 always equals the sum of `stock_movements.value`**, before a return, after a
+  return, after a reset, after a repost. If the two ever disagree, one of them is lying about what the company
+  owns.
+* A company with no 1200 or no 5000 keeps the old behaviour (the purchase was an expense when billed) and gets
+  no cost lines - a missing account is not a reason to post a wrong entry.
+
+The demo's history was written the old way - six seeded monthly journals credited 1200 for goods sold while no
+purchase ever debited it, leaving the stock account at **−24,280,330.50** against a shelf worth **4,967,186.40**.
+A change of policy needs one switch-over entry, and it was posted dated today: 1200 debited with the cost that
+was already credited out of it, 5000 credited with the same, and the stock actually on the shelf brought in
+against **3000 Owner's Equity** as opening stock. After it: **1200 = 4,967,186.40 = the shelf**, and 5000 stands
+at **1,439,000.00** - the cost of what has *not* been sold.
+
+### (b) The customer sends the goods back
+
+The purchases had a credit note; the sales had nothing. Now **`/sales/credit-notes`** - numbered
+`CN/2026/00001` per company per year, drafted, posted, **reset**, deleted, and printed on the same paper as
+everything else.
+
+Posting reverses what the sale did, and puts the cost back with the goods:
+
+| | |
+|---|---|
+| Cr 1100 Trade Receivables | the total the customer no longer owes |
+| Dr sales account(s) | the revenue that was credited, by account |
+| Dr 2200 Output Tax Payable | the sales tax that was charged |
+| Dr 1200 Stock on Hand / Cr 5000 | what those goods cost when they left |
+
+* The cost comes from **the invoice's own movement**, so a return comes back in at the cost it went out at. Today's
+  average would have quietly rewritten the profit on the original sale.
+* **An allowance with no goods** (untick *goods come back into stock*) moves the money and leaves the shelf alone.
+* The invoice it names has its still-due figure reduced, so the two documents cannot disagree.
+* **Reset undoes every one of those figures** and a repost lands in exactly the same place - tried by a test that
+  posts, resets, reposts and compares the ledger and the shelf both times.
+
+Live, on the demo: 2 bags of urea returned against INV/2026/00031 at 4,500 + 18% - **CN/2026/00001 for
+10,620.00**, of which 1,620.00 is tax; the cost pair puts **5,663.04** back into stock, urea goes from 1,205 to
+**1,207**, and 1200 still equals the shelf.
+
+### (c) Nobody hands out a right he does not hold
+
+`users.manage` was quietly god-mode: whoever could write a role could write *any* role, including one that
+posted journals and deleted invoices for him. Now:
+
+* `save_organization_role` and the role hand-over **refuse a permission the actor does not hold himself**, and
+  name the ones refused. The platform administrator is the one exception - the installation is his.
+* A **built-in role can be copied** into one the company owns and edits (the Copy button on every row of
+  `/organizations/<id>/roles`), and a copy never holds more than its maker: what was left out is reported back.
+* The last open routes are locked: **reports** (`reports.view`), the **tax-rate screens**
+  (`accounting.view` / `accounting.create`), the company's own **settings** (`users.manage`) and **renewing the
+  subscription** (`subscription.manage`).
+* The **company picker** used to list every company on the installation to everyone. It now lists only the
+  companies the person belongs to.
+* `tests/test_route_guard.py` walks `organizations`, `reports` and `wht` as well, with the three
+  open-on-purpose routes **named and justified** (`OPEN_BY_DESIGN`) instead of skipped.
+
+### (d) Every document keeps its own diary
+
+`core/audit.py` and the `transaction_history` table. A line is written **inside the same transaction as the
+change**, so a document never moves without a note saying who moved it - and a change that is refused leaves
+nothing behind. Invoices, vendor bills, journal entries, customer receipts, vendor payments and credit notes all
+write to it; the **Activity** card under the tabs on every detail screen shows *when, what, who and why*, newest
+first. `audit_logs` stays what it was: the system's security log.
+
+Suite: **369 passed** (324 at the end of Round 20). Live: the demo's footer reads `Build 87c176b`, and
+`/sales/credit-notes`, `/sales/credit-notes/2`, its print, `/sales/invoices/32`, `/vendors/bills/28`,
+`/sales/products/3/stock`, `/reports/trial-balance` and `/organizations/3/roles` all answer **200**.
