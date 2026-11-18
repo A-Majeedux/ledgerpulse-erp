@@ -1,0 +1,68 @@
+{% extends "vendors/print/_print_base.html" %}
+{# The same paper a vendor credit note is printed on - the document a customer is
+   handed has to look like the rest of the company's paper. #}
+{% block title %}Credit Note {{ note[0] | safe_str }}{% endblock %}
+{% block toolbar_title %}Credit Note — {{ note[0] | safe_str }}{% endblock %}
+{% block back_url %}{{ url_for('sales.credit_note_detail', credit_note_id=credit_note_id) }}{% endblock %}
+
+{% block content %}
+<div class="title-block">
+  <div class="doc-main-title">Credit Note</div>
+  <div class="doc-sub-number">{{ note[0] | safe_str }}</div>
+</div>
+
+<table class="info-table">
+  <tr>
+    <th>Customer</th>
+    <td><strong>{{ note[1] | safe_str }}</strong></td>
+    <th>Date</th>
+    <td>{{ note[2] | fmt_date_print }}</td>
+  </tr>
+  <tr>
+    <th>Status</th>
+    <td>{{ note[3] | safe_str }}</td>
+    <th>Against Invoice</th>
+    <td>{{ note[8] | safe_str if note[8] else '—' }}</td>
+  </tr>
+  <tr>
+    <th>Reason</th>
+    <td colspan="3">{{ note[7] | safe_str }}</td>
+  </tr>
+</table>
+
+<div style="font-weight: bold; font-size: 12px; margin-bottom: 6px; text-transform: uppercase; color: #333;">What is credited</div>
+<table class="lines-table">
+  <thead>
+    <tr>
+      <th style="width: 8%;">No.</th>
+      <th style="width: 40%; text-align: left;">Description</th>
+      <th style="width: 12%; text-align: right;">Qty</th>
+      <th style="width: 14%; text-align: right;">Rate</th>
+      <th style="width: 13%; text-align: right;">Tax</th>
+      <th style="width: 13%; text-align: right;">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for l in lines %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td class="text-left"><strong>{{ (l[6] or l[2] or '') | safe_str }}</strong></td>
+      <td style="text-align: right;">{{ "%.2f"|format(l[8] or 0) }} {{ (l[7] or '')|safe_str }}</td>
+      <td style="text-align: right;">{{ "%.2f"|format(l[9] or 0) }}</td>
+      <td style="text-align: right;">{{ "%.2f"|format(l[13] or 0) }}</td>
+      <td style="text-align: right;">{{ "%.2f"|format(l[14] or 0) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="totals-box">
+  <div class="totals-row"><span>Untaxed:</span><span>{{ note[4] | fmt_money_print }}</span></div>
+  <div class="totals-row"><span>Sales Tax:</span><span>{{ note[5] | fmt_money_print }}</span></div>
+  <div class="totals-row" style="font-weight: bold;"><span>Total Credit:</span><span>{{ note[6] | fmt_money_print }}</span></div>
+</div>
+
+{% if note[9] %}
+<div class="terms-block"><strong>Note:</strong> {{ note[9] | safe_str }}</div>
+{% endif %}
+{% endblock %}

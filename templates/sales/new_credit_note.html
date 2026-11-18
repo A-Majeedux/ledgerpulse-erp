@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}New Credit Note{% endblock %}
+{% block active_nav %}invoices{% endblock %}
+{% block content %}
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">New Credit Note</h1>
+    <p class="lp-page-subtitle">Goods coming back, or an allowance given. Nothing reaches the books until it is posted.</p>
+  </div>
+  <a href="{{ url_for('sales.credit_notes_list') }}" class="lp-btn sm">Back to Credit Notes</a>
+</div>
+
+{% if error %}
+<div class="lp-card" style="border-left: 4px solid #c0392b; margin-bottom:16px;">
+  <strong>Not saved.</strong> {{ error }}
+</div>
+{% endif %}
+
+<form method="POST" id="cn-form">
+  {{ csrf_field() }}
+  <div class="lp-card">
+    <div class="lp-form-grid">
+      <div>
+        <label>Customer</label>
+        <select name="customer_id" required>
+          <option value="">Choose a customer…</option>
+          {% for c in customers %}<option value="{{ c[0] }}">{{ c[1] }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Credit note date</label>
+        <input type="date" name="note_date" value="{{ today|default('') }}" required>
+      </div>
+      <div>
+        <label>Reason</label>
+        <select name="reason">
+          {% for reason in reasons %}<option value="{{ reason }}">{{ reason }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Against invoice (optional)</label>
+        <select name="sales_invoice_id">
+          <option value="">Not tied to one invoice</option>
+          {% for invoice in invoices %}
+            <option value="{{ invoice[0] }}">{{ invoice[1] or ('Invoice #' ~ invoice[0]) }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-size:13px;">
+      <input type="checkbox" name="restock" checked>
+      <span>The goods come back into stock (untick for an allowance with no goods)</span>
+    </label>
+    <div style="margin-top:12px;">
+      <label>Note</label>
+      <textarea name="notes" rows="2" placeholder="Why is this being credited? The customer will see this."></textarea>
+    </div>
+  </div>
+
+  <div class="lp-card" style="margin-top:16px;">
+    <h3 style="margin-top:0; font-size:16px;">What is being credited</h3>
+    <table class="lp-table" id="cn-lines">
+      <thead>
+        <tr>
+          <th style="width:220px;">Product</th>
+          <th>Description</th>
+          <th style="width:220px;">Account to credit</th>
+          <th style="width:90px;">Qty</th>
+          <th style="width:90px;">Unit</th>
+          <th style="width:110px;">Rate</th>
+          <th style="width:150px;">Tax</th>
+          <th class="amount" style="width:120px;">Total</th>
+          <th style="width:40px;"></th>
+        </tr>
+      </thead>
+      <tbody id="cn-rows"></tbody>
+    </table>
+    <p style="margin-top:10px;">
+      <button type="button" class="lp-btn sm" onclick="LPCredit.add()">+ Add line</button>
+    </p>
+    <div style="display:flex; justify-content:flex-end; gap:32px; margin-top:8px;">
+      <div><span style="color:var(--lp-text-muted); font-size:12px;">Untaxed</span><br><strong id="cn-net">0.00</strong></div>
+      <div><span style="color:var(--lp-text-muted); font-size:12px;">Sales tax reversed</span><br><strong id="cn-tax">0.00</strong></div>
+      <div><span style="color:var(--lp-text-muted); font-size:12px;">Total credit</span><br><strong id="cn-total">0.00</strong></div>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:12px; margin-top:16px;">
+    <button type="submit" class="lp-btn primary">Save as draft</button>
+    <a href="{{ url_for('sales.credit_notes_list') }}" class="lp-btn">Cancel</a>
+  </div>
+</form>
+
+<script>
+window.CREDIT_NOTE_DATA = {
+  products: {{ products|tojson }},
+  accounts: {{ accounts|tojson }},
+  taxRates: {{ tax_rates|tojson }},
+  units: {{ units|tojson }}
+};
+</script>
+<script src="{{ url_for('static', filename='credit_notes.js') }}"></script>
+<script>
+  // the date box starts on today unless the browser has no clock
+  (function () {
+    var box = document.querySelector('#cn-form input[name="note_date"]');
+    if (box && !box.value) box.value = new Date().toISOString().slice(0, 10);
+  })();
+</script>
+{% endblock %}

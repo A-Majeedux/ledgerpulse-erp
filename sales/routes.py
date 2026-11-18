@@ -9,6 +9,8 @@ from core.searchbar import read_search, search_filters, and_clauses, describe, s
 from auth.services import require_permission, current_user_id
 from accounting.services import create_journal_entry, post_journal_entry, UnbalancedEntryError
 from sales.schema import UOM_CHOICES
+from sales import credit_notes
+from organizations.routes import ORG_COLUMNS
 from sales.services import (clean_date, delete_draft_invoice, duplicate_invoice,
                             give_invoice_a_number, replace_invoice, reset_invoice_to_draft)
 from core.money import to_decimal, money_round
@@ -1262,3 +1264,253 @@ def sales_invoice_print(sales_invoice_id):
         total_tax=total_tax,
         grand_total=grand_total,
     )
+
+
+# ---------------------------------------------------------------------
+# Customer credit notes
+#
+# What vendors have had all along, on the sales side: the customer sends goods
+# back, or is given an allowance, and owes that much less. The rules live in
+# sales/credit_notes.py; these routes only open the screens and read the form.
+# ---------------------------------------------------------------------
+
+def _credit_note_form_context(org_id, draft=None):
+    """Everything the credit-note form needs: who, what, and at what price."""
+    from customers.routes import _get_customers, _get_accounts
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT p.product_id, p.name, COALESCE(p.unit, 'Units'), COALESCE(p.sales_price, 0),
+               p.default_account_id
+        FROM products p WHERE p.organization_id = %s AND p.is_active = TRUE ORDER BY p.name
+    """, (org_id,))
+    products = cursor.fetchall()
+    cursor.execute("""
+        SELECT sales_invoice_id, invoice_no, invoice_date
+        FROM sales_invoices WHERE organization_id = %s AND status = 'Posted'
+        ORDER BY invoice_date DESC, sales_invoice_id DESC LIMIT 200
+    """, (org_id,))
+    invoices = cursor.fetchall()
+    cursor.execute("SELECT sales_tax_rate_id, label, rate_percent FROM sales_tax_rates "
+                   "WHERE organization_id = %s AND is_active = TRUE ORDER BY rate_percent", (org_id,))
+    tax_rates = cursor.fetchall()
+    cursor.execute("SELECT DISTINCT unit FROM products WHERE organization_id = %s AND unit IS NOT NULL "
+                   "ORDER BY unit", (org_id,))
+    units = [row[0] for row in cursor.fetchall()] or ["Units"]
+    cursor.close()
+    conn.close()
+    return {
+        "customers": _get_customers(org_id),
+        "accounts": _get_accounts(org_id),
+        "products": products,
+        "invoices": invoices,
+        "tax_rates": tax_rates,
+        "units": units,
+        "reasons": credit_notes.REASONS,
+        "draft_header": draft,
+    }
+
+
+@bp.route("/credit-notes")
+@require_organization
+@require_permission("sales.view")
+def credit_notes_list():
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT ccn.customer_credit_note_id, ccn.credit_note_no, c.name, ccn.note_date,
+               ccn.status, ccn.total, ccn.reason, si.invoice_no
+        FROM customer_credit_notes ccn
+        JOIN customers c ON c.customer_id = ccn.customer_id
+        LEFT JOIN sales_invoices si ON si.sales_invoice_id = ccn.sales_invoice_id
+        WHERE ccn.organization_id = %s
+        ORDER BY ccn.note_date DESC, ccn.customer_credit_note_id DESC
+    """, (org_id,))
+    notes = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return render_template("sales/credit_notes_list.html", notes=notes)
+
+
+@bp.route("/credit-notes/new", methods=["GET", "POST"])
+@require_organization
+@require_permission("sales.create")
+def new_credit_note():
+    org_id = current_organization_id()
+    if request.method == "POST":
+        conn = get_conn()
+        cursor = conn.cursor()
+        try:
+            customer_id = int(request.form.get("customer_id") or 0)
+            cursor.execute("SELECT 1 FROM customers WHERE customer_id = %s AND organization_id = %s",
+                           (customer_id, org_id))
+            if not cursor.fetchone():
+                raise credit_notes.CreditNoteError("Pick a customer from this company's list.")
+            note_date = request.form.get("note_date") or date.today().isoformat()
+            reason = (request.form.get("reason") or "Return").strip()
+            if reason not in credit_notes.REASONS:
+                reason = "Return"
+            invoice_id = request.form.get("sales_invoice_id")
+            invoice_id = int(invoice_id) if invoice_id and invoice_id.isdigit() else None
+            if invoice_id:
+                cursor.execute("SELECT 1 FROM sales_invoices WHERE sales_invoice_id = %s AND organization_id = %s",
+                               (invoice_id, org_id))
+                if not cursor.fetchone():
+                    invoice_id = None
+            restock = request.form.get("restock") in ("on", "1", "true")
+            cursor.execute("""
+                INSERT INTO customer_credit_notes
+                    (organization_id, customer_id, note_date, reason, sales_invoice_id, restock,
+                     journal_name, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, 'Customer Credit Notes', %s)
+                RETURNING customer_credit_note_id
+            """, (org_id, customer_id, note_date, reason, invoice_id, restock,
+                  (request.form.get("notes") or "").strip() or None))
+            note_id = cursor.fetchone()[0]
+            credit_notes.save_lines(cursor, org_id, note_id, request.form)
+            credit_notes.give_number(cursor, org_id, note_id)
+            credit_notes.build_lines(cursor, org_id, note_id)
+            from core import audit as _audit
+            _audit.ensure_schema(cursor)
+            _audit.note(cursor, org_id, "CustomerCreditNote", note_id, "Created",
+                        f"Credit note for {reason.lower()}")
+            conn.commit()
+        except credit_notes.CreditNoteError as error:
+            conn.rollback()
+            conn.close()
+            return render_template("sales/new_credit_note.html",
+                                   **_credit_note_form_context(org_id), error=str(error))
+        cursor.close()
+        conn.close()
+        return redirect(url_for("sales.credit_note_detail", credit_note_id=note_id))
+    return render_template("sales/new_credit_note.html", **_credit_note_form_context(org_id))
+
+
+@bp.route("/credit-notes/<int:credit_note_id>")
+@require_organization
+@require_permission("sales.view")
+def credit_note_detail(credit_note_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT ccn.customer_credit_note_id, ccn.credit_note_no, c.name, ccn.note_date,
+               ccn.status, ccn.subtotal, ccn.tax_total, ccn.total, ccn.reason, ccn.restock,
+               ccn.journal_header_id, si.invoice_no, ccn.sales_invoice_id, ccn.notes,
+               ccn.accounting_date
+        FROM customer_credit_notes ccn
+        JOIN customers c ON c.customer_id = ccn.customer_id
+        LEFT JOIN sales_invoices si ON si.sales_invoice_id = ccn.sales_invoice_id
+        WHERE ccn.customer_credit_note_id = %s AND ccn.organization_id = %s
+    """, (credit_note_id, org_id))
+    note = cursor.fetchone()
+    if not note:
+        cursor.close()
+        conn.close()
+        abort(404)
+    lines = credit_notes.read_lines(cursor, org_id, credit_note_id)
+    journal_lines = []
+    if note[10]:
+        cursor.execute("""
+            SELECT coa.code, coa.name, jl.partner_name, jl.label, jl.debit, jl.credit
+            FROM journal_lines jl JOIN chart_of_accounts coa ON coa.account_id = jl.account_id
+            WHERE jl.journal_header_id = %s ORDER BY jl.line_order, jl.journal_line_id
+        """, (note[10],))
+        journal_lines = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    from core import audit as _audit
+    return render_template(
+        "sales/credit_note_detail.html", note=note, lines=lines, journal_lines=journal_lines,
+        history=_audit.history(org_id, "CustomerCreditNote", credit_note_id))
+
+
+@bp.route("/credit-notes/<int:credit_note_id>/post", methods=["POST"])
+@require_organization
+@require_permission("sales.post")
+def post_credit_note(credit_note_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        number = credit_notes.post(cursor, org_id, credit_note_id)
+        conn.commit()
+        flash(f"Credit note {number} is posted: the books and the stock have both moved.", "success")
+    except (credit_notes.CreditNoteError, UnbalancedEntryError) as error:
+        conn.rollback()
+        flash(str(error), "error")
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for("sales.credit_note_detail", credit_note_id=credit_note_id))
+
+
+@bp.route("/credit-notes/<int:credit_note_id>/reset-to-draft", methods=["POST"])
+@require_organization
+@require_permission("sales.post")
+def reset_credit_note(credit_note_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        number = credit_notes.reset(cursor, org_id, credit_note_id)
+        conn.commit()
+        flash(f"{number or 'The credit note'} is a draft again.", "success")
+    except credit_notes.CreditNoteError as error:
+        conn.rollback()
+        flash(str(error), "error")
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for("sales.credit_note_detail", credit_note_id=credit_note_id))
+
+
+@bp.route("/credit-notes/<int:credit_note_id>/delete", methods=["POST"])
+@require_organization
+@require_permission("sales.create")
+def delete_credit_note(credit_note_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    try:
+        number = credit_notes.delete(cursor, org_id, credit_note_id)
+        conn.commit()
+        flash(f"{number or 'The draft credit note'} was deleted.", "success")
+        return redirect(url_for("sales.credit_notes_list"))
+    except credit_notes.CreditNoteError as error:
+        conn.rollback()
+        flash(str(error), "error")
+    finally:
+        cursor.close()
+        conn.close()
+    return redirect(url_for("sales.credit_note_detail", credit_note_id=credit_note_id))
+
+
+@bp.route("/credit-notes/<int:credit_note_id>/print")
+@require_organization
+@require_permission("sales.view")
+def print_credit_note(credit_note_id):
+    org_id = current_organization_id()
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT ccn.credit_note_no, c.name, ccn.note_date, ccn.status, ccn.subtotal,
+               ccn.tax_total, ccn.total, ccn.reason, si.invoice_no, ccn.notes
+        FROM customer_credit_notes ccn
+        JOIN customers c ON c.customer_id = ccn.customer_id
+        LEFT JOIN sales_invoices si ON si.sales_invoice_id = ccn.sales_invoice_id
+        WHERE ccn.customer_credit_note_id = %s AND ccn.organization_id = %s
+    """, (credit_note_id, org_id))
+    note = cursor.fetchone()
+    if not note:
+        cursor.close()
+        conn.close()
+        abort(404)
+    lines = credit_notes.read_lines(cursor, org_id, credit_note_id)
+    cursor.execute(f"SELECT {ORG_COLUMNS} FROM organizations WHERE organization_id = %s", (org_id,))
+    org = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return render_template("sales/print/customer_credit_note_print.html",
+                           note=note, lines=lines, org=org, credit_note_id=credit_note_id)

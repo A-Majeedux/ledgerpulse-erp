@@ -295,3 +295,51 @@ def ensure_schema(cursor):
                     (organization_id, code, name, account_type, allow_reconciliation)
                 VALUES (%s, '2200', 'Output Tax Payable', 'Liability', FALSE)
             """, (org_id,))
+
+    # -----------------------------------------------------------------
+    # 6. Customer Credit Notes (sales returns and adjustments)
+    #
+    # What a vendor bill has had all along, on the other side: the customer sends
+    # goods back, or is given an allowance, and the company owes him less. It is
+    # a document of its own - numbered, posted, reset - not a negative invoice,
+    # because it has to be shown to the customer and argued over separately.
+    # -----------------------------------------------------------------
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS customer_credit_notes (
+            customer_credit_note_id SERIAL PRIMARY KEY,
+            organization_id INTEGER NOT NULL REFERENCES organizations(organization_id) ON DELETE CASCADE,
+            customer_id INTEGER NOT NULL REFERENCES customers(customer_id) ON DELETE CASCADE,
+            credit_note_no VARCHAR(40),
+            note_date DATE NOT NULL,
+            accounting_date DATE,
+            reason VARCHAR(30) NOT NULL DEFAULT 'Return',
+            sales_invoice_id INTEGER REFERENCES sales_invoices(sales_invoice_id) ON DELETE SET NULL,
+            journal_name VARCHAR(60) DEFAULT 'Customer Credit Notes',
+            status VARCHAR(12) NOT NULL DEFAULT 'Draft',
+            subtotal NUMERIC(15, 2) NOT NULL DEFAULT 0,
+            tax_total NUMERIC(15, 2) NOT NULL DEFAULT 0,
+            total NUMERIC(15, 2) NOT NULL DEFAULT 0,
+            restock BOOLEAN NOT NULL DEFAULT TRUE,
+            journal_header_id INTEGER REFERENCES journal_headers(journal_header_id) ON DELETE SET NULL,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS customer_credit_note_lines (
+            customer_credit_note_line_id SERIAL PRIMARY KEY,
+            customer_credit_note_id INTEGER NOT NULL
+                REFERENCES customer_credit_notes(customer_credit_note_id) ON DELETE CASCADE,
+            product_id INTEGER REFERENCES products(product_id) ON DELETE SET NULL,
+            account_id INTEGER REFERENCES chart_of_accounts(account_id) ON DELETE SET NULL,
+            label VARCHAR(255),
+            unit VARCHAR(20) DEFAULT 'Units',
+            quantity NUMERIC(14, 3) NOT NULL DEFAULT 0,
+            rate NUMERIC(14, 4) NOT NULL DEFAULT 0,
+            sales_tax_rate_id INTEGER REFERENCES sales_tax_rates(sales_tax_rate_id) ON DELETE SET NULL,
+            tax_amount NUMERIC(15, 2) NOT NULL DEFAULT 0,
+            total NUMERIC(15, 2) NOT NULL DEFAULT 0,
+            unit_cost NUMERIC(15, 4) NOT NULL DEFAULT 0,
+            line_order INTEGER NOT NULL DEFAULT 0
+        )
+    """)

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Customer Credit Notes{% endblock %}
+{% block active_nav %}invoices{% endblock %}
+{% block content %}
+<div class="lp-page-header">
+  <div>
+    <h1 class="lp-page-title">Credit Notes</h1>
+    <p class="lp-page-subtitle">What customers send back, and what they are owed for it.</p>
+  </div>
+  {% if may('sales.create') %}
+    <a href="{{ url_for('sales.new_credit_note') }}" class="lp-btn primary sm">
+      <svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Credit Note
+    </a>
+  {% endif %}
+</div>
+
+<div class="lp-table-wrapper">
+  <table class="lp-table">
+    <thead>
+      <tr>
+        <th style="width: 170px;">Number</th>
+        <th>Customer</th>
+        <th style="width: 130px;">Date</th>
+        <th style="width: 120px;">Reason</th>
+        <th style="width: 160px;">Against invoice</th>
+        <th class="amount">Total</th>
+        <th style="width: 110px;">Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for note in notes %}
+      <tr onclick="window.location='{{ url_for('sales.credit_note_detail', credit_note_id=note[0]) }}'" style="cursor:pointer;">
+        <td style="font-weight:600; white-space:nowrap;">{{ note[1] or '(no number)' }}</td>
+        <td style="font-weight:600;">{{ note[2] }}</td>
+        <td>{{ note[3].strftime('%d %b %Y') if note[3] else '—' }}</td>
+        <td>{{ note[6] }}</td>
+        <td>{{ note[7] or '—' }}</td>
+        <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(note[5] or 0) }}</td>
+        <td>{% if note[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
+            {% else %}<span class="lp-pill draft">Draft</span>{% endif %}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">
+        <div class="lp-empty-state">
+          No credit notes yet. When a customer returns goods or is given an allowance,
+          record it here: the revenue, the sales tax, the stock and what he owes all move together.
+        </div>
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
