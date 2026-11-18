@@ -236,3 +236,101 @@ def undo_document(cursor, organization_id, source_type, source_id):
     touched = clear(cursor, organization_id, source_type, source_id)
     refresh_all(cursor, organization_id, touched)
     return touched
+
+
+# ---------------------------------------------------------------------------
+# Where stock sits in the books
+#
+# The stock ledger (above) and the chart of accounts have to agree: 1200 Stock
+# on Hand is the money, and the movements are the quantity. A purchase of goods
+# debits 1200; a sale credits it with what the goods cost and debits Cost of
+# Goods Sold. That is perpetual inventory - the expense appears when the goods
+# are sold, not when they are bought.
+# ---------------------------------------------------------------------------
+
+STOCK_ACCOUNT_CODE = "1200"
+COGS_ACCOUNT_CODE = "5000"
+
+
+def account_id_by_code(cursor, organization_id, code):
+    cursor.execute("SELECT account_id FROM chart_of_accounts "
+                   "WHERE organization_id = %s AND code = %s", (organization_id, code))
+    row = cursor.fetchone()
+    return row[0] if row else None
+
+
+def stock_account_id(cursor, organization_id):
+    return account_id_by_code(cursor, organization_id, STOCK_ACCOUNT_CODE)
+
+
+def cogs_account_id(cursor, organization_id):
+    return account_id_by_code(cursor, organization_id, COGS_ACCOUNT_CODE)
+
+
+def cost_of_invoice(cursor, organization_id, sales_invoice_id):
+    """What the goods on an invoice cost us, line by line: [(product, qty, cost)].
+
+    Asked before the movements are written, so the same average cost prices both
+    the stock coming out and the expense it becomes.
+    """
+    cursor.execute("""
+        SELECT product_id, COALESCE(SUM(quantity), 0)
+        FROM sales_invoice_lines
+        WHERE sales_invoice_id = %s AND product_id IS NOT NULL
+        GROUP BY product_id ORDER BY product_id
+    """, (sales_invoice_id,))
+    out = []
+    for product_id, quantity in cursor.fetchall():
+        out.append((product_id, to_decimal(quantity), average_cost(cursor, organization_id, product_id)))
+    return out
+
+
+COGS_LABEL = "Cost of goods sold"
+
+
+def write_cogs_entry(cursor, organization_id, journal_header_id, sales_invoice_id, invoice_no,
+                     movement_date):
+    """Put the cost of the goods sold into the invoice's own entry.
+
+    Two lines, one debit and one credit: Cost of Goods Sold against Stock on
+    Hand. Called every time an invoice is posted, and the lines are removed
+    first, so posting twice cannot double the cost. A company with no 1200 or
+    5000 account keeps the older way of doing it (the purchase was an expense
+    when it was billed) and gets no cost lines at all - better than a wrong one.
+    """
+    if not journal_header_id:
+        return to_decimal(0)
+    cursor.execute("DELETE FROM journal_lines WHERE journal_header_id = %s AND label LIKE %s",
+                   (journal_header_id, COGS_LABEL + "%"))
+
+    stock_id = stock_account_id(cursor, organization_id)
+    cogs_id = cogs_account_id(cursor, organization_id)
+    if not stock_id or not cogs_id:
+        return to_decimal(0)
+
+    total = to_decimal(0)
+    for _product_id, quantity, unit_cost in cost_of_invoice(cursor, organization_id, sales_invoice_id):
+        total += money_round(quantity * unit_cost)
+    if total <= 0:
+        return to_decimal(0)
+
+    label = f"{COGS_LABEL} - {invoice_no}" if invoice_no else COGS_LABEL
+    cursor.execute("""
+        INSERT INTO journal_lines (journal_header_id, account_id, partner_name, label, debit, credit, line_order)
+        VALUES (%s, %s, NULL, %s, %s, 0,
+                COALESCE((SELECT MAX(line_order) + 1 FROM journal_lines WHERE journal_header_id = %s), 0))
+    """, (journal_header_id, cogs_id, label, total, journal_header_id))
+    cursor.execute("""
+        INSERT INTO journal_lines (journal_header_id, account_id, partner_name, label, debit, credit, line_order)
+        VALUES (%s, %s, NULL, %s, 0, %s,
+                COALESCE((SELECT MAX(line_order) + 1 FROM journal_lines WHERE journal_header_id = %s), 0))
+    """, (journal_header_id, stock_id, label, total, journal_header_id))
+    return total
+
+
+def remove_cogs_entry(cursor, journal_header_id):
+    """Take the cost lines off an entry again (its invoice went back to a draft)."""
+    if not journal_header_id:
+        return
+    cursor.execute("DELETE FROM journal_lines WHERE journal_header_id = %s AND label LIKE %s",
+                   (journal_header_id, COGS_LABEL + "%"))

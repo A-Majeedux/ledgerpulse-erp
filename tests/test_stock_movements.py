@@ -352,6 +352,90 @@ class _Stocked(unittest.TestCase):
         self.assertEqual(value, -400)
         self.assertEqual(self.on_hand(self.typed_product_id), 90)
 
+    # -- perpetual inventory: 1200 and the movements agree ----------------
+
+    def balance_of(self, code):
+        """What the posted books say is in an account (debit - credit)."""
+        conn, cursor = self.db()
+        cursor.execute("""
+            SELECT COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)
+            FROM journal_lines jl
+            JOIN journal_headers jh ON jh.journal_header_id = jl.journal_header_id
+            JOIN chart_of_accounts coa ON coa.account_id = jl.account_id
+            WHERE jh.organization_id = %s AND jh.status = 'Posted' AND coa.code = %s
+        """, (self.org_id, code))
+        value = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        return value
+
+    def stock_value(self):
+        conn, cursor = self.db()
+        cursor.execute("SELECT COALESCE(SUM(value), 0) FROM stock_movements WHERE organization_id = %s",
+                       (self.org_id,))
+        value = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        return value
+
+    def test_a_product_bought_on_a_bill_goes_into_stock_not_into_an_expense(self):
+        bill_id = self.post_bill([(self.product_id, 10, 2500, "Goods", "5000")])
+        self.assertEqual(self.balance_of("1200"), D("25000.00"))     # it is stock
+        self.assertEqual(self.balance_of("5000"), D("0.00"))         # not an expense - yet
+
+    def test_selling_turns_the_cost_of_the_goods_into_an_expense(self):
+        self.post_bill([(self.product_id, 10, 2500, "Goods", "5000")])
+        invoice_id = self.post_invoice(self.product_id, 4)
+        self.assertEqual(self.balance_of("5000"), D("10000.00"))     # 4 x 2,500
+        self.assertEqual(self.balance_of("1200"), D("15000.00"))     # the 6 left
+        self.assertEqual(self.stock_value(), D("15000.00"))          # the shelf agrees
+
+    def test_the_invoice_s_own_entry_carries_the_cost(self):
+        self.post_bill([(self.product_id, 10, 2500, "Goods", "5000")])
+        invoice_id = self.post_invoice(self.product_id, 4)
+        conn, cursor = self.db()
+        cursor.execute("SELECT journal_header_id FROM sales_invoices WHERE sales_invoice_id = %s",
+                       (invoice_id,))
+        header = cursor.fetchone()[0]
+        cursor.execute("SELECT label FROM journal_lines WHERE journal_header_id = %s", (header,))
+        labels = [row[0] or "" for row in cursor.fetchall()]
+        cursor.close()
+        conn.close()
+        self.assertTrue(any(label.startswith("Cost of goods sold") for label in labels))
+        page = self.client.get(f"/sales/invoices/{invoice_id}").get_data(as_text=True)
+        # the entry is balanced with the cost in it
+        conn, cursor = self.db()
+        cursor.execute("SELECT SUM(debit), SUM(credit) FROM journal_lines WHERE journal_header_id = %s",
+                       (header,))
+        debit, credit = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        self.assertEqual(debit, credit)
+
+    def test_resetting_the_invoice_takes_the_cost_back_out(self):
+        self.post_bill([(self.product_id, 10, 2500, "Goods", "5000")])
+        invoice_id = self.post_invoice(self.product_id, 4)
+        self.assertEqual(self.balance_of("5000"), D("10000.00"))
+        self.client.post(f"/sales/invoices/{invoice_id}/reset-to-draft", data={"csrf_token": "test-csrf"})
+        self.assertEqual(self.balance_of("5000"), D("0.00"))
+        self.assertEqual(self.balance_of("1200"), D("25000.00"))
+        self.assertEqual(self.stock_value(), D("25000.00"))
+
+    def test_reposting_an_invoice_does_not_double_its_cost(self):
+        self.post_bill([(self.product_id, 10, 2500, "Goods", "5000")])
+        invoice_id = self.post_invoice(self.product_id, 4)
+        self.client.post(f"/sales/invoices/{invoice_id}/reset-to-draft", data={"csrf_token": "test-csrf"})
+        self.client.post(f"/sales/invoices/{invoice_id}/post", data={"csrf_token": "test-csrf"})
+        self.assertEqual(self.balance_of("5000"), D("10000.00"))     # once, not twice
+        self.assertEqual(self.on_hand(), 6)
+
+    def test_the_stock_account_always_equals_the_stock_value(self):
+        self.post_bill([(self.product_id, 10, 2500, "Goods", "5000"),
+                        (None, 1, 20000, "Landed Cost", "5200")])
+        self.post_invoice(self.product_id, 3)
+        self.post_bill([(self.product_id, 5, 2600, "Goods", "5000")])
+        self.assertEqual(self.balance_of("1200"), self.stock_value())
+
     def test_the_stock_page_shows_the_movements_and_the_balance(self):
         self.post_bill([(self.typed_product_id, 10, 40, "Goods", "5000")])
         page = self.client.get(f"/sales/products/{self.typed_product_id}/stock").get_data(as_text=True)

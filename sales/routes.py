@@ -1044,6 +1044,12 @@ def reset_invoice_to_draft_route(sales_invoice_id):
         invoice_no = reset_invoice_to_draft(cursor, org_id, sales_invoice_id)
         from core import stock
         stock.undo_document(cursor, org_id, "SalesInvoice", sales_invoice_id)
+        # and the cost of those goods is no longer an expense
+        cursor.execute("SELECT journal_header_id FROM sales_invoices WHERE sales_invoice_id = %s",
+                       (sales_invoice_id,))
+        row = cursor.fetchone()
+        if row:
+            stock.remove_cogs_entry(cursor, row[0])
         conn.commit()
     except ValueError as error:
         conn.rollback()
@@ -1134,12 +1140,18 @@ def post_sales_invoice(sales_invoice_id):
 
     short = []
     try:
+        # Perpetual inventory: the cost of the goods sold becomes an expense now,
+        # in the invoice's own entry, against Stock on Hand. Written before the
+        # entry is posted so an out-of-balance entry is still refused.
+        from core import stock
+        invoice_no = _invoice_label(cursor, sales_invoice_id)
+        stock.write_cogs_entry(cursor, org_id, journal_header_id, sales_invoice_id, invoice_no,
+                               _invoice_date(cursor, sales_invoice_id))
         post_journal_entry(cursor, journal_header_id)
         cursor.execute("UPDATE sales_invoices SET status = 'Posted' WHERE sales_invoice_id = %s", (sales_invoice_id,))
         # The goods leave stock at what they have cost us on average.
-        from core import stock
         touched = stock.goods_out_from_invoice(cursor, org_id, sales_invoice_id,
-                                               reference=f"Invoice {_invoice_label(cursor, sales_invoice_id)}",
+                                               reference=f"Invoice {invoice_no}",
                                                movement_date=_invoice_date(cursor, sales_invoice_id))
         conn.commit()
         short = _short_stock(cursor, org_id, touched)

@@ -657,6 +657,13 @@ def _read_bill_lines(cursor, org_id, form):
     def at(values, index, default=None):
         return values[index] if index < len(values) else default
 
+    # Under perpetual inventory the goods a product line brings in are stock,
+    # not an expense: the expense appears when those goods are sold. So a line
+    # that names a product and is a Goods line goes to 1200 whatever account the
+    # form sent - and the form says so.
+    from core.stock import stock_account_id
+    stock_id = stock_account_id(cursor, org_id)
+
     lines = []
     for index, account_id in enumerate(account_ids):
         if not account_id:
@@ -691,10 +698,15 @@ def _read_bill_lines(cursor, org_id, form):
         asset_life = at(asset_lives, index) if kind == "Asset" else None
         label = labels[index].strip() if index < len(labels) and labels[index].strip() else None
 
+        product_id = int(at(products, index)) if at(products, index) else None
+        line_account = int(account_id)
+        if stock_id and product_id and kind == "Goods":
+            line_account = stock_id
+
         lines.append({
             "label": label,
-            "account_id": int(account_id),
-            "product_id": int(at(products, index)) if at(products, index) else None,
+            "account_id": line_account,
+            "product_id": product_id,
             "quantity": quantity,
             "rate": rate,
             "unit": (at(units, index) or "Units")[:20],
@@ -709,6 +721,15 @@ def _read_bill_lines(cursor, org_id, form):
             "line_kind": kind,
             "asset_life_years": to_decimal(asset_life) if asset_life else None,
         })
+
+    # The LC's charges are part of what the goods cost, so on a bill that brings
+    # goods in they capitalise with them: the shelf and 1200 must say the same
+    # thing. A bill with no goods on it has nothing to spread them over, and the
+    # charge stays an expense as before.
+    if stock_id and any(line["product_id"] and line["line_kind"] == "Goods" for line in lines):
+        for line in lines:
+            if line["line_kind"] == "Landed Cost":
+                line["account_id"] = stock_id
     return lines
 
 
