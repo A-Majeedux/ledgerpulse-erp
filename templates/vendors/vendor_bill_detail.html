@@ -3,37 +3,108 @@
 {% block title %}Vendor Bill{% endblock %}
 {% block active_nav %}vendors{% endblock %}
 {% block content %}
+{# The bill in the reference's shape (Round 22): the supplier and the bill's own
+   facts in their own cards on the left, its lines and its entry in the tabs
+   under them, and the money and the work in the rail on the right. #}
 <div class="lp-page-header">
   <div class="lp-page-heading">
-    <h2 style="margin:0;">Bill from {{ bill[2] }}</h2>
-    <p style="color: var(--lp-text-muted); margin: 4px 0 0;">Bill #: <strong>{{ bill[1] }}</strong> · Date: {{ bill[3]|fmt_date }}{% if bill[4] %} · Due {{ bill[4]|fmt_date }}{% endif %}
-      {% if bill[17] == 'Import' %}<span class="lp-pill pending" style="margin-left:8px;">Import / LC</span>{% endif %}
-      {% if bill[19] %} · Terms: {{ bill[19] }}{% endif %}</p>
+    <h1 class="lp-page-title">
+      Vendor Bill{% if bill[1] %} <span style="color:var(--lp-text-muted); font-weight:600;">{{ bill[1] }}</span>{% endif %}
+    </h1>
+    <p class="lp-page-subtitle">
+      {{ bill[2] }} · {{ bill[3]|fmt_date }}{% if bill[4] %} · Due {{ bill[4]|fmt_date }}{% endif %}
+      {% if bill[19] %} · Terms: {{ bill[19] }}{% endif %}
+    </p>
   </div>
   <div class="lp-page-actions">
-    {# The bill itself is printed from the gear menu ("Print / PDF bill"); the
-       journal entry it wrote is a different document and keeps its own button. #}
     {% if bill[7] == 'Posted' %}
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
-      {# Paying the bill is the one thing done from the page; its own voucher and
-         its journal entry are printed from the gear menu, as the reference has them. #}
-      {% if may('vendors.post') %}
-        <a href="{{ url_for('vendors.new_vendor_payment', bill_id=bill[0]) }}" class="lp-btn primary"
-           style="margin-left:8px;">Pay</a>
-      {% endif %}
+      {{ doc_actions(menu) }}
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
-      <form method="POST" action="{{ url_for('vendors.post_vendor_bill', vendor_bill_id=bill[0]) }}" style="display:inline; margin-left: 8px;">
-        {{ csrf_field() }}
-        <button type="submit" class="lp-btn primary">Post</button>
-      </form>
+      {{ doc_actions(menu) }}
     {% endif %}
-    {{ doc_actions(menu) }}
   </div>
 </div>
 
+<div class="lp-doc-grid">
+  <div class="lp-doc-main">
+
+    {# ---- who the bill is from ---------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Vendor</h2>
+        <span class="lp-doc-card-note">{{ 'Import against an LC' if bill[17] == 'Import' else 'Standard purchase' }}</span>
+      </header>
+      <div class="body">
+        <div class="lp-party">
+          <div>
+            <div class="lp-party-label">Billed by</div>
+            <a class="lp-party-name" href="{{ url_for('vendors.vendor_detail', vendor_id=bill[15]) }}">{{ bill[2] }}</a>
+            {% set vendor_address = [bill[24], bill[25]]|select|list %}
+            <div class="lp-party-sub">{{ vendor_address|join(', ') if vendor_address else 'No address on his card yet' }}</div>
+          </div>
+          <div class="lp-party-badges">
+            {% if bill[17] == 'Import' %}<span class="lp-pill pending">Import / LC</span>{% endif %}
+            {% if bill[19] %}<span class="lp-pill">{{ bill[19] }}</span>{% endif %}
+          </div>
+        </div>
+        <table class="lp-kv">
+          <tr>
+            <th>NTN</th><td>{{ bill[20] or '—' }}</td>
+            <th>STRN</th><td>{{ bill[21] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Phone</th><td>{{ bill[22] or '—' }}</td>
+            <th>Email</th><td>{{ bill[23] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Vendor address</th>
+            <td colspan="3">{{ vendor_address|join(', ') if vendor_address else '—' }}</td>
+          </tr>
+        </table>
+      </div>
+    </section>
+
+    {# ---- the bill's own details -------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Bill details</h2>
+        <span class="lp-doc-card-note">{{ bill[14] or 'Vendor Bills' }}</span>
+      </header>
+      <div class="body">
+        <table class="lp-kv">
+          <tr>
+            <th>Bill number</th><td>{{ bill[1] or 'Draft (no number yet)' }}</td>
+            <th>Status</th>
+            <td>{% if bill[7] == 'Posted' %}<span class="lp-pill posted">Posted</span>
+                {% else %}<span class="lp-pill draft">Draft</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <th>Bill date</th><td>{{ bill[3]|fmt_date if bill[3] else '—' }}</td>
+            <th>Due date</th><td>{{ bill[4]|fmt_date if bill[4] else '—' }}</td>
+          </tr>
+          <tr>
+            <th>Receipt date</th><td>{{ bill[5]|fmt_date if bill[5] else '—' }}</td>
+            <th>Accounting date</th><td>{{ bill[6]|fmt_date if bill[6] else '—' }}</td>
+          </tr>
+          <tr>
+            <th>Journal</th><td>{{ bill[14] or '—' }}</td>
+            <th>Bill type</th><td>{{ 'Import against an LC' if bill[17] == 'Import' else 'Standard purchase' }}</td>
+          </tr>
+          <tr>
+            <th>LC reference</th><td>{{ bill[13] or '—' }}</td>
+            <th>Entry</th>
+            <td>{% if bill[8] %}<a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=bill[8]) }}">Journal entry #{{ bill[8] }}</a>
+                {% else %}Not posted yet{% endif %}</td>
+          </tr>
+        </table>
+      </div>
+    </section>
+
 {# The three faces of one bill, the way the reference system shows it: what the
-   supplier's paper says, what it did to the ledger, and the rest of its terms. #}
+   supplier's paper says, what it did to the ledger, and the rest of its terms.
+   They sit under the body of the document, not beside it. #}
 <div class="lp-tabs" data-lp-tabs>
   <div class="lp-tab-strip">
     <button type="button" class="lp-tab on">Invoice Lines<span class="lp-tab-count">{{ lines|length }}</span></button>
@@ -275,5 +346,88 @@
   </div>{# /Other Info #}
 </div>{# /lp-tabs #}
 
-{% include '_history.html' %}
+    {% include '_history.html' %}
+  </div>{# /lp-doc-main #}
+
+  {# ---- the rail: what is owed, and what can be done about it --------- #}
+  <aside class="lp-doc-rail">
+    <section class="lp-doc-card">
+      <header><h2>Amount</h2></header>
+      <div class="body">
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Paid so far</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ "%.2f"|format(bill[10] or 0) }}</span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Amount due</span>
+          <span class="lp-amount-figure big {% if (bill[9] or 0) > 0 %}due{% else %}clear{% endif %}">
+            {{ active_currency|default('PKR') }} {{ "%.2f"|format(bill[9] or 0) }}
+          </span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Bill total</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ "%.2f"|format(total) }}</span>
+        </div>
+        {% if bill[18] and bill[18] > 0 %}
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Of which sales tax</span>
+          <span style="font-size:13px;">{{ active_currency|default('PKR') }} {{ "%.2f"|format(bill[18]) }}</span>
+        </div>
+        {% endif %}
+        {% if bill[4] and (bill[9] or 0) > 0 and bill[7] == 'Posted' %}
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Due date</span>
+          <span style="font-size:13px; font-weight:600; {% if bill[4] < today_date %}color:var(--lp-coral-text);{% endif %}">
+            {{ bill[4]|fmt_date }}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="lp-doc-card">
+      <header><h2>Actions</h2></header>
+      <div class="body" style="padding:8px;">
+        <div class="lp-doc-actions">
+          {% if bill[7] == 'Posted' %}
+            {% if may('vendors.post') %}
+            <a href="{{ url_for('vendors.new_vendor_payment', bill_id=bill[0]) }}" class="primary"
+               style="color:var(--lp-teal); font-weight:600;">
+              <svg class="ico sm" aria-hidden="true"><use href="#i-payment"/></svg> Pay this bill
+            </a>
+            {% endif %}
+          {% else %}
+            {% if may('vendors.post') %}
+            <form method="POST" action="{{ url_for('vendors.post_vendor_bill', vendor_bill_id=bill[0]) }}">
+              {{ csrf_field() }}
+              <button type="submit" class="primary">
+                <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Post this bill
+              </button>
+            </form>
+            {% endif %}
+          {% endif %}
+          <a href="{{ url_for('vendors.vendor_bill_print', vendor_bill_id=bill[0]) }}" target="_blank">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Print / PDF bill
+          </a>
+          {% if bill[8] %}
+          <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=bill[8]) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-journal"/></svg> Journal entry
+          </a>
+          {% endif %}
+          <a href="{{ url_for('vendors.vendor_detail', vendor_id=bill[15]) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-vendor"/></svg> Vendor card
+          </a>
+          <a href="{{ url_for('vendors.vendor_ledger') }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-ledger"/></svg> Vendor ledger
+          </a>
+          {% if may('vendors.create') %}
+          <a href="{{ url_for('vendors.new_vendor_credit_note') }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-credit-note"/></svg> Add credit note
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+  </aside>
+</div>
 {% endblock %}

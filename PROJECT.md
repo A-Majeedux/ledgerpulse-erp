@@ -1499,3 +1499,40 @@ first. `audit_logs` stays what it was: the system's security log.
 Suite: **369 passed** (324 at the end of Round 20). Live: the demo's footer reads `Build 87c176b`, and
 `/sales/credit-notes`, `/sales/credit-notes/2`, its print, `/sales/invoices/32`, `/vendors/bills/28`,
 `/sales/products/3/stock`, `/reports/trial-balance` and `/organizations/3/roles` all answer **200**.
+
+## 38. The document and the customer, in their own cards (Round 22)
+
+The invoice and bill screens were a stack of blocks: an information table, a table of lines, a table of totals,
+then whatever else the page had to say. Everything was on one plane, so the customer's NTN sat three rows above
+the invoice's due date and nothing said they were different kinds of fact.
+
+They are now laid out the way Sage and Odoo lay a transaction out - the **shape** of the paper, not a copy of
+another program's branding:
+
+* **Two columns.** The document down the left, and a **rail** on the right. Down the left you read the paper;
+  the rail answers "how much is still owed" and "what can I do about it". It folds to one column under 1150px.
+* **The customer is one card, the invoice is another.** The customer's card carries his name, address, NTN,
+  STRN, CNIC, phone, email and both addresses, as a small table. The invoice's own card carries the number,
+  status, both dates, the accounting date, the journal, the terms, the currency and its entry. A test walks the
+  invoice card and fails if a customer fact appears in it.
+* **The same two cards on a purchase**: the vendor's card and the bill's own card, with the Round-19 tabs
+  (Invoice Lines / Journal Items / Other Info) still **under the body of the document**, not beside it.
+* **The lines carry the paper's columns** - description (with its account under it), qty, unit, price, discount,
+  tax, net - and the totals add up the way the paper adds them up: untaxed, discount, tax, total, receipts
+  applied, still due, with a **tax breakdown by rate** underneath (`Sales Tax 18% on 6000.00 — 1080.00`).
+* **The rail** holds Amount paid, Amount outstanding (coral when something is owed, teal when it is settled) and
+  the total, then the work as a list rather than a row of buttons: Post Invoice / Post this bill, Print, Match a
+  receipt, Journal entry, Customer/Vendor card, Statement, Add credit note. Every item is still
+  `may(...)`-gated, and a posted document offers no Post.
+* **The register** (Sales Invoices) now carries the customer's telephone, **who posted each invoice** - read from
+  the document's own diary, so it is answerable for every invoice - whether it has gone out, and a red
+  **Overdue** pill for the ones past their date and still unpaid.
+
+The demo's customers and vendors had nothing on their cards but a name and a city (the seed only knew those), so
+the new cards would have been a wall of dashes: they now carry real NTNs, STRNs, phones, emails and addresses.
+
+`static/tokens.css` gained a `lp-doc-*` block (grid, cards, `lp-kv` tables, amounts, action list). Every name in
+it is new; nothing that existed was redefined, so no other screen changed.
+
+Suite: **387 passed**. Live: `/sales/invoices`, `/sales/invoices/32`, `/vendors/bills/28` all answer 200 with
+two key-value cards each and the rail in place.

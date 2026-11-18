@@ -256,5 +256,156 @@ class _OneInvoice(unittest.TestCase):
         self.assertIn("0300 7362194", body)
 
 
+
+class _OneBill(unittest.TestCase):
+    """The same two cards on a purchase: the vendor, and the bill."""
+
+    @classmethod
+    def setUpClass(cls):
+        import app as flask_app
+        cls.app = flask_app.app
+        cls.app.config["WTF_CSRF_ENABLED"] = False
+        cls.app.config["TESTING"] = True
+        cls.client = cls.app.test_client()
+        cls.ctx = cls.app.app_context()
+        cls.ctx.push()
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        tag = uuid.uuid4().hex[:8]
+        cursor.execute("INSERT INTO organizations (name, currency) VALUES (%s, 'PKR') RETURNING organization_id",
+                       (f"TEST_BILL_LAYOUT_{tag}",))
+        cls.org_id = cursor.fetchone()[0]
+        cursor.execute("INSERT INTO users (name, email, password_hash, is_active) "
+                       "VALUES ('Bilal Ahmed', %s, 'hash', TRUE) RETURNING user_id",
+                       (f"bilal_{tag}@layout.local",))
+        cls.user_id = cursor.fetchone()[0]
+        member(cursor, cls.user_id, cls.org_id)
+
+        cls.accounts = {}
+        for code, name, kind in (("1200", "Stock on Hand", "Asset"),
+                                 ("2100", "Trade Payables", "Liability"),
+                                 ("5200", "Freight & Delivery", "Expense")):
+            cursor.execute("INSERT INTO chart_of_accounts (organization_id, code, name, account_type, is_active) "
+                           "VALUES (%s, %s, %s, %s, TRUE) RETURNING account_id",
+                           (cls.org_id, code, name, kind))
+            cls.accounts[code] = cursor.fetchone()[0]
+
+        cursor.execute("""
+            INSERT INTO vendors (organization_id, name, ntn, strn, phone, email, address, city)
+            VALUES (%s, 'Fauji Fertilizer Co.', '0710106-4', '3216789901234', '021 35861001',
+                    'sales@ffc.com.pk', 'FFC House, 156-E, Block 3, Clifton', 'Karachi')
+            RETURNING vendor_id
+        """, (cls.org_id,))
+        cls.vendor_id = cursor.fetchone()[0]
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        from accounting.services import create_journal_entry
+        conn = get_conn()
+        cursor = conn.cursor()
+        header = create_journal_entry(
+            cursor, organization_id=cls.org_id, reference="FFC/2026/0042",
+            accounting_date="2026-11-03", journal_name="Vendor Bills",
+            lines=[{"account_id": cls.accounts["1200"], "partner_name": "Fauji Fertilizer Co.",
+                    "label": "Urea", "debit": D("45000"), "credit": D("0")},
+                   {"account_id": cls.accounts["2100"], "partner_name": "Fauji Fertilizer Co.",
+                    "label": "Urea", "debit": D("0"), "credit": D("45000")}],
+            source_type="VendorBill", auto_post=False)
+        cursor.execute("""
+            INSERT INTO vendor_bills (organization_id, vendor_id, bill_date, due_date, bill_number,
+                                      status, amount_due, journal_header_id, journal_name, bill_kind)
+            VALUES (%s, %s, '2026-11-03', '2026-12-03', 'FFC/2026/0042', 'Draft', 45000, %s,
+                    'Vendor Bills', 'Standard')
+            RETURNING vendor_bill_id
+        """, (cls.org_id, cls.vendor_id, header))
+        cls.bill_id = cursor.fetchone()[0]
+        cursor.execute("""
+            INSERT INTO vendor_bill_lines (vendor_bill_id, account_id, label, quantity, rate, total,
+                                           line_order, line_kind)
+            VALUES (%s, %s, 'Urea 50kg', 10, 4500, 45000, 0, 'Goods')
+        """, (cls.bill_id, cls.accounts["1200"]))
+        cursor.execute("UPDATE journal_headers SET source_id = %s WHERE journal_header_id = %s",
+                       (cls.bill_id, header))
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+    @classmethod
+    def tearDownClass(cls):
+        from core.db import get_conn
+        conn = get_conn()
+        cursor = conn.cursor()
+        for statement in (
+            "DELETE FROM transaction_history WHERE organization_id = %s",
+            "DELETE FROM stock_movements WHERE organization_id = %s",
+            "DELETE FROM vendor_bill_lines WHERE vendor_bill_id IN "
+            "(SELECT vendor_bill_id FROM vendor_bills WHERE organization_id = %s)",
+            "DELETE FROM vendor_bills WHERE organization_id = %s",
+            "DELETE FROM journal_lines WHERE journal_header_id IN "
+            "(SELECT journal_header_id FROM journal_headers WHERE organization_id = %s)",
+            "DELETE FROM journal_headers WHERE organization_id = %s",
+            "DELETE FROM vendors WHERE organization_id = %s",
+            "DELETE FROM chart_of_accounts WHERE organization_id = %s",
+            "DELETE FROM organization_memberships WHERE organization_id = %s",
+            "DELETE FROM organizations WHERE organization_id = %s",
+        ):
+            cursor.execute(statement, (cls.org_id,))
+        cursor.execute("DELETE FROM users WHERE user_id = %s", (cls.user_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        cls.ctx.pop()
+
+    def sign_in(self):
+        with self.client.session_transaction() as flask_session:
+            flask_session["organization_id"] = self.org_id
+            flask_session["user_id"] = self.user_id
+            flask_session["user_name"] = "Bilal Ahmed"
+            flask_session["csrf_token"] = "test-csrf"
+
+    def page(self):
+        self.sign_in()
+        response = self.client.get(f"/vendors/bills/{self.bill_id}")
+        self.assertEqual(response.status_code, 200)
+        return response.get_data(as_text=True)
+
+    def test_the_vendor_and_the_bill_are_two_cards(self):
+        body = self.page()
+        self.assertEqual(body.count('class="lp-kv"'), 2)
+        self.assertIn("<h2>Vendor</h2>", body)
+        self.assertIn("<h2>Bill details</h2>", body)
+
+    def test_the_vendor_card_holds_his_own_details(self):
+        body = self.page()
+        card = body.split("<h2>Vendor</h2>", 1)[1].split("</section>", 1)[0]
+        for fact in ("Fauji Fertilizer Co.", "0710106-4", "3216789901234", "021 35861001",
+                     "sales@ffc.com.pk", "Clifton", "Karachi"):
+            self.assertIn(fact, card)
+
+    def test_the_bill_card_holds_the_document_s_own_facts(self):
+        body = self.page()
+        card = body.split("<h2>Bill details</h2>", 1)[1].split("</section>", 1)[0]
+        for fact in ("Bill number", "Bill date", "Due date", "Receipt date", "Accounting date"):
+            self.assertIn(fact, card)
+        self.assertNotIn("0710106-4", card, "the NTN belongs in the vendor's card")
+
+    def test_the_tabs_stay_under_the_body(self):
+        body = self.page()
+        self.assertIn("lp-tabs", body)
+        tabs = body.index("lp-tabs")
+        self.assertLess(body.index("<h2>Vendor</h2>"), tabs, "the tabs come after the document's body")
+        for label in ("Invoice Lines", "Journal Items", "Other Info"):
+            self.assertIn(label, body)
+
+    def test_the_rail_carries_what_is_owed(self):
+        body = self.page()
+        rail = body.split('class="lp-doc-rail"', 1)[1]
+        self.assertIn("Amount due", rail)
+        self.assertIn("45000.00", rail)
+        self.assertIn("Post this bill", rail)
+
+
 if __name__ == "__main__":
     unittest.main()

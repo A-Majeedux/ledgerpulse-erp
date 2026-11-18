@@ -860,7 +860,8 @@ def vendor_bill_detail(vendor_bill_id):
                vb.accounting_date, vb.status, vb.journal_header_id, vb.amount_due, vb.paid_amount,
                vb.payment_reference, vb.recipient_bank, vb.lc_reference, vb.journal_name, v.vendor_id,
                vb.landed_cost_basis, COALESCE(vb.bill_kind, 'Standard'), COALESCE(vb.tax_total, 0),
-               vb.payment_terms
+               vb.payment_terms,
+               v.ntn, v.strn, v.phone, v.email, v.address, v.city
         FROM vendor_bills vb JOIN vendors v ON v.vendor_id = vb.vendor_id
         WHERE vb.vendor_bill_id = %s AND vb.organization_id = %s
     """, (vendor_bill_id, org_id))
