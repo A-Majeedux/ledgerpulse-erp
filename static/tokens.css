@@ -1378,3 +1378,121 @@ a:hover { text-decoration: underline; }
   color: var(--lp-accent-600, #0B8F8A);
   font-size: 10.5px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase;
 }
+
+/* ==========================================================================
+   A document's screen, in the shape of the paper (Round 22)
+
+   Two columns: the document on the left - who it is for, its own details, its
+   lines, what is matched to it - and a narrow rail on the right carrying the
+   money and the things you can do, the way Sage and Odoo lay a transaction out.
+
+   Customer details and invoice details are separate cards, each a small table,
+   so the two are never read as one block.
+
+   Every name here is new; nothing that existed before is redefined.
+   ========================================================================== */
+
+.lp-doc-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 316px;
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 1150px) {
+  .lp-doc-grid { grid-template-columns: minmax(0, 1fr); }
+  .lp-doc-rail { position: static; }
+}
+
+.lp-doc-main,
+.lp-doc-rail { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.lp-doc-rail { position: sticky; top: 12px; }
+
+.lp-doc-card {
+  background: var(--lp-white);
+  border: 1px solid var(--lp-border);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.lp-doc-card > header {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--lp-border);
+  background: var(--lp-canvas);
+}
+.lp-doc-card > header h2 {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--lp-text-muted);
+}
+.lp-doc-card > header .lp-doc-card-note { font-size: 12px; color: var(--lp-text-muted); }
+.lp-doc-card .body { padding: 14px 16px; }
+.lp-doc-card .body.tight { padding: 0; }
+
+/* who the document is for */
+.lp-party { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.lp-party-label { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--lp-text-muted); }
+.lp-party-name { font-size: 17px; font-weight: 700; color: var(--lp-text); text-decoration: none; }
+.lp-party-name:hover { color: var(--lp-teal); }
+.lp-party-sub { font-size: 12.5px; color: var(--lp-text-muted); margin-top: 3px; line-height: 1.5; }
+.lp-party-badges { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+
+/* the small tables: one for the customer, one for the invoice itself */
+.lp-kv { width: 100%; border-collapse: collapse; font-size: 13px; }
+.lp-kv th,
+.lp-kv td { padding: 7px 10px; border-bottom: 1px solid var(--lp-border); text-align: left; vertical-align: top; }
+.lp-kv th {
+  width: 1%; white-space: nowrap;
+  font-size: 11.5px; font-weight: 600; letter-spacing: .02em;
+  color: var(--lp-text-muted); background: #FCFDFE;
+}
+.lp-kv td { color: var(--lp-text); overflow-wrap: anywhere; }
+.lp-kv tr:last-child th,
+.lp-kv tr:last-child td { border-bottom: none; }
+.lp-kv td.amount, .lp-kv td .amount { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* the money, in the rail */
+.lp-amount-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 9px 0; border-bottom: 1px dashed var(--lp-border);
+}
+.lp-amount-row:first-child { padding-top: 0; }
+.lp-amount-row:last-child { border-bottom: none; padding-bottom: 0; }
+.lp-amount-label { font-size: 11.5px; letter-spacing: .04em; text-transform: uppercase; color: var(--lp-text-muted); }
+.lp-amount-figure { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--lp-text); }
+.lp-amount-figure.big { font-size: 22px; }
+.lp-amount-figure.due { color: var(--lp-coral-text, #B42318); }
+.lp-amount-figure.clear { color: var(--lp-teal); }
+
+/* the rail's list of things you can do */
+.lp-doc-actions { display: flex; flex-direction: column; gap: 1px; }
+.lp-doc-actions a,
+.lp-doc-actions button,
+.lp-doc-actions form button {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; padding: 8px 10px;
+  border: 0; border-radius: 7px;
+  background: none;
+  font-size: 13px; text-align: left;
+  color: var(--lp-text); text-decoration: none; cursor: pointer;
+}
+.lp-doc-actions a:hover,
+.lp-doc-actions button:hover { background: #F1F8F8; }
+.lp-doc-actions form { margin: 0; }
+.lp-doc-actions .ico { color: var(--lp-text-muted); flex: none; }
+.lp-doc-actions button.primary { color: var(--lp-teal); font-weight: 600; }
+.lp-doc-actions button.danger { color: var(--lp-coral-text, #B42318); }
+
+/* the totals under the lines, the way the paper adds them up */
+.lp-doc-totals { margin-left: auto; width: min(420px, 100%); }
+.lp-doc-totals table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.lp-doc-totals th { text-align: left; font-weight: 500; color: var(--lp-text-muted); padding: 5px 10px; }
+.lp-doc-totals td { text-align: right; padding: 5px 10px; font-variant-numeric: tabular-nums; }
+.lp-doc-totals tr.grand th,
+.lp-doc-totals tr.grand td {
+  font-size: 15.5px; font-weight: 700; color: var(--lp-text);
+  border-top: 1px solid var(--lp-border);
+}
+.lp-doc-totals tr.grand td { color: var(--lp-teal); }

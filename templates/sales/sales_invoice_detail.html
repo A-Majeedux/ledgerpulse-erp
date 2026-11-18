@@ -4,36 +4,33 @@
 {% block title %}{{ invoice[7] or 'Sales Invoice' }}{% endblock %}
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
+{# The screen in the shape of the paper (Round 22): the document down the left -
+   who it is for, its own details, its lines, what is matched to it - and a rail
+   on the right carrying the money and the things you can do. The customer's
+   details and the invoice's details are two separate cards, each a small table,
+   so one is never read as part of the other. #}
 <div class="lp-page-header">
   <div class="lp-page-heading">
-    <h1 class="lp-page-title">{{ invoice[7] or 'Draft invoice' }}</h1>
+    <h1 class="lp-page-title">
+      Sales Invoice{% if invoice[7] %} <span style="color:var(--lp-text-muted); font-weight:600;">{{ invoice[7] }}</span>{% endif %}
+    </h1>
     <p class="lp-page-subtitle">
-      Invoice to {{ invoice[1] }}
+      {{ invoice[1] }}
       {% if invoice[2] %} · {{ invoice[2].strftime('%d %b %Y') }}{% endif %}
-      {% if invoice[3] %} · Due {{ invoice[3].strftime('%d %b %Y') }}{% endif %}
-      {% if invoice[6] %} · Terms: {{ invoice[6] }}{% endif %}
+      {% if invoice[4] == 'Posted' and invoice[3] %}
+        {% set overdue = invoice[3] < today_date %}
+        · Due {{ invoice[3].strftime('%d %b %Y') }}{% if overdue and still_due > 0 %} <span class="lp-pill overdue">Overdue</span>{% endif %}
+      {% endif %}
     </p>
   </div>
   <div class="lp-page-actions">
-    {# Printing lives in the gear menu now ("Print / PDF invoice"), one place
-       for everything the page can do. #}
     {% if invoice[4] == 'Posted' %}
       <span class="lp-pill posted" style="font-size:14px; padding:6px 14px;">Posted</span>
     {% else %}
       <span class="lp-pill draft" style="font-size:14px; padding:6px 14px;">Draft</span>
-      {% if may('sales.post') %}
-      <form method="POST" action="{{ url_for('sales.post_sales_invoice', sales_invoice_id=invoice[0]) }}"
-            style="display:inline-flex; gap:10px; align-items:center; margin-left:8px;">
-        {{ csrf_field() }}
-        {% if over_limit %}
-          <label style="font-size:12.5px; display:flex; align-items:center; gap:6px; cursor:pointer;">
-            <input type="checkbox" name="override_credit_limit" value="1"> Save anyway (over the limit)
-          </label>
-        {% endif %}
-        <button type="submit" class="lp-btn primary sm">Post Invoice</button>
-      </form>
-      {% endif %}
     {% endif %}
+    <a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=invoice[0]) ~ '/print' }}"
+       class="lp-btn sm" target="_blank">Print</a>
     {{ doc_actions(menu) }}
   </div>
 </div>
@@ -55,231 +52,400 @@
 </div>
 {% endif %}
 
-{# The details of the invoice: the customer and his NTN, the delivery address,
-   the dates, the journal and the currency. A letter of credit is a purchase
-   reference (imports), so it is not shown on a sales invoice. #}
-<table class="lp-invoice-info">
-  <tr>
-    <th>Customer</th>
-    <td><strong>{{ invoice[1] }}</strong></td>
-    <th>NTN</th>
-    <td>{{ invoice[10] or '—' }}</td>
-  </tr>
-  <tr>
-    <th>Delivery Address</th>
-    <td colspan="3">{{ invoice[11] or invoice[1] }}</td>
-  </tr>
-  <tr>
-    <th>Invoice Date</th>
-    <td>{{ invoice[2].strftime('%d %b %Y') if invoice[2] else '—' }}</td>
-    <th>Due Date</th>
-    <td>{{ invoice[3].strftime('%d %b %Y') if invoice[3] else '—' }}</td>
-  </tr>
-  <tr>
-    <th>Delivery Date</th>
-    <td>{{ invoice[9].strftime('%d %b %Y') if invoice[9] else '—' }}</td>
-    <th>Accounting Date</th>
-    <td>{{ invoice[14].strftime('%d %b %Y') if invoice[14] else (invoice[2].strftime('%d %b %Y') if invoice[2] else '—') }}</td>
-  </tr>
-  <tr>
-    <th>Journal</th>
-    <td>{{ invoice[13] or 'Customer Invoices' }}</td>
-    <th>Currency</th>
-    <td>{{ active_currency|default('PKR') }}</td>
-  </tr>
-</table>
+<div class="lp-doc-grid">
+  <div class="lp-doc-main">
 
-<div class="lp-table-wrapper">
-  <table class="lp-table">
-    <thead>
-      <tr>
-        <th>Product</th>
-        <th>Description</th>
-        <th>Account</th>
-        <th>Unit</th>
-        <th class="amount">Qty</th>
-        <th class="amount">Rate</th>
-        <th class="amount">Disc %</th>
-        <th>Tax</th>
-        <th class="amount">Total</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for line in lines %}
-      <tr>
-        <td style="font-weight:600;">{{ line[0] }}</td>
-        <td>{{ line[1] or '—' }}</td>
-        <td>{{ line[2] }} — {{ line[3] }}</td>
-        <td>{{ line[4] }}</td>
-        <td class="amount">{{ "%.2f"|format(line[5]) }}</td>
-        <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(line[6]) }}</td>
-        <td class="amount">{{ "%.2f"|format(line[7]) }}%</td>
-        <td>{{ line[9] or '0%' }}</td>
-        <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(line[11]) }}</td>
-      </tr>
-      {% endfor %}
-      <tr style="border-top: 2px solid var(--lp-border);">
-        <td colspan="8" style="text-align:right; color:var(--lp-text-muted);">Gross Total:</td>
-        <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(total_gross) }}</td>
-      </tr>
-      <tr>
-        <td colspan="8" style="text-align:right; color:var(--lp-text-muted);">Total Discount:</td>
-        <td class="amount" style="color:var(--lp-coral-text);">-{{ active_currency|default('PKR') }} {{ "%.2f"|format(total_discount) }}</td>
-      </tr>
-      <tr>
-        <td colspan="8" style="text-align:right; color:var(--lp-text-muted);">Sales Tax:</td>
-        <td class="amount" style="color:var(--lp-blue-text);">{{ active_currency|default('PKR') }} {{ "%.2f"|format(total_tax) }}</td>
-      </tr>
-      <tr style="font-size:16px; font-weight:700;">
-        <td colspan="8" style="text-align:right;">Grand Total:</td>
-        <td class="amount" style="color:var(--lp-teal);">{{ active_currency|default('PKR') }} {{ "%.2f"|format(grand_total) }}</td>
-      </tr>
-      {% if paid_amount %}
-      <tr>
-        <td colspan="8" style="text-align:right; color:var(--lp-text-muted);">Receipts applied:</td>
-        <td class="amount" style="color:var(--lp-green-text);">-{{ active_currency|default('PKR') }} {{ "%.2f"|format(paid_amount) }}</td>
-      </tr>
-      <tr style="font-weight:700;">
-        <td colspan="8" style="text-align:right;">Still due:</td>
-        <td class="amount" style="{% if still_due < grand_total %}color:var(--lp-teal);{% endif %}">{{ active_currency|default('PKR') }} {{ "%.2f"|format(still_due) }}</td>
-      </tr>
-      {% endif %}
-    </tbody>
-  </table>
+    {# ---- who the invoice is for -------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Customer</h2>
+        <span class="lp-doc-card-note">{{ invoice[21] or 'Customer' }}</span>
+      </header>
+      <div class="body">
+        <div class="lp-party">
+          <div>
+            <div class="lp-party-label">Invoice to</div>
+            <a class="lp-party-name" href="{{ url_for('customers.customer_view', customer_id=customer_id) }}">{{ invoice[1] }}</a>
+            {% set address_parts = [invoice[11], invoice[12], invoice[17]]|select|list %}
+            <div class="lp-party-sub">{{ address_parts|join(', ') if address_parts else 'No address on his card yet' }}</div>
+          </div>
+          <div class="lp-party-badges">
+            {% if invoice[23] %}<span class="lp-pill">{{ invoice[23] }}</span>{% endif %}
+            {% if invoice[6] %}<span class="lp-pill">{{ invoice[6] }}</span>{% endif %}
+            {% if still_due and still_due > 0 and invoice[4] == 'Posted' %}
+              <span class="lp-pill overdue">Owes {{ active_currency|default('PKR') }} {{ "{:,.2f}".format(still_due) }}</span>
+            {% elif invoice[4] == 'Posted' %}
+              <span class="lp-pill posted">Settled</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <table class="lp-kv">
+          <tr>
+            <th>Customer no.</th><td>{{ invoice[20] or '—' }}</td>
+            <th>NTN</th><td>{{ invoice[10] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>STRN</th><td>{{ invoice[16] or '—' }}</td>
+            <th>CNIC</th><td>{{ invoice[22] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Phone</th><td>{{ invoice[18] or '—' }}</td>
+            <th>Email</th><td>{{ invoice[19] or '—' }}</td>
+          </tr>
+          <tr>
+            <th>Invoice address</th>
+            <td colspan="3">{{ address_parts|join(', ') if address_parts else '—' }}</td>
+          </tr>
+          <tr>
+            <th>Delivery address</th>
+            <td colspan="3">{{ invoice[12] or (address_parts|join(', ') if address_parts else '—') }}</td>
+          </tr>
+        </table>
+      </div>
+    </section>
+
+    {# ---- the invoice's own details ----------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Invoice details</h2>
+        <span class="lp-doc-card-note">{{ invoice[13] or 'Customer Invoices' }}</span>
+      </header>
+      <div class="body">
+        <table class="lp-kv">
+          <tr>
+            <th>Invoice number</th><td>{{ invoice[7] or 'Draft (no number yet)' }}</td>
+            <th>Status</th>
+            <td>{% if invoice[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
+                {% else %}<span class="lp-pill draft">Draft</span>{% endif %}</td>
+          </tr>
+          <tr>
+            <th>Invoice date</th><td>{{ invoice[2].strftime('%d %b %Y') if invoice[2] else '—' }}</td>
+            <th>Due date</th><td>{{ invoice[3].strftime('%d %b %Y') if invoice[3] else '—' }}</td>
+          </tr>
+          <tr>
+            <th>Delivery date</th><td>{{ invoice[9].strftime('%d %b %Y') if invoice[9] else '—' }}</td>
+            <th>Accounting date</th>
+            <td>{{ invoice[14].strftime('%d %b %Y') if invoice[14] else (invoice[2].strftime('%d %b %Y') if invoice[2] else '—') }}</td>
+          </tr>
+          <tr>
+            <th>Journal</th><td>{{ invoice[13] or 'Customer Invoices' }}</td>
+            <th>Currency</th><td>{{ active_currency|default('PKR') }}</td>
+          </tr>
+          <tr>
+            <th>Payment terms</th><td>{{ invoice[6] or '—' }}</td>
+            <th>Entry</th>
+            <td>{% if invoice[5] %}<a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=invoice[5]) }}">Journal entry #{{ invoice[5] }}</a>
+                {% else %}Not posted yet{% endif %}</td>
+          </tr>
+        </table>
+      </div>
+    </section>
+
+    {# ---- what was sold ----------------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Invoice lines</h2>
+        <span class="lp-doc-card-note">{{ lines|length }} line{{ '' if lines|length == 1 else 's' }}</span>
+      </header>
+      <div class="body tight">
+        <table class="lp-table">
+          <thead>
+            <tr>
+              <th>Description</th>
+              <th class="amount">Qty</th>
+              <th>Unit</th>
+              <th class="amount">Price</th>
+              <th class="amount">Disc %</th>
+              <th class="amount">Discount</th>
+              <th>Tax</th>
+              <th class="amount">Net</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for line in lines %}
+            <tr>
+              <td>
+                <div style="font-weight:600;">{{ line[1] or line[0] }}</div>
+                <div style="font-size:11.5px; color:var(--lp-text-muted);">{{ line[2] }} · {{ line[3] }}</div>
+              </td>
+              <td class="amount">{{ "%.2f"|format(line[5]) }}</td>
+              <td>{{ line[4] }}</td>
+              <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(line[6]) }}</td>
+              <td class="amount">{{ "%.2f"|format(line[7]) }}%</td>
+              <td class="amount">{{ "%.2f"|format(line[8]) }}</td>
+              <td>{{ line[9] or '—' }}</td>
+              <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(line[11]) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+
+        <div style="display:flex; justify-content:flex-end; padding:14px 16px;">
+          <div class="lp-doc-totals">
+            <table>
+              <tr><th>Untaxed total</th><td>{{ active_currency|default('PKR') }} {{ "%.2f"|format(total_gross) }}</td></tr>
+              {% if total_discount %}
+              <tr><th>Discount</th><td style="color:var(--lp-coral-text);">-{{ active_currency|default('PKR') }} {{ "%.2f"|format(total_discount) }}</td></tr>
+              {% endif %}
+              <tr><th>Sales tax</th><td>{{ active_currency|default('PKR') }} {{ "%.2f"|format(total_tax) }}</td></tr>
+              <tr class="grand"><th>Total</th><td>{{ active_currency|default('PKR') }} {{ "%.2f"|format(grand_total) }}</td></tr>
+              {% if paid_amount %}
+              <tr><th>Receipts applied</th><td style="color:var(--lp-green-text);">-{{ active_currency|default('PKR') }} {{ "%.2f"|format(paid_amount) }}</td></tr>
+              <tr><th>Still due</th><td>{{ active_currency|default('PKR') }} {{ "%.2f"|format(still_due) }}</td></tr>
+              {% endif %}
+            </table>
+
+            {% if tax_breakdown %}
+            <div style="margin-top:10px; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--lp-text-muted);">Tax breakdown</div>
+            <table style="margin-top:4px;">
+              {% for band in tax_breakdown %}
+              <tr>
+                <th style="font-weight:500;">{{ band.label }} on {{ "%.2f"|format(band.taxed) }}</th>
+                <td>{{ "%.2f"|format(band.tax) }}</td>
+              </tr>
+              {% endfor %}
+            </table>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    {# ---- what is matched to it --------------------------------------- #}
+    <section class="lp-doc-card">
+      <header>
+        <h2>Receipts matched to this invoice</h2>
+        {% if receipts_applied %}<span class="lp-doc-card-note">{{ receipts_applied|length }} receipt{{ '' if receipts_applied|length == 1 else 's' }}</span>{% endif %}
+      </header>
+      <div class="body">
+        {% if receipts_applied %}
+          <table class="lp-table">
+            <thead><tr><th>Receipt</th><th>Date</th><th class="amount">Applied</th><th></th></tr></thead>
+            <tbody>
+              {% for receipt in receipts_applied %}
+              <tr>
+                <td style="font-weight:600;">{{ receipt.voucher_no or ('#' ~ receipt.id) }}</td>
+                <td>{{ receipt.date.strftime('%d %b %Y') if receipt.date else '—' }}</td>
+                <td class="amount">{{ active_currency|default('PKR') }} {{ "{:,.2f}".format(receipt.amount) }}</td>
+                <td style="text-align:right;">
+                  <a class="lp-btn ghost sm" href="{{ url_for('customers.customer_receipt_detail', customer_receipt_id=receipt.id) }}">Open</a>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <p style="margin:0; font-size:13px; color:var(--lp-text-muted);">
+            No receipt has been matched to this invoice yet.
+          </p>
+        {% endif %}
+
+        {% if unapplied_receipts and still_due > 0 %}
+        {# Choosing a receipt fills the amount in by itself: the smaller of what that
+           receipt still has unapplied and what this invoice still owes. It stays
+           editable - this just saves typing a figure the books already know. #}
+        <form method="POST" action="{{ url_for('sales.apply_receipt_to_invoice', sales_invoice_id=invoice[0]) }}"
+              id="match-receipt-form"
+              data-still-due="{{ '{:.2f}'.format(still_due) }}"
+              style="margin-top:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
+          {{ csrf_field() }}
+          <div class="lp-form-group" style="margin:0; min-width:280px; flex: 1 1 280px;">
+            <label class="form-label">Match a receipt of {{ invoice[1] }} to this invoice</label>
+            <select name="customer_receipt_id" id="match-receipt-select" class="form-select" required>
+              <option value="">Choose a receipt with money still unapplied…</option>
+              {% for receipt in unapplied_receipts %}
+                <option value="{{ receipt.id }}"
+                        data-voucher="{{ receipt.voucher_no or ('#' ~ receipt.id) }}"
+                        data-left="{{ '{:.2f}'.format(receipt.left) }}">
+                  {{ receipt.voucher_no or ('#' ~ receipt.id) }} · {{ receipt.date.strftime('%d %b %Y') if receipt.date else '' }}
+                  · unapplied {{ "{:,.2f}".format(receipt.left) }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="lp-form-group" style="margin:0; width:170px;">
+            <label class="form-label">Amount</label>
+            <input type="number" step="0.01" min="0.01" name="amount" id="match-receipt-amount"
+                   class="form-control" value="{{ '{:.2f}'.format(still_due) }}" required>
+          </div>
+          <button type="submit" class="lp-btn primary sm">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Match it
+          </button>
+        </form>
+        <p id="match-receipt-note" style="margin:8px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
+          Pick a receipt and the amount fills itself in; change it if you are only settling part of it.
+        </p>
+        <script>
+        (function () {
+          const form = document.getElementById('match-receipt-form');
+          if (!form) { return; }
+          const select = document.getElementById('match-receipt-select');
+          const amount = document.getElementById('match-receipt-amount');
+          const note = document.getElementById('match-receipt-note');
+          const stillDue = parseFloat(form.dataset.stillDue || '0');
+
+          function money(value) { return (Math.round(value * 100) / 100).toFixed(2); }
+
+          function fill() {
+            const option = select.selectedOptions[0];
+            const left = option && option.dataset.left ? parseFloat(option.dataset.left) : null;
+            if (left === null) {
+              amount.value = money(stillDue);
+              note.textContent = 'Pick a receipt and the amount fills itself in; change it if you are only settling part of it.';
+              return;
+            }
+            const use = Math.min(left, stillDue);
+            amount.value = money(use);
+            amount.max = money(left);
+            if (left < stillDue) {
+              note.textContent = option.dataset.voucher + ' has ' + money(left) + ' still unapplied, so that is the most '
+                + 'it can settle here. The invoice keeps owing ' + money(stillDue - left) + '.';
+            } else {
+              note.textContent = option.dataset.voucher + ' has ' + money(left) + ' unapplied; this invoice only needs '
+                + money(stillDue) + ', so that much is matched.';
+            }
+          }
+          select.addEventListener('change', fill);
+          if (select.value) { fill(); }
+        })();
+        </script>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if stock_moves %}
+    <section class="lp-doc-card">
+      <header><h2>What this invoice took out of stock</h2></header>
+      <div class="body tight">
+        <table class="lp-table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th class="amount">Out</th>
+              <th class="amount">Cost a unit</th>
+              <th class="amount">Value</th>
+              <th class="amount">Left on hand</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for move in stock_moves %}
+            <tr>
+              <td>{{ move[0] }}</td>
+              <td class="amount">{{ "%.2f"|format(-move[2]) }} {{ move[1] }}</td>
+              <td class="amount">{{ "%.2f"|format(move[3]) }}</td>
+              <td class="amount">{{ "%.2f"|format(move[4]) }}</td>
+              <td class="amount">{{ "%.2f"|format(move[5]) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+
+    {% include '_history.html' %}
+  </div>
+
+  {# ---- the rail: the money on top, then what you can do ---------------- #}
+  <aside class="lp-doc-rail">
+    <section class="lp-doc-card">
+      <header><h2>Amount</h2></header>
+      <div class="body">
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Amount paid</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ "%.2f"|format(paid_amount) }}</span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Amount outstanding</span>
+          <span class="lp-amount-figure big {% if still_due > 0 %}due{% else %}clear{% endif %}">
+            {{ active_currency|default('PKR') }} {{ "%.2f"|format(still_due) }}
+          </span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Invoice total</span>
+          <span class="lp-amount-figure">{{ active_currency|default('PKR') }} {{ "%.2f"|format(grand_total) }}</span>
+        </div>
+        {% if invoice[3] and still_due > 0 and invoice[4] == 'Posted' %}
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Due date</span>
+          <span style="font-size:13px; font-weight:600; {% if invoice[3] < today_date %}color:var(--lp-coral-text);{% endif %}">
+            {{ invoice[3].strftime('%d %b %Y') }}
+          </span>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="lp-doc-card">
+      <header><h2>Actions</h2></header>
+      <div class="body" style="padding:8px;">
+        <div class="lp-doc-actions">
+          {% if invoice[4] == 'Draft' and may('sales.post') %}
+          <form method="POST" action="{{ url_for('sales.post_sales_invoice', sales_invoice_id=invoice[0]) }}">
+            {{ csrf_field() }}
+            {% if over_limit %}
+              <label style="font-size:12px; display:flex; align-items:center; gap:6px; cursor:pointer; padding:0 10px 6px;">
+                <input type="checkbox" name="override_credit_limit" value="1"> Save anyway (over the limit)
+              </label>
+            {% endif %}
+            <button type="submit" class="primary">
+              <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Post Invoice
+            </button>
+          </form>
+          {% endif %}
+          <a href="{{ url_for('sales.sales_invoice_detail', sales_invoice_id=invoice[0]) ~ '/print' }}" target="_blank">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-print"/></svg> Print / PDF invoice
+          </a>
+          {% if still_due > 0 and unapplied_receipts %}
+          <a href="#match-receipt-form">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-receipt"/></svg> Match a receipt
+          </a>
+          {% endif %}
+          {% if invoice[5] %}
+          <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=invoice[5]) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-journal"/></svg> Journal entry
+          </a>
+          {% endif %}
+          <a href="{{ url_for('customers.customer_view', customer_id=customer_id) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-customers"/></svg> Customer card
+          </a>
+          <a href="{{ url_for('customers.customer_statement', customer_id=customer_id) }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-ledger"/></svg> Statement
+          </a>
+          {% if may('sales.create') %}
+          <a href="{{ url_for('sales.new_credit_note') }}">
+            <svg class="ico sm" aria-hidden="true"><use href="#i-credit-note"/></svg> Add credit note
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </section>
+
+    {% if credit %}
+    <section class="lp-doc-card">
+      <header><h2>Credit limit</h2></header>
+      <div class="body">
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Limit</span>
+          <span style="font-size:13px;">{{ active_currency|default('PKR') }} {{ credit.limit_text }}</span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">Held against it</span>
+          <span style="font-size:13px;">{{ active_currency|default('PKR') }} {{ credit.used_text }}</span>
+        </div>
+        <div class="lp-amount-row">
+          <span class="lp-amount-label">This invoice adds</span>
+          <span style="font-size:13px;">{{ active_currency|default('PKR') }} {{ "%.2f"|format(grand_total) }}</span>
+        </div>
+        {% if credit.over %}
+        <p style="margin:10px 0 0; font-size:12.5px; color:var(--lp-coral-text);">
+          Over the limit by {{ active_currency|default('PKR') }} {{ credit.over_by_text }}.
+        </p>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+  </aside>
 </div>
-
-{# What has been matched to this invoice, and what still can be. Matching a
-   receipt to its invoice is the same act whether it is done here or on the
-   receipt screen: customers.services.apply_receipt_to_invoices writes one row
-   in customer_receipt_allocations and nothing is posted. #}
-<section class="lp-card" style="margin-top:16px;">
-  <h2 style="margin:0 0 10px; font-size:15px;">Receipts matched to this invoice</h2>
-  {% if receipts_applied %}
-    <table class="lp-table">
-      <thead><tr><th>Receipt</th><th>Date</th><th class="amount">Applied</th><th></th></tr></thead>
-      <tbody>
-        {% for receipt in receipts_applied %}
-        <tr>
-          <td style="font-weight:600;">{{ receipt.voucher_no or ('#' ~ receipt.id) }}</td>
-          <td>{{ receipt.date.strftime('%d %b %Y') if receipt.date else '—' }}</td>
-          <td class="amount">{{ active_currency|default('PKR') }} {{ "{:,.2f}".format(receipt.amount) }}</td>
-          <td style="text-align:right;">
-            <a class="lp-btn ghost sm" href="{{ url_for('customers.customer_receipt_detail', customer_receipt_id=receipt.id) }}">Open</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  {% else %}
-    <p style="margin:0; font-size:13px; color:var(--lp-text-muted);">
-      No receipt has been matched to this invoice yet.
-    </p>
-  {% endif %}
-
-  {% if unapplied_receipts and still_due > 0 %}
-  {# Choosing a receipt fills the amount in by itself: the smaller of what that
-     receipt still has unapplied and what this invoice still owes. It stays
-     editable - this just saves typing a figure the books already know. #}
-  <form method="POST" action="{{ url_for('sales.apply_receipt_to_invoice', sales_invoice_id=invoice[0]) }}"
-        id="match-receipt-form"
-        data-still-due="{{ '{:.2f}'.format(still_due) }}"
-        style="margin-top:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end;">
-    {{ csrf_field() }}
-    <div class="lp-form-group" style="margin:0; min-width:280px; flex: 1 1 280px;">
-      <label class="form-label">Match a receipt of {{ invoice[1] }} to this invoice</label>
-      <select name="customer_receipt_id" id="match-receipt-select" class="form-select" required>
-        <option value="">Choose a receipt with money still unapplied…</option>
-        {% for receipt in unapplied_receipts %}
-          <option value="{{ receipt.id }}"
-                  data-voucher="{{ receipt.voucher_no or ('#' ~ receipt.id) }}"
-                  data-left="{{ '{:.2f}'.format(receipt.left) }}">
-            {{ receipt.voucher_no or ('#' ~ receipt.id) }} · {{ receipt.date.strftime('%d %b %Y') if receipt.date else '' }}
-            · unapplied {{ "{:,.2f}".format(receipt.left) }}
-          </option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="lp-form-group" style="margin:0; width:170px;">
-      <label class="form-label">Amount</label>
-      <input type="number" step="0.01" min="0.01" name="amount" id="match-receipt-amount"
-             class="form-control" value="{{ '{:.2f}'.format(still_due) }}" required>
-    </div>
-    <button type="submit" class="lp-btn primary sm">
-      <svg class="ico sm" aria-hidden="true"><use href="#i-check"/></svg> Match it
-    </button>
-  </form>
-  <p id="match-receipt-note" style="margin:8px 0 0; font-size:12.5px; color:var(--lp-text-muted);">
-    Pick a receipt and the amount fills itself in; change it if you are only settling part of it.
-  </p>
-  <script>
-  (function () {
-    const form = document.getElementById('match-receipt-form');
-    if (!form) { return; }
-    const select = document.getElementById('match-receipt-select');
-    const amount = document.getElementById('match-receipt-amount');
-    const note = document.getElementById('match-receipt-note');
-    const stillDue = parseFloat(form.dataset.stillDue || '0');
-
-    function money(value) { return (Math.round(value * 100) / 100).toFixed(2); }
-
-    function fill() {
-      const option = select.selectedOptions[0];
-      const left = option && option.dataset.left ? parseFloat(option.dataset.left) : null;
-      if (left === null) {
-        amount.value = money(stillDue);
-        note.textContent = 'Pick a receipt and the amount fills itself in; change it if you are only settling part of it.';
-        return;
-      }
-      const use = Math.min(left, stillDue);
-      amount.value = money(use);
-      amount.max = money(left);
-      if (left < stillDue) {
-        note.textContent = option.dataset.voucher + ' has ' + money(left) + ' still unapplied, so that is the most '
-          + 'it can settle here. The invoice keeps owing ' + money(stillDue - left) + '.';
-      } else {
-        note.textContent = option.dataset.voucher + ' has ' + money(left) + ' unapplied; this invoice only needs '
-          + money(stillDue) + ', so that much is matched.';
-      }
-    }
-    select.addEventListener('change', fill);
-    if (select.value) { fill(); }
-  })();
-  </script>
-  {% endif %}
-</section>
-
-{% if invoice[5] %}
-<p style="margin-top:16px;">
-  <a href="{{ url_for('accounting.journal_entry_detail', journal_header_id=invoice[5]) }}" class="lp-btn secondary sm">View Journal Entry</a>
-</p>
-{% endif %}
-
-{% if stock_moves %}
-<div class="lp-card" style="margin-top: 20px;">
-  <h3 style="margin-top:0; font-size:16px;">What this invoice took out of stock</h3>
-  <table class="lp-table">
-    <thead>
-      <tr>
-        <th>Product</th>
-        <th class="amount">Out</th>
-        <th class="amount">Cost a unit</th>
-        <th class="amount">Value</th>
-        <th class="amount">Left on hand</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for move in stock_moves %}
-      <tr>
-        <td>{{ move[0] }}</td>
-        <td class="amount">{{ "%.2f"|format(-move[2]) }} {{ move[1] }}</td>
-        <td class="amount">{{ "%.2f"|format(move[3]) }}</td>
-        <td class="amount">{{ "%.2f"|format(move[4]) }}</td>
-        <td class="amount">{{ "%.2f"|format(move[5]) }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-{% include '_history.html' %}
 {% endblock %}

@@ -442,13 +442,23 @@ def sales_invoices_list():
     cursor.execute("""
         SELECT si.sales_invoice_id, c.name, si.invoice_date, si.due_date, si.status,
                COALESCE(SUM(sil.total), 0) AS total, si.invoice_no, si.lc_reference,
-               COALESCE(si.paid_amount, 0) AS paid
+               COALESCE(si.paid_amount, 0) AS paid, c.phone, poster.user_name
         FROM sales_invoices si
         JOIN customers c ON c.customer_id = si.customer_id
         LEFT JOIN sales_invoice_lines sil ON sil.sales_invoice_id = si.sales_invoice_id
+        /* who posted it, from the document's own diary (core/audit.py) */
+        LEFT JOIN LATERAL (
+            SELECT th.user_name FROM transaction_history th
+            WHERE th.organization_id = si.organization_id
+              AND th.subject_type = 'SalesInvoice'
+              AND th.subject_id = si.sales_invoice_id
+              AND th.action = 'Posted'
+            ORDER BY th.happened_at DESC, th.history_id DESC LIMIT 1
+        ) poster ON TRUE
         WHERE si.organization_id = %s
     """ + and_clauses(clauses) + """
-        GROUP BY si.sales_invoice_id, c.name, si.invoice_no, si.lc_reference, si.paid_amount
+        GROUP BY si.sales_invoice_id, c.name, si.invoice_no, si.lc_reference, si.paid_amount,
+                 c.phone, poster.user_name
         ORDER BY si.invoice_date DESC, si.sales_invoice_id DESC
     """, [org_id] + params)
     invoices = cursor.fetchall()
@@ -726,7 +736,9 @@ def sales_invoice_detail(sales_invoice_id):
         SELECT si.sales_invoice_id, c.name, si.invoice_date, si.due_date,
                si.status, si.journal_header_id, si.payment_terms,
                si.invoice_no, si.lc_reference, si.delivery_date, c.ntn, c.address, c.city,
-               si.journal_name, header.accounting_date, COALESCE(si.paid_amount, 0)
+               si.journal_name, header.accounting_date, COALESCE(si.paid_amount, 0),
+               c.strn, c.province, c.phone, c.email, c.customer_no, c.nature_of_supply, c.cnic,
+               c.registration_type
         FROM sales_invoices si
         JOIN customers c ON c.customer_id = si.customer_id
         LEFT JOIN journal_headers header ON header.journal_header_id = si.journal_header_id
@@ -767,6 +779,25 @@ def sales_invoice_detail(sales_invoice_id):
     total_discount = sum((to_decimal(l[8]) for l in lines), to_decimal(0))
     total_tax = sum((to_decimal(l[10]) for l in lines), to_decimal(0))
     grand_total = sum((to_decimal(l[11]) for l in lines), to_decimal(0))
+
+    # The tax, added up tax rate by tax rate, the way the paper breaks it down
+    # (Sage's "VAT Breakdown"): what was taxed, at what rate, and how much.
+    tax_breakdown = []
+    by_rate = {}
+    for line in lines:
+        label = line[9] or "No tax"
+        taxed = to_decimal(line[11]) - to_decimal(line[10])       # the line, less its tax
+        entry = by_rate.setdefault(label, {"taxed": to_decimal(0), "tax": to_decimal(0)})
+        entry["taxed"] += taxed
+        entry["tax"] += to_decimal(line[10])
+    for label, figures in by_rate.items():
+        if figures["tax"] <= 0:
+            continue
+        tax_breakdown.append({
+            "label": label,
+            "taxed": money_round(figures["taxed"]),
+            "tax": money_round(figures["tax"]),
+        })
 
     # What the customer receipts have already been applied to this invoice
     # (customers/services.py keeps the allocation rows; paid_amount is their
@@ -831,6 +862,8 @@ def sales_invoice_detail(sales_invoice_id):
         paid_amount=paid_amount,
         still_due=still_due,
         credit=credit,
+        tax_breakdown=tax_breakdown,
+        customer_id=customer_id,
         over_limit=(credit["over"] if credit else False),
         refused_over_limit=bool(request.args.get("over_limit")),
         receipts_applied=receipts_applied,

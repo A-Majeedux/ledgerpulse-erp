@@ -70,6 +70,16 @@ def register_context_processors(app):
     app.template_filter('safe_str')(safe_str)
 
     @app.context_processor
+    def inject_today():
+        """`today_date` in a template: what today is, to compare a due date against.
+
+        A template can compare dates but cannot ask the clock, so the clock is
+        answered here once per request.
+        """
+        from datetime import date as _date
+        return {"today_date": _date.today()}
+
+    @app.context_processor
     def inject_may():
         """`may('sales.create')` in a template: should this person be offered it?
 

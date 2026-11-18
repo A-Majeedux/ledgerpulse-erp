@@ -3,14 +3,21 @@
 {% block active_nav %}invoices{% endblock %}
 {% block content %}
 {% from "_search.html" import search_bar with context %}
+{# The register of invoices, in the shape the reference systems use (Round 22):
+   number, date, customer, his phone, who posted it, the total, what is still
+   owed, and whether it has gone out. The "who posted it" column is read from
+   the document's own diary, so it is answerable for every invoice in the list. #}
 <div class="lp-page-header">
   <div>
     <h1 class="lp-page-title">Sales Invoices</h1>
-    <p class="lp-page-subtitle">Manage customer invoices, sales tracking, and billing statuses.</p>
+    <p class="lp-page-subtitle">Create, view and manage the invoices you send to your customers.</p>
   </div>
-  {% if may('sales.create') %}
-    <a href="{{ url_for('sales.new_sales_invoice') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Invoice</a>
-  {% endif %}
+  <div class="lp-page-actions">
+    <a href="{{ url_for('sales.credit_notes_list') }}" class="lp-btn sm">Credit Notes</a>
+    {% if may('sales.create') %}
+      <a href="{{ url_for('sales.new_sales_invoice') }}" class="lp-btn primary sm"><svg class="ico sm" aria-hidden="true"><use href="#i-plus"/></svg> New Invoice</a>
+    {% endif %}
+  </div>
 </div>
 
 {{ search_bar(url_for('sales.sales_invoices_list'), search,
@@ -22,34 +29,48 @@
   <table class="lp-table">
     <thead>
       <tr>
-        <th style="width: 170px;">Number</th>
+        <th style="width: 165px;">Invoice number</th>
+        <th style="width: 120px;">Invoice date</th>
         <th>Customer</th>
-        <th style="width: 130px;">Invoice Date</th>
-        <th style="width: 130px;">Due Date</th>
-        <th class="amount">Grand Total</th>
-        <th class="amount">Still due</th>
-        <th style="width: 120px;">Status</th>
+        <th style="width: 140px;">Telephone</th>
+        <th style="width: 130px;">Posted by</th>
+        <th class="amount">Total</th>
+        <th class="amount">Outstanding</th>
+        <th style="width: 110px;">Issued</th>
+        <th style="width: 130px;">Status</th>
       </tr>
     </thead>
     <tbody>
       {% for inv in invoices %}
+      {% set outstanding = inv[5] - (inv[8] or 0) %}
       <tr onclick="window.location='{{ url_for('sales.sales_invoice_detail', sales_invoice_id=inv[0]) }}'" style="cursor:pointer;">
         <td style="font-weight:600; white-space:nowrap;">{{ inv[6] or '(no number)' }}</td>
-        <td style="font-weight:600;">{{ inv[1] }}</td>
         <td>{{ inv[2].strftime('%d %b %Y') if inv[2] else '—' }}</td>
-        <td>{{ inv[3].strftime('%d %b %Y') if inv[3] else '—' }}</td>
+        <td style="font-weight:600;">{{ inv[1] }}</td>
+        <td style="color:var(--lp-text-muted);">{{ inv[9] or '—' }}</td>
+        <td style="color:var(--lp-text-muted);">{{ inv[10] or '—' }}</td>
         <td class="amount">{{ active_currency|default('PKR') }} {{ "%.2f"|format(inv[5]) }}</td>
-        <td class="amount" style="{% if (inv[5] - (inv[8] or 0)) <= 0 %}color: var(--lp-text-muted);{% endif %}">
-          {{ active_currency|default('PKR') }} {{ "%.2f"|format(inv[5] - (inv[8] or 0)) }}
+        <td class="amount" style="{% if outstanding <= 0 %}color: var(--lp-text-muted);{% endif %}">
+          {{ active_currency|default('PKR') }} {{ "%.2f"|format(outstanding) }}
         </td>
+        <td>{% if inv[4] == 'Posted' %}Yes{% else %}No{% endif %}</td>
         <td>
-          {% if inv[4] == 'Posted' %}<span class="lp-pill posted">Posted</span>
-          {% else %}<span class="lp-pill draft">Draft</span>{% endif %}
+          {% if inv[4] == 'Posted' %}
+            {% if inv[3] and inv[3] < today_date and outstanding > 0 %}
+              <span class="lp-pill overdue">Overdue</span>
+            {% elif outstanding <= 0 %}
+              <span class="lp-pill posted">Paid</span>
+            {% else %}
+              <span class="lp-pill posted">Posted</span>
+            {% endif %}
+          {% else %}
+            <span class="lp-pill draft">Draft</span>
+          {% endif %}
         </td>
       </tr>
       {% else %}
       <tr>
-        <td colspan="7">
+        <td colspan="9">
           <div class="lp-empty-state">No invoices created yet. Click "+ New Invoice" to start.</div>
         </td>
       </tr>
